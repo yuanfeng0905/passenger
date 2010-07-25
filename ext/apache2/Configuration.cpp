@@ -183,6 +183,13 @@ passenger_config_create_dir(apr_pool_t *p, char *dirspec) {
 	config->friendlyErrorPages = DirConfig::UNSET;
 	config->analytics = DirConfig::UNSET;
 	/*************************************/
+	config->maxInstances = 0;
+	config->maxInstancesSpecified = false;
+	config->maxRequestTime = 0;
+	config->maxRequestTimeSpecified = false;
+	config->memoryLimit = 0;
+	config->memoryLimitSpecified = false;
+	config->rollingRestarts = DirConfig::UNSET;
 	return config;
 }
 
@@ -227,6 +234,13 @@ passenger_config_merge_dir(apr_pool_t *p, void *basev, void *addv) {
 	MERGE_THREEWAY_CONFIG(friendlyErrorPages);
 	MERGE_THREEWAY_CONFIG(analytics);
 	/*************************************/
+	config->maxInstances = (add->maxInstancesSpecified) ? add->maxInstances : base->maxInstances;
+	config->maxInstancesSpecified = base->maxInstancesSpecified || add->maxInstancesSpecified;
+	config->maxRequestTime = (add->maxRequestTimeSpecified) ? add->maxRequestTime : base->maxRequestTime;
+	config->maxRequestTimeSpecified = base->maxRequestTimeSpecified || add->maxRequestTimeSpecified;
+	config->memoryLimit = (add->memoryLimitSpecified) ? add->memoryLimit : base->memoryLimit;
+	config->memoryLimitSpecified = base->memoryLimitSpecified || add->memoryLimitSpecified;
+	config->rollingRestarts = (add->rollingRestarts == DirConfig::UNSET) ? base->rollingRestarts : add->rollingRestarts;
 	return config;
 }
 
@@ -256,6 +270,11 @@ cmd_passenger_pre_start(cmd_parms *cmd, void *pcfg, const char *arg) {
 	serverConfig.prestartURLs.insert(arg);
 	return NULL;
 }
+
+DEFINE_DIR_THREEWAY_CONFIG_SETTER(cmd_passenger_rolling_restarts, rollingRestarts)
+DEFINE_DIR_INT_CONFIG_SETTER(cmd_passenger_max_request_time, maxRequestTime, unsigned long, 0)
+DEFINE_DIR_INT_CONFIG_SETTER(cmd_passenger_max_instances, maxInstances, unsigned long, 0)
+DEFINE_DIR_INT_CONFIG_SETTER(cmd_passenger_memory_limit, memoryLimit, unsigned long, 0)
 
 DEFINE_DIR_INT_CONFIG_SETTER(cmd_passenger_min_instances, minInstances, unsigned long, 0)
 DEFINE_DIR_THREEWAY_CONFIG_SETTER(cmd_passenger_use_global_queue, useGlobalQueue)
@@ -572,6 +591,26 @@ const command_rec passenger_commands[] = {
 		"Whether to enable analytics logging."),
 	
 	/*****************************/
+	AP_INIT_TAKE1("PassengerMemoryLimit",
+		(Take1Func) cmd_passenger_memory_limit,
+		NULL,
+		OR_LIMIT | ACCESS_CONF | RSRC_CONF,
+		"The maximum amount of memory in MB that an application instance may use."),
+	AP_INIT_TAKE1("PassengerMaxInstances",
+		(Take1Func) cmd_passenger_max_instances,
+		NULL,
+		OR_LIMIT | ACCESS_CONF | RSRC_CONF,
+		"The maximum number of instances for the current application that Passenger may spawn."),
+	AP_INIT_TAKE1("PassengerMaxRequestTime",
+		(Take1Func) cmd_passenger_max_request_time,
+		NULL,
+		OR_ALL,
+		"The maximum time (in seconds) that the current application may spend on a request."),
+	AP_INIT_FLAG("PassengerRollingRestarts",
+		(FlagFunc) cmd_passenger_rolling_restarts,
+		NULL,
+		OR_OPTIONS | ACCESS_CONF | RSRC_CONF,
+		"Whether to turn on rolling restarts"),
 
 	// Rails-specific settings.
 	AP_INIT_TAKE1("RailsBaseURI",

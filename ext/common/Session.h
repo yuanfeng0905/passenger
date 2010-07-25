@@ -279,6 +279,17 @@ public:
 	 */
 	virtual pid_t getPid() const = 0;
 	
+	/**
+	 * Get the sticky session ID that has been set by setStickySessionId().
+	 */
+	virtual string getStickySessionId() const = 0;
+	
+	/**
+	 * Tells the application pool that this process has the given
+	 * sticky session ID. To be called after parsing the response.
+	 */
+	virtual void setStickySessionId(const string &stickySessionId) = 0;
+	
 	const string getDetachKey() const {
 		return detachKey;
 	}
@@ -311,6 +322,7 @@ protected:
 	CloseCallback closeCallback;
 	string socketType;
 	string socketName;
+	string stickySessionId;
 	
 	/** The session connection file descriptor. */
 	int fd;
@@ -445,6 +457,14 @@ public:
 	
 	virtual pid_t getPid() const {
 		return pid;
+	}
+	
+	virtual string getStickySessionId() const {
+		return stickySessionId;
+	}
+	
+	virtual void setStickySessionId(const string &stickySessionId) {
+		this->stickySessionId = stickySessionId;
 	}
 };
 

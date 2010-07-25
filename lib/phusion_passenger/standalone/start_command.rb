@@ -59,6 +59,7 @@ class StartCommand < Command
 			Thread.abort_on_exception = true
 			@plugin.call_hook(:nginx_started, @nginx)
 			########################
+			monitor_app_directories_in_background if @app_finder.multi_mode?
 			########################
 			watch_log_files_in_background if should_watch_logs?
 			wait_until_nginx_has_exited
@@ -343,7 +344,21 @@ private
 		puts "Log file: #{@options[:log_file]}"
 		puts "Environment: #{@options[:env]}"
 		
-		puts "Accessible via: #{listen_url}"
+		if @app_finder.multi_mode?
+			puts
+			if listening_on_unix_domain_socket?
+				puts "Serving these applications:"
+			else
+				puts "Serving these applications on #{@options[:address]} port #{@options[:port]}:"
+			end
+			puts " Host name                     Directory"
+			puts "------------------------------------------------------------"
+			@apps.each do |app|
+				printf " %-26s    %s\n", app[:server_names][0], app[:root]
+			end
+		else
+			puts "Accessible via: #{listen_url}"
+		end
 		
 		puts
 		if @options[:daemonize]
@@ -487,6 +502,44 @@ private
 	end
 	
 	#################
+	
+	def monitor_app_directories_in_background
+		@threads << Thread.new do
+			@app_finder.monitor(@termination_pipe[0]) do |apps|
+				puts "*** #{Time.now}: redeploying applications ***"
+				ok = true
+				begin
+					pid = @nginx.pid
+				rescue SystemCallError, IOError => e
+					# Failing to read the PID file most likely means that the
+					# web server's no longer running, in which case we're supposed
+					# to quit anyway. Only print an error if the web server's still
+					# running.
+					if !wait_on_termination_pipe(3)
+						@console_mutex.synchronize do
+							error "Unable to retrieve the web server's PID (#{e})."
+						end
+						ok = false
+					end
+				end
+				if ok
+					@apps = apps
+					write_nginx_config_file
+					Process.kill('HUP', pid) rescue nil
+					@console_mutex.synchronize do
+						puts "Now serving these applications:"
+						puts " Host name                     Directory"
+						puts "------------------------------------------------------------"
+						@apps.each do |app|
+							printf " %-26s    %s\n", app[:server_names][0], app[:root]
+						end
+						puts "------------------------------------------------------------"
+					end
+					@plugin.call_hook(:found_apps_again, apps)
+				end
+			end
+		end
+	end
 end
 
 end # module Standalone

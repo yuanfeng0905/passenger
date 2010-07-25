@@ -322,6 +322,14 @@ private:
 		specificContext->sessions.erase(atoi(args[1]));
 	}
 	
+	void processSetStickySessionId(CommonClientContext &commonContext, SpecificContext *specificContext, const vector<string> &args) {
+		TRACE_POINT();
+		SessionPtr session = specificContext->sessions[atoi(args[1])];
+		if (session != NULL) {
+			session->setStickySessionId(args[2]);
+		}
+	}
+	
 	void processDetach(CommonClientContext &commonContext, SpecificContext *specificContext, const vector<string> &args) {
 		TRACE_POINT();
 		commonContext.requireRights(Account::DETACH);
@@ -419,6 +427,8 @@ public:
 				processGet(commonContext, specificContext, args);
 			} else if (args[0] == "close" && args.size() == 2) {
 				processClose(commonContext, specificContext, args);
+			} else if (args[0] == "setStickySessionId" && args.size() == 3) {
+				processSetStickySessionId(commonContext, specificContext, args);
 			} else if (args[0] == "detach" && args.size() == 2) {
 				processDetach(commonContext, specificContext, args);
 			} else if (args[0] == "clear" && args.size() == 1) {

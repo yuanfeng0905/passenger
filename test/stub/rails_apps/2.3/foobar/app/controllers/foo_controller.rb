@@ -18,4 +18,13 @@ class FooController < ActionController::Base
 		end
 		render :nothing => true
 	end
+	
+	def pid
+		render :text => Process.pid
+	end
+	
+	def allocate_memory
+		$global_variable = " " * (1024 * 1024 * 125)
+		render :text => 'ok'
+	end
 end

@@ -28,7 +28,7 @@ public:
 	
 	string getSourceRoot() const {
 		if (nativelyPackaged) {
-			return "/usr/lib/phusion-passenger/source";
+			return "/usr/lib/phusion-passenger-enterprise/source";
 		} else {
 			return root;
 		}
@@ -36,7 +36,7 @@ public:
 	
 	string getAgentsDir() const {
 		if (nativelyPackaged) {
-			return "/usr/lib/phusion-passenger/agents";
+			return "/usr/lib/phusion-passenger-enterprise/agents";
 		} else {
 			return root + "/agents";
 		}
@@ -44,7 +44,7 @@ public:
 	
 	string getHelperScriptsDir() const {
 		if (nativelyPackaged) {
-			return "/usr/share/phusion-passenger/helper-scripts";
+			return "/usr/share/phusion-passenger-enterprise/helper-scripts";
 		} else {
 			return root + "/helper-scripts";
 		}

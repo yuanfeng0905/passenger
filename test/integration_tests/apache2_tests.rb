@@ -219,6 +219,11 @@ describe "Apache 2 module" do
 				vhost << "RailsEnv development"
 				vhost << "PassengerSpawnMethod conservative"
 				vhost << "PassengerRestartDir #{@foobar.full_app_root}/public"
+				vhost << "PassengerMemoryLimit 75"
+				vhost << "PassengerMaxRequestTime 3"
+				vhost << "<Location /foo/allocate_memory>"
+					vhost << "PassengerMaxRequestTime 0"
+				vhost << "</Location>"
 			end
 			
 			@mycook2 = RailsStub.new('2.3/mycook')
@@ -517,6 +522,39 @@ describe "Apache 2 module" do
 		end
 		
 		####################################
+		
+		specify "if the application's memory usage exceeds PassengerMemoryLimit, then it will be restarted after it's done with the current request" do
+			@server = "http://3.passenger.test:#{@apache2.port}"
+			pid = get('/foo/pid')
+			get('/foo/allocate_memory').should == 'ok'
+			
+			# Application should restart within the next 2 seconds.
+			pid_changed = false
+			20.times do
+				sleep 0.1
+				if get('/foo/pid') != pid
+					pid_changed = true
+					break
+				end
+			end
+			
+			pid_changed.should be_true
+		end
+		
+		specify "PassengerMaxRequestTime works" do
+			@server = "http://3.passenger.test:#{@apache2.port}"
+			
+			pid = get('/foo/pid')
+			
+			start_time = Time.now
+			get('/foo/sleep_until_exists?name=nonexistant.txt')
+			time_taken = Time.now - start_time
+			
+			new_pid = get('/foo/pid')
+			
+			(3..5).should include(time_taken)
+			new_pid.should_not == pid
+		end
 	end
 	
 	describe "error handling" do

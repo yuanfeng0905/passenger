@@ -8,6 +8,8 @@
 #include <signal.h>
 #include <utime.h>
 
+#include "Utils/Timer.h"
+
 /**
  * This file is used as a template to test the different ApplicationPool::Interface implementations.
  * It is #included in ApplicationPool_PoolTest.cpp and ApplicationPool_Server_PoolTest.cpp
@@ -1025,5 +1027,267 @@
 	}
 	
 	/*************************************/
+	
+	TEST_METHOD(40) {
+		// The maxInstances pool option is respected.
+		pool->setMax(3);
+		
+		PoolOptions options;
+		options.appRoot = "stub/rack";
+		options.appType = "rack";
+		options.maxInstances = 1;
+		
+		// We connect to stub/rack while it already has an instance with
+		// 1 request in its queue. Assert that the pool doesn't spawn
+		// another instance.
+		SessionPtr session1 = pool->get(options);
+		SessionPtr session2 = pool2->get(options);
+		ensure_equals(pool->getCount(), 1u);
+		
+		// We connect to stub/wsgi. Assert that the pool spawns a new
+		// instance for this app.
+		ApplicationPool::Ptr pool3(newPoolConnection());
+		SessionPtr session3 = spawnWsgiApp(pool3, "stub/wsgi");
+		ensure_equals(pool->getCount(), 2u);
+	}
+	
+	TEST_METHOD(41) {
+		// Test rolling restarts.
+		TempDirCopy c1("stub/rack", "rackapp1.tmp");
+		PoolOptions options;
+		options.appRoot = "rackapp1.tmp";
+		options.appType = "rack";
+		options.rollingRestart = true;
+		
+		// Spawn an app.
+		SessionPtr session = pool->get(options);
+		pid_t originalPid = session->getPid();
+		session.reset();
+		// Make sure that the pool knows that we've disconnected so
+		// that the next get() doesn't try to spawn a new process.
+		while (pool->getActive() > 0) {
+			usleep(10000);
+		}
+		
+		touchFile("rackapp1.tmp/tmp/restart.txt");
+		writeFile("rackapp1.tmp/config.ru",
+			"app = lambda do |env|\n"
+			"  [200, { 'Content-Type' => 'text/html' }, ['hello world']]\n"
+			"end\n"
+			"\n"
+			"while !File.exist?('continue.txt')\n"
+			"  sleep 0.01\n"
+			"end\n"
+			"run app\n");
+		
+		// The new app won't finish spawning until we create continue.txt.
+		// In the mean time, all get() commands should immediately return
+		// the old process without blocking.
+		Timer timer;
+		while (timer.elapsed() < 500) {
+			session = pool->get(options);
+			ensure_equals(session->getPid(), originalPid);
+			session.reset();
+			
+			// Don't overwhelm the application process's connect backlog.
+			usleep(1000);
+			// Make sure that the pool knows that we've disconnected so
+			// that the next get() doesn't try to spawn a new process.
+			while (pool->getActive() > 0) {
+				usleep(5000);
+			}
+		}
+		
+		touchFile("rackapp1.tmp/continue.txt");
+		timer.start();
+		bool pidChanged = false;
+		while (timer.elapsed() < 500 && !pidChanged) {
+			session = pool->get(options);
+			pidChanged = session->getPid() != originalPid;
+			session.reset();
+			usleep(1);
+		}
+		ensure(pidChanged);
+	}
+	
+	TEST_METHOD(42) {
+		// Test ignoreSpawnErrors and get().
+		TempDirCopy c1("stub/rack", "rackapp1.tmp");
+		PoolOptions options;
+		options.appRoot = "rackapp1.tmp";
+		options.appType = "rack";
+		options.spawnMethod = "conservative";
+		
+		ApplicationPool::Ptr pool3 = newPoolConnection();
+		
+		// Spawn a process.
+		SessionPtr session1 = pool->get(options);
+		
+		// Now fubar the app.
+		writeFile("rackapp1.tmp/config.ru", "raise 'an error'");
+		
+		// The next get() will return a connection to the existing
+		// process while another process is being spawned in the
+		// background.
+		options.ignoreSpawnErrors = true;
+		options.printExceptions = false;
+		SessionPtr session2 = pool2->get(options);
+		ensure_equals("(1)", session2->getPid(), session1->getPid());
+		session2.reset();
+		
+		// The pool will eventually notice that spawning has failed...
+		usleep(500000);
+		ensure_equals("(2)", pool->getActive(), 1u);
+		ensure_equals("(3)", pool->getCount(), 1u);
+		
+		// ...and its group should then be flagged as 'bad' so that
+		// another get() won't cause it to spawn a new process even
+		// when all processes are active. Instead the pool should
+		// continue to reuse existing processes.
+		writeFile("rackapp1.tmp/config.ru", "run lambda { |env| [200, {}, ['']] }");
+		session2 = pool2->get(options);
+		ensure_equals("(4)", session2->getPid(), session1->getPid());
+		
+		usleep(500000);
+		ensure_equals("(5)", pool->getActive(), 1u);
+		ensure_equals("(6)", pool->getCount(), 1u);
+		
+		// Until the user explicitly restarts the app.
+		touchFile("rackapp1.tmp/tmp/restart.txt");
+		SessionPtr session3 = pool3->get(options);
+		ensure("(7)", session3->getPid() != session1->getPid());
+	}
+	
+	TEST_METHOD(43) {
+		// Test ignoreSpawnErrors and rolling restarts.
+		TempDirCopy c1("stub/rack", "rackapp1.tmp");
+		PoolOptions options;
+		options.appRoot = "rackapp1.tmp";
+		options.appType = "rack";
+		options.rollingRestart = true;
+		options.minProcesses = 3;
+		
+		// Spawn 3 processes.
+		ApplicationPool::Ptr pool3 = newPoolConnection();
+		SessionPtr session1 = pool->get(options);
+		EVENTUALLY(5,
+			result = pool->getCount() == 3;
+		);
+		SessionPtr session2 = pool2->get(options);
+		SessionPtr session3 = pool3->get(options);
+		ensure_equals("(1)", pool->getActive(), 3u);
+		
+		pid_t orig_pid1 = session1->getPid();
+		pid_t orig_pid2 = session2->getPid();
+		pid_t orig_pid3 = session3->getPid();
+		session1.reset();
+		session2.reset();
+		session3.reset();
+		EVENTUALLY(5,
+			result = pool->getActive() == 0u;
+		);
+		
+		// Now fubar the app and flag restart.
+		writeFile("rackapp1.tmp/config.ru", "raise 'an error'");
+		touchFile("rackapp1.tmp/tmp/restart.txt");
+		
+		// Let the pool attempt restart in the background.
+		options.ignoreSpawnErrors = true;
+		options.printExceptions = false;
+		pool->get(options);
+		// Wait some time until it has detected the spawn error.
+		sleep(1);
+		
+		// It should leave all the existing processes alone.
+		ensure_equals(pool->getCount(), 3u);
+		session1 = pool->get(options);
+		session2 = pool2->get(options);
+		session3 = pool3->get(options);
+		pid_t pid1 = session1->getPid();
+		pid_t pid2 = session2->getPid();
+		pid_t pid3 = session3->getPid();
+		ensure(pid1 != pid2);
+		ensure(pid2 != pid3);
+		ensure(pid1 == orig_pid1 || pid1 == orig_pid2 || pid1 == orig_pid3);
+		ensure(pid2 == orig_pid1 || pid2 == orig_pid2 || pid2 == orig_pid3);
+		ensure(pid3 == orig_pid1 || pid3 == orig_pid2 || pid3 == orig_pid3);
+	}
+	
+	TEST_METHOD(44) {
+		// Test sticky sessions.
+		TempDirCopy c1("stub/rack", "rackapp1.tmp");
+		writeFile("rackapp1.tmp/config.ru",
+			"sticky_session_id = File.read('sticky_session_id.txt')\n"
+			"app = lambda do |env|\n"
+			"  [200,\n"
+			"   { 'Content-Type' => 'text/plain', 'X-Stickiness' => sticky_session_id },\n"
+			"   ['hello']"
+			"  ]\n"
+			"end\n"
+			"run app\n");
+		
+		PoolOptions options;
+		options.appRoot = "rackapp1.tmp";
+		options.appType = "rack";
+		options.spawnMethod = "conservative";
+		
+		// Setup 2 app process, one with sticky session ID 1234
+		// and another with 5678.
+		
+		writeFile("rackapp1.tmp/sticky_session_id.txt", "1234");
+		SessionPtr session1 = pool->get(options);
+		pid_t app1_pid = session1->getPid();
+		session1->setStickySessionId("1234");
+		
+		writeFile("rackapp1.tmp/sticky_session_id.txt", "5678");
+		SessionPtr session2 = pool2->get(options);
+		session2.reset();
+		EVENTUALLY(5,
+			result = pool2->getCount() == 2u;
+		);
+		session2 = pool2->get(options);
+		pid_t app2_pid = session2->getPid();
+		session2->setStickySessionId("5678");
+		
+		session1.reset();
+		session2.reset();
+		EVENTUALLY(5,
+			result = pool->getActive() == 0u;
+		);
+		
+		// Test that a request always goes to the process with
+		// the given sticky session ID.
+		
+		options.stickySessionId = "1234";
+		session1 = pool->get(options);
+		ensure_equals(session1->getPid(), app1_pid);
+		session2 = pool2->get(options);
+		ensure_equals(session2->getPid(), app1_pid);
+		
+		session1.reset();
+		session2.reset();
+		EVENTUALLY(5,
+			result = pool->getActive() == 0u;
+		);
+		
+		options.stickySessionId = "5678";
+		session1 = pool->get(options);
+		ensure_equals(session1->getPid(), app2_pid);
+		session2 = pool2->get(options);
+		ensure_equals(session2->getPid(), app2_pid);
+		
+		session1.reset();
+		session2.reset();
+		EVENTUALLY(5,
+			result = pool->getActive() == 0u;
+		);
+		
+		// If there's no process with the given sticky session ID
+		// then the normal process selection algorithm is used.
+		options.stickySessionId = "???";
+		session1 = pool->get(options);
+		session2 = pool2->get(options);
+		ensure(session1->getPid() != session2->getPid());
+	}
 	
 #endif /* USE_TEMPLATE */

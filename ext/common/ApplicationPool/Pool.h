@@ -23,6 +23,7 @@
 #include <string>
 #include <sstream>
 #include <map>
+#include <set>
 #include <list>
 
 #include <sys/types.h>
@@ -95,6 +96,7 @@ public:
 	static const int SPAWNER_THREAD_STACK_SIZE = 1024 * 64;
 	static const int ANALYTICS_COLLECTION_THREAD_STACK_SIZE = 1024 * 64;
 	static const unsigned int MAX_GET_ATTEMPTS = 10;
+	static const unsigned int RESTART_THREADS = 1;
 
 private:
 	struct Group;
@@ -120,6 +122,9 @@ private:
 		string unionStationKey;
 		
 		/*****************/
+		unsigned long long restartTime;
+		PoolOptions poolOptions;
+		bool bad;
 		/*****************/
 		
 		Group() {
@@ -130,6 +135,8 @@ private:
 			spawning     = false;
 			analytics    = false;
 			/*****************/
+			restartTime = 0;
+			bad = false;
 		}
 	};
 	
@@ -137,6 +144,7 @@ private:
 		ProcessPtr process;
 		string groupName;
 		unsigned long long startTime;
+		unsigned long long restartTime;
 		time_t lastUsed;
 		unsigned int sessions;
 		unsigned int processed;
@@ -146,10 +154,12 @@ private:
 		ProcessMetrics metrics;
 		
 		/****************/
+		string stickySessionId;
 		/****************/
 		
 		ProcessInfo() {
 			startTime  = SystemTime::getMsec();
+			restartTime = startTime;
 			lastUsed   = 0;
 			sessions   = 0;
 			processed  = 0;
@@ -249,6 +259,7 @@ private:
 			} else {
 				processInfo->lastUsed = time(NULL);
 				processInfo->sessions--;
+				processInfo->stickySessionId = session->getStickySessionId();
 				if (processInfo->sessions == 0) {
 					processes->erase(processInfo->iterator);
 					processes->push_front(processInfo);
@@ -266,11 +277,14 @@ private:
 	AnalyticsLoggerPtr analyticsLogger;
 	SharedDataPtr data;
 	oxt::thread *cleanerThread;
+	vector<oxt::thread *> restarterThreads;
 	oxt::thread *analyticsCollectionThread;
 	bool destroying;
 	unsigned int maxIdleTime;
 	unsigned int waitingOnGlobalQueue;
 	condition_variable_any cleanerThreadSleeper;
+	set<GroupPtr> groupsToRestart;
+	condition_variable_any newGroupToRestart;
 	CachedFileStat cstat;
 	FileChangeChecker fileChangeChecker;
 	ProcessMetricsCollector processMetricsCollector;
@@ -450,7 +464,9 @@ private:
 	
 	bool spawningAllowed(const GroupPtr &group, const PoolOptions &options) const {
 		return ( count < max ) &&
-			( (maxPerApp == 0) || (group->size < maxPerApp) );
+			( (maxPerApp == 0) || (group->size < maxPerApp) ) &&
+			( (options.maxInstances == 0) || (group->size < options.maxInstances) ) &&
+			( (!group->bad) || (!options.ignoreSpawnErrors) );
 	}
 	
 	void dumpProcessInfoAsXml(const ProcessInfo *processInfo, bool includeSensitiveInformation,
@@ -566,6 +582,28 @@ private:
 		}
 	}
 	
+	ProcessInfoPtr selectProcessWithStickySession(ProcessInfoList *processes,
+	                                              const PoolOptions &options)
+	{
+		ProcessInfoList::const_iterator it;
+		
+		for (it = processes->begin(); it != processes->end(); it++) {
+			const ProcessInfoPtr processInfo = *it;
+			if (processInfo->stickySessionId == options.stickySessionId) {
+				processes->erase(processInfo->iterator);
+				processes->push_back(processInfo);
+				processInfo->iterator = processes->end();
+				processInfo->iterator--;
+				if (processInfo->sessions == 0) {
+					mutateActive(active + 1);
+					inactiveApps.erase(processInfo->ia_iterator);
+				}
+				return processInfo;
+			}
+		}
+		return ProcessInfoPtr();
+	}
+	
 	void spawnInBackground(const GroupPtr &group, const PoolOptions &options) {
 		assert(!group->detached);
 		assert(!group->spawning);
@@ -606,7 +644,11 @@ private:
 				if (!group->detached) {
 					group->spawning = false;
 					group->spawnerThread.reset();
-					detachGroupWithoutLock(group);
+					if (options.ignoreSpawnErrors) {
+						group->bad = true;
+					} else {
+						detachGroupWithoutLock(group);
+					}
 				}
 				return;
 			}
@@ -720,7 +762,7 @@ private:
 						ProcessPtr process = processInfo->process;
 						GroupPtr   group   = groups[processInfo->groupName];
 						
-						if (group->size > group->minProcesses) {
+						if (group->size > group->minProcesses && !group->bad) {
 							ProcessInfoList *processes = &group->processes;
 							
 							P_DEBUG("Cleaning idle process " << process->getAppRoot() <<
@@ -747,6 +789,128 @@ private:
 			}
 		} catch (const std::exception &e) {
 			P_ERROR("Uncaught exception: " << e.what());
+		}
+	}
+	
+	ProcessInfoPtr selectProcessThatNeedsRestarting(const GroupPtr &group) const {
+		ProcessInfoList::const_iterator it  = group->processes.begin();
+		ProcessInfoList::const_iterator end = group->processes.end();
+		for (; it != end; it++) {
+			ProcessInfoPtr processInfo = *it;
+			if (processInfo->restartTime < group->restartTime) {
+				return processInfo;
+			}
+		}
+		return ProcessInfoPtr();
+	}
+	
+	void restarterThreadMainLoop() {
+		TRACE_POINT();
+		this_thread::disable_interruption di;
+		this_thread::disable_syscall_interruption dsi;
+		unique_lock<boost::timed_mutex> l(lock);
+		
+		while (true) {
+			while (groupsToRestart.empty() && !destroying && !this_thread::interruption_requested()) {
+				this_thread::restore_interruption ri(di);
+				this_thread::restore_syscall_interruption rsi(dsi);
+				UPDATE_TRACE_POINT();
+				newGroupToRestart.wait(l);
+			}
+			if (destroying || this_thread::interruption_requested()) {
+				return;
+			}
+			
+			UPDATE_TRACE_POINT();
+			while (!groupsToRestart.empty()) {
+				GroupPtr       group = *groupsToRestart.begin();
+				ProcessInfoPtr processInfo;
+				
+				while (!group->detached
+				    && (processInfo = selectProcessThatNeedsRestarting(group)))
+				{
+					ProcessPtr newProcess;
+					ProcessInfoList *processes = &group->processes;
+					
+					processInfo->restartTime = group->restartTime;
+					
+					l.unlock();
+					try {
+						UPDATE_TRACE_POINT();
+						P_DEBUG("Restarting process " << processInfo->process->getPid());
+						newProcess = spawnManager->spawn(group->poolOptions);
+					} catch (...) {
+						newProcess.reset();
+					}
+					UPDATE_TRACE_POINT();
+					l.lock();
+					
+					if (destroying || this_thread::interruption_requested()) {
+						return;
+					} else if (processInfo->detached) {
+						continue;
+					} else if (!newProcess) {
+						UPDATE_TRACE_POINT();
+						ProcessInfoList::iterator it;
+						ProcessInfoPtr   pi;
+						
+						if (group->poolOptions.ignoreSpawnErrors) {
+							P_DEBUG("Unable to restart process " <<
+								processInfo->process->getPid() <<
+								": spawning failed. Freezing this " <<
+								"group until next restart signal.");
+							
+							for (it = processes->begin(); it != processes->end(); it++) {
+								pi = *it;
+								pi->restartTime = SystemTime::getMsec();
+							}
+							group->bad = true;
+						} else {
+							P_DEBUG("Unable to restart process " <<
+								processInfo->process->getPid() <<
+								": spawning failed. " <<
+								"Removing all processes in the group.");
+							detachGroupWithoutLock(group);
+						}
+					} else {
+						UPDATE_TRACE_POINT();
+						P_DEBUG("Restarting of process " <<
+							processInfo->process->getPid() <<
+							" done: swapped with " <<
+							newProcess->getPid());
+						
+						processInfo->detached = true;
+						processes->erase(processInfo->iterator);
+						if (processInfo->sessions == 0) {
+							inactiveApps.erase(processInfo->ia_iterator);
+						} else {
+							mutateActive(active - 1);
+						}
+						mutateCount(count - 1);
+						
+						processInfo = ptr(new ProcessInfo());
+						processInfo->process = newProcess;
+						processInfo->groupName = group->name;
+						processes->push_front(processInfo);
+						processInfo->iterator = processes->begin();
+						inactiveApps.push_back(processInfo);
+						processInfo->ia_iterator = inactiveApps.end();
+						processInfo->ia_iterator--;
+						mutateCount(count + 1);
+					}
+					
+					#ifdef PASSENGER_DEBUG
+					UPDATE_TRACE_POINT();
+					if (!verifyState()) {
+						P_ERROR("Rolling restart: ApplicationPool state is invalid:\n" <<
+							inspectWithoutLock());
+					}
+					#endif
+				}
+				
+				UPDATE_TRACE_POINT();
+				groupsToRestart.erase(group);
+			}
 		}
 	}
 	
@@ -877,7 +1041,14 @@ private:
 			if (needsRestart(appRoot, options)) {
 				P_DEBUG("Restarting " << appGroupName);
 				spawnManager->reload(appGroupName);
-				if (group_it != groups.end()) {
+				if (group_it != groups.end() && options.rollingRestart) {
+					group = group_it->second;
+					group->bad = false;
+					group->restartTime = SystemTime::getMsec();
+					group->poolOptions = options.own();
+					groupsToRestart.insert(group_it->second);
+					newGroupToRestart.notify_all();
+				} else if (group_it != groups.end() && !options.rollingRestart) {
 					detachGroupWithoutLock(group_it->second);
 					group_it = groups.end();
 				}
@@ -886,6 +1057,13 @@ private:
 			if (group_it != groups.end()) {
 				group = group_it->second;
 				processes = &group->processes;
+				
+				if (!options.stickySessionId.empty()) {
+					processInfo = selectProcessWithStickySession(processes, options);
+					if (processInfo != NULL) {
+						goto process_selected;
+					}
+				}
 				
 				if (processes->front()->sessions == 0) {
 					processInfo = processes->front();
@@ -976,6 +1154,8 @@ private:
 			throw SpawnException(message);
 		}
 		
+		process_selected:
+		
 		group->maxRequests  = options.maxRequests;
 		group->minProcesses = options.minProcesses;
 		group->environment  = options.environment;
@@ -1000,11 +1180,20 @@ private:
 		waitingOnGlobalQueue = 0;
 		maxPerApp = DEFAULT_MAX_INSTANCES_PER_APP;
 		maxIdleTime = DEFAULT_POOL_IDLE_TIME;
+		
 		cleanerThread = new oxt::thread(
 			bind(&Pool::cleanerThreadMainLoop, this),
 			"ApplicationPool cleaner",
 			CLEANER_THREAD_STACK_SIZE
 		);
+		
+		for (unsigned int i = 0; i < RESTART_THREADS; i++) {
+			restarterThreads.push_back(new oxt::thread(
+				bind(&Pool::restarterThreadMainLoop, this),
+				"ApplicationPool restarter",
+				CLEANER_THREAD_STACK_SIZE
+			));
+		}
 		
 		if (analyticsLogger != NULL) {
 			this->analyticsLogger = analyticsLogger;
@@ -1087,12 +1276,20 @@ public:
 			lock_guard<boost::timed_mutex> l(lock);
 			destroying = true;
 			cleanerThreadSleeper.notify_one();
+			newGroupToRestart.notify_all();
 			while (!groups.empty()) {
 				detachGroupWithoutLock(groups.begin()->second);
 			}
 		}
 		cleanerThread->join();
 		delete cleanerThread;
+		
+		vector<oxt::thread *>::iterator it;
+		for (it = restarterThreads.begin(); it != restarterThreads.end(); it++) {
+			oxt::thread *thr = *it;
+			thr->join();
+			delete thr;
+		}
 		
 		if (analyticsCollectionThread != NULL) {
 			analyticsCollectionThread->interrupt_and_join();

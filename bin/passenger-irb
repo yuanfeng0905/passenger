@@ -1,0 +1,218 @@
+#!/usr/bin/env ruby
+#  Phusion Passenger - http://www.modrails.com/
+#  Copyright (c) 2009 Phusion
+#
+#  "Phusion Passenger" is a trademark of Hongli Lai & Ninh Bui.
+#
+#  See LICENSE file for license information.
+
+source_root = File.expand_path(File.dirname(__FILE__) + "/..")
+$LOAD_PATH.unshift("#{source_root}/lib")
+require 'phusion_passenger'
+require 'phusion_passenger/admin_tools/server_instance'
+require 'phusion_passenger/message_channel'
+require 'phusion_passenger/platform_info/ruby'
+require 'readline' rescue nil
+require 'optparse'
+
+include PhusionPassenger
+include PhusionPassenger::AdminTools
+
+def prompt(prompt_line = ">> ")
+	if defined?(Readline)
+		line = Readline.readline(prompt_line, true)
+	else
+		begin
+			STDOUT.write(prompt_line)
+			STDOUT.flush
+			line = STDIN.readline
+		rescue EOFError
+			return nil
+		end
+	end
+	line.strip! if line
+	line = nil if line == "exit" || line == "quit"
+	return line
+end
+
+def nonblock_check_eof(socket)
+	return select([socket], nil, nil, 0) && socket.eof?
+end
+
+def read_responses(channel)
+	while true
+		header, body = channel.read
+		if !header
+			break
+		end
+		body = body.unpack('m').first
+		case header
+		when "puts"
+			STDOUT.write(body)
+			STDOUT.flush
+		when "end"
+			puts body
+			break
+		else
+			raise "Invalid header '#{header}'"
+		end
+	end
+end
+
+def attach_irb(process)
+	trap('INT', 'IGNORE')
+	socket = process.connect(:async_irb)
+	channel = MessageChannel.new(socket)
+	begin
+		channel.write_scalar(process.connect_password)
+		result = channel.read
+		if result.nil?
+			STDERR.puts "*** ERROR: Process #{process.pid} closed the connection."
+			exit 1
+		elsif result[0] != "ok"
+			STDERR.puts "*** ERROR: #{result[0]}"
+			exit 1
+		end
+		
+		exit_irb = false
+		while !nonblock_check_eof(socket)
+			code = prompt
+			if code.nil?
+				exit_irb = true
+				break
+			end
+			next if code.strip.empty?
+			
+			if code == "debugger"
+				if attach_debugger(process)
+					puts "*** Debugger exited; now back to normal irb prompt."
+				end
+			else
+				begin
+					channel.write_scalar(code)
+					read_responses(channel)
+				rescue Errno::EPIPE
+					break
+				end
+			end
+		end
+		
+		if !exit_irb
+			STDERR.puts "**** Process #{process.pid} disconnected, exiting console."
+		end
+	ensure
+		channel.close
+	end
+end
+
+def attach_debugger(process)
+	if process.server_sockets[:ruby_debug_cmd]
+		cmd_host, cmd_port   = process.server_sockets[:ruby_debug_cmd].address.split(/:/, 2)
+		ctrl_host, ctrl_port = process.server_sockets[:ruby_debug_ctrl].address.split(/:/, 2)
+		rdebug = PlatformInfo.locate_ruby_executable('rdebug')
+		puts "*** Attaching debugger to process #{process.pid}."
+		puts "*** Press Ctrl-C or Ctrl-D to exit debugger."
+		prev_int_handler = trap('INT', 'DEFAULT')
+		begin
+			system(PlatformInfo::RUBY, rdebug, "-c",
+				"-h", "127.0.0.1",
+				"--port", cmd_port,
+				"--cport", ctrl_port)
+			return true
+		ensure
+			trap('INT', prev_int_handler)
+		end
+	else
+		STDERR.puts "*** ERROR: Debugging is not enabled for this application process."
+		return false
+	end
+end
+
+def find_app_with_pid(server_instances, pid)
+	server_instances.each do |instance|
+		begin
+			instance.connect(:passenger_status) do
+				instance.processes.each do |process|
+					if process.pid == pid
+						return process
+					end
+				end
+			end
+		rescue ServerInstance::RoleDeniedError
+			STDERR.puts "*** WARNING: could not query application process PIDs belonging " <<
+				"to Phusion Passenger instance #{instance.pid}."
+		end
+	end
+	return nil
+end
+
+def find_first_app(server_instances)
+	server_instances.each do |instance|
+		begin
+			instance.connect(:passenger_status) do
+				if !instance.groups.empty?
+					group = instance.groups[0]
+					return [group, group.processes[0]]
+				end
+			end
+		rescue ServerInstance::RoleDeniedError
+			STDERR.puts "*** WARNING: could not query application process PIDs belonging " <<
+				"to Phusion Passenger instance #{instance.pid}."
+		end
+	end
+	return nil
+end
+
+def start
+	options = {}
+	parser = OptionParser.new do |opts|
+		opts.banner = "Usage: passenger-irb [options] [PID]"
+		opts.separator ""
+		opts.separator "Hot attach an IRB or ruby-debug console to a Ruby web application process."
+		opts.separator "If PID is not given, then the first available Ruby web application process will be chosen."
+		opts.separator ""
+		
+		opts.separator "Options:"
+		opts.on("--debugger", "Attach debugger console instead of irb.") do |what|
+			options[:debugger] = true
+		end
+	end
+	begin
+		parser.parse!
+	rescue OptionParser::ParseError => e
+		puts e
+		puts
+		puts "Please see '--help' for valid options."
+		exit 1
+	end
+	
+	server_instances = ServerInstance.list
+	if server_instances.empty?
+		STDERR.puts("ERROR: Phusion Passenger doesn't seem to be running.")
+		exit 2
+	end
+	if ARGV[0]
+		app_pid = ARGV[0].to_i
+		process = find_app_with_pid(server_instances, app_pid)
+		if process.nil?
+			STDERR.puts("ERROR: Could not find a Ruby application process with PID #{app_pid}.")
+			exit 2
+		end
+	else
+		group, process = find_first_app(server_instances)
+		if process.nil?
+			STDERR.puts("ERROR: There doesn't seem to be any Ruby application processes running.")
+			exit 2
+		else
+			puts "*** Attaching to process #{process.pid}: #{group.name}"
+		end
+	end
+	
+	if options[:debugger]
+		attach_debugger(process)
+	else
+		attach_irb(process)
+	end
+end
+
+start

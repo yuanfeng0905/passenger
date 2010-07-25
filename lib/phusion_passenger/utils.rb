@@ -734,7 +734,8 @@ protected
 			"spawn_method"     => "smart-lv2",
 			"framework_spawner_timeout" => -1,
 			"app_spawner_timeout"       => -1,
-			"print_exceptions" => true
+			"print_exceptions" => true,
+			"memory_limit"    => 0
 		}
 		options = defaults.merge(options)
 		options["app_group_name"]            = options["app_root"] if !options["app_group_name"]
@@ -745,6 +746,7 @@ protected
 		end
 		# Force this to be a boolean for easy use with Utils#unmarshal_and_raise_errors.
 		options["print_exceptions"]          = to_boolean(options["print_exceptions"])
+		options["memory_limit"]              = options["memory_limit"].to_i
 		
 		options["analytics"]    = to_boolean(options["analytics"])
 		

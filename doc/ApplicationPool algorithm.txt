@@ -106,6 +106,22 @@ explicitly define some special types:
   * environment (string): Does nothing. Data is stored in memory for analytics
     purposes.
 
+  * restart_time (timestamp with milisecond resolution):
+    A hint for restarter threads, telling them that all processes with
+    process_info.restart_time < restart_time should be restarted.
+    Set to the smallest possible timestamp value by the constructor.
+
+  * pool_options (PoolOptions):
+    A hint for restart threads, telling them what options to use for spawning.
+
+  * bad (boolean):
+    Set to true if the algorithm fails to spawn a process for this group
+    while the 'ignore_spawn_errors' pool option is true. This is a hint for
+    the algorithm to stop trying to spawn more processes for this group and
+    not to clean up any existing processes in this group until the system
+    administrator has explicitly given the command to restart the app.
+    Set to false by the constructor.
+
 - ProcessInfo
   A compound type (class) which contains a reference to an application process
   object, as well as various metadata, such as iterators for various linked
@@ -123,6 +139,9 @@ explicitly define some special types:
   * start_time (timestamp with milisecond resolution) - The time at which this
     application process was started. It's set to the current time by the
     constructor.
+  * restart_time (timestamp with milisecond resolution) - A timestamp used by
+    restarter threads to determine which ProcessInfo objects should be
+    restarted. Set to the current time by the constructor.
   * processed_requests (integer) - The number of requests processed by this
     application instance so far. Set to 0 by the constructor.
   * last_used (time) - The last time a session for this application process
@@ -143,6 +162,8 @@ explicitly define some special types:
     Set to false by the constructor.
     Invariant:
        (detached) == (This ProcessInfo is accessible via _groups_.)
+  * sticky_session_id (string) - An identifier used for implementing sticky
+    sessions. May be null.
 
 - PoolOptions
   A structure containing additional information used by the spawn manager's
@@ -165,6 +186,20 @@ explicitly define some special types:
     these files tell the algorithm whether an application should be restarted.
   * environment (string) - The environment (RAILS_ENV/RACK_ENV) in which the app
     should run.
+  * max_instances (unsigned integer) - The maximum number of instances that may
+    be spawned for the current application root. 0 means unspecified.
+  * rolling_restart (boolean) - This option applies if a restart is determined
+    to be necessary.
+    If true, then existing application processes will be restarted in background
+    threads. Any checkout_without_lock() calls will proceed normally and might
+    checkout old (not-yet-restarted) processes until the background threads have
+    restarted them.
+    If false, then existing application processes will be removed immediately,
+    inside the active checkout_without_lock() call. checkout_without_lock() will
+    as a consequence attempt to spawn a new process, and will block while doing
+    this.
+  * ignore_spawn_errors (boolean) - If true, then the algorithm will attempt to
+    ignore spawn errors whenever possible by using existing processes.
 
 === Special functions
 
@@ -222,6 +257,20 @@ information:
      for all x in inactive_apps:
         x can be accessed from _groups_.
         x.sessions == 0
+
+- groups_to_restart: set<Group>
+  A set of groups for which some processes in them should be restarted.
+  When rolling restart is turned on, groups will be added into this set
+  and restarter threads will process these groups.
+  
+  Some groups in this set might be detached.
+
+- new_group_to_restart: condition variable
+  A condition which should be signalled if a new group has been added to
+  groups_to_restart.
+  
+  This condition is also broadcasted when the application pool is being
+  destroyed.
 
 - waiting_on_global_queue: integer
   If global queuing mode is enabled, then when get() is waiting for a backend
@@ -295,13 +344,26 @@ private function checkout_without_lock(app_root, options):
 	
 	if needs_restart(app_root, options):
 		Tell spawn server to reload code for options.app_group_name.
-		if (group != null):
+		if (group != null && options.rolling_restart):
+			group.bad = false
+			group.restart_time = current_time()
+			group.pool_options = options
+			groups_to_restart.add(group)
+			new_group_to_restart.notify_all()
+		else if (group != null && !options.rolling_restart):
 			detach_group_without_lock(group)
 			group = null
 	
 	if (group != null):
 		# There are existing processes for this app group.
 		processes = group.processes
+		
+		if (options.sticky_session_value != null):
+			# If possible, try to select a process that was handling this session.
+			# Otherwise proceed with the regular process selection algorithm.
+			process_info = select_process_with_sticky_session(processes, options)
+			if (process_info != null):
+				goto process_selected
 		
 		if (processes.front.sessions == 0):
 			# There is an inactive process, so we use it.
@@ -366,6 +428,8 @@ private function checkout_without_lock(app_root, options):
 		if (options.min_processes > 1) and spawning_allowed(group, options):
 			spawn_in_background(group, options)
 	
+	label process_selected:
+	
 	group.max_requests = options.max_requests
 	group.min_processes = options.min_processes
 	group.environment = options.environment
@@ -414,7 +478,9 @@ private function needs_restart(app_root, options):
 
 private function spawning_allowed(group, options):
 	return ( count < max ) and
-		( (max_per_app == 0) or (group.size < max_per_app) )
+		( (max_per_app == 0) or (group.size < max_per_app) ) and
+		( (options.max_instances == 0) or (group.size < options.max_instances) ) and
+		( (!group.bad) or (!options.ignore_spawn_errors) )
 
 
 # Precondition: !group.detached
@@ -452,6 +518,19 @@ private function select_process(processes, options):
 		return process_info
 
 
+private function select_process_with_sticky_session_id(processes, options):
+	# If possible, try to select a process that was handling this session.
+	# Otherwise proceed with the regular process selection algorithm.
+	for all process_info in processes:
+		if (process_info.sticky_session_id == options.sticky_session_id):
+			processes.move_to_back(process_info.iterator)
+			if (process_info.sessions == 0):
+				mutate_active(active + 1)
+				inactive_apps.remove(process_info.ia_iterator)
+			return process_info
+	return null
+
+
 # Preconditions:
 #   !group.detached
 #   !group.spawning
@@ -478,12 +557,15 @@ private function spawner_thread_callback(group, options):
 				if (!group.detached):
 					group.spawning = false
 					group.spawner_thread = null
-					# We want to report the error to the browser
-					# but there's no way to do this in this thread, so
-					# we just remove the entire group and have the next
-					# get() call spawn the process and display the
-					# error.
-					remove_group_without_lock(group)
+					if (options.ignore_spawn_errors):
+						group.bad = true
+					else:
+						# We want to report the error to the browser
+						# but there's no way to do this in this thread, so
+						# we just remove the entire group and have the next
+						# get() call spawn the process and display the
+						# error.
+						remove_group_without_lock(group)
 				return
 		
 		lock.synchronize:
@@ -563,6 +645,7 @@ callback session_has_been_closed(session, process_info):
 		else:
 			process_info.last_used = current_time()
 			process_info.sessions--
+			process_info.sticky_session_id = session.sticky_session_id
 			if (process_info.sessions == 0):
 				processes.move_to_front(process_info.iterator)
 				process_info.ia_iterator = inactive_apps.add_to_back(process_info)
@@ -603,7 +686,7 @@ thread cleaner:
 				if (now - process_info.last_used > MAX_IDLE_TIME):
 					process = process_info.process
 					group = groups[process_info.group_name]
-					if (group.size > group.min_processes):
+					if (group.size > group.min_processes) && (!group.bad):
 						processes = group.processes
 						processes.remove(process_info.iterator)
 						process_info.detached = true
@@ -613,3 +696,96 @@ thread cleaner:
 						if processes.empty():
 							detach_group_without_lock(group)
 
+
+# Thread for asynchronously restarting groups. Each group restarts a single process at a time.
+# There may be multiple restarter threads.
+thread restarter:
+	lock.synchronize:
+		while true:
+			# The idea is as follows:
+			# Iterate through each group that needs to be restarted.
+			# For each process in such a group, first spawn a new process
+			# outside the critical section, then inside the critical section
+			# swap the old process with the newly spawned one.
+			
+			while (groups_to_restart.empty())
+			  and !(application pool is being destroyed)
+			  and !(thread interrupted):
+				Wait until new_group_to_restart is signalled.
+			if (application pool is being destroyed) or (thread interrupted):
+				return
+			
+			# For all groups that might require restarting...
+			while !groups_to_restart.empty():
+				group = grab a random item in groups_to_restart
+				
+				# ...restart all processes in the group that need to be.
+				while !group.detached &&
+				(select process_info in group.processes for which
+				 process_info.restart_time < group.restart_time):
+					app_root = process_info.process.app_root
+					
+					# Update start_time so that other restart threads
+					# don't operate on this process_info too.
+					process_info.restart_time = group.restart_time
+					
+					lock.unlock
+					try:
+						new_process = spawn(app_root, group.pool_options)
+					on exception:
+						new_process = nil
+					lock.lock
+					
+					if (application pool is being destroyed) or (thread interrupted):
+						return
+					else if (process_info.detached):
+						continue
+					else if (new_process == nil):
+						# We were unable to spawn a process. Maybe there's a
+						# syntax error in the app or the database is down or
+						# whatever.
+						if group.pool_options.ignore_spawn_errors:
+							# Ignore the error, but update all the process
+							# restart timestamps so that other restarter
+							# threads don't bother until the next
+							# restart.txt update.
+							for all process_info pi in group.processes:
+								pi.restart_time = current_time()
+							# Mark the group as 'bad' so that existing
+							# processes won't be cleaned until next
+							# restart.
+							group.bad = true
+						else:
+							# We want to report the error to the browser
+							# but there's no way to do this in this thread, so
+							# we just remove the entire group and have the next
+							# get() call spawn the process and display the
+							# error.
+							detach_group_without_lock(group)
+					else:
+						# We call mutate_count() twice here in order
+						# to notify the right condition variables.
+						
+						processes = group.processes
+						process_info.detached = true
+						processes.remove(process_info.iterator)
+						if (process_info.sessions == 0):
+							inactive_apps.remove(process_info.ia_iterator)
+						else:
+							mutate_active(active - 1)
+						mutate_count(count - 1)
+						
+						process_info = new ProcessInfo
+						process_info.process = process
+						process_info.group_name = group.name
+						process_info.iterator =
+							group.processes.add_to_front(process_info)
+						process_info.ia_iterator =
+							inactive_apps.add_to_back(process_info)
+						mutate_count(count + 1)
+				groups_to_restart.remove(group)
+			
+			# Invariant at this point:
+			# groups_to_restart.empty()
+			# for all process_info in this pool:
+			#    process_info.start_time >= group.restart_time

@@ -579,6 +579,7 @@ end
 	desc "Clean all compiled test files"
 	task 'test:clean' do
 		sh("rm -rf test/oxt/oxt_test_main test/oxt/*.o test/cxx/CxxTestMain test/cxx/*.o")
+		sh("rm -f test/stub/allocate_memory")
 	end
 	
 	
@@ -807,7 +808,7 @@ end
 	### Ruby components tests ###
 	
 	desc "Run unit tests for the Ruby libraries"
-	task 'test:ruby' => [:native_support, 'agents/PassengerLoggingAgent'] do
+	task 'test:ruby' => [:native_support, 'agents/PassengerLoggingAgent', 'test/stub/allocate_memory'] do
 		if PlatformInfo.rspec.nil?
 			abort "RSpec is not installed for Ruby interpreter '#{PlatformInfo::RUBY}'. Please install it."
 		else
@@ -839,7 +840,7 @@ end
 	end
 	
 	desc "Run Apache 2 integration tests"
-	task 'test:integration:apache2' => [:apache2, :native_support] do
+	task 'test:integration:apache2' => [:apache2, :native_support, 'test/stub/allocate_memory'] do
 		if PlatformInfo.rspec.nil?
 			abort "RSpec is not installed for Ruby interpreter '#{PlatformInfo::RUBY}'. Please install it."
 		else
@@ -847,6 +848,10 @@ end
 				ruby "#{PlatformInfo.rspec} -c -f s integration_tests/apache2_tests.rb"
 			end
 		end
+	end
+	
+	file 'test/stub/allocate_memory' => 'test/stub/allocate_memory.c' do
+		create_executable('test/stub/allocate_memory', 'test/stub/allocate_memory.c')
 	end
 	
 	desc "Run Nginx integration tests"
@@ -947,7 +952,7 @@ spec = Gem::Specification.new do |s|
 	s.platform = Gem::Platform::RUBY
 	s.homepage = "http://www.modrails.com/"
 	s.summary = "Easy and robust Ruby web application deployment"
-	s.name = "passenger"
+	s.name = "passenger-enterprise-server"
 	s.version = VERSION_STRING
 	s.rubyforge_project = "passenger"
 	s.author = "Phusion - http://www.phusion.nl/"

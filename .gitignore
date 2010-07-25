@@ -34,6 +34,7 @@ test/config.yml
 test/coverage
 test/cxx/CxxTestMain
 test/oxt/oxt_test_main
+test/stub/allocate_memory
 test/stub/apache2/*.log
 test/stub/apache2/*.pid
 test/stub/apache2/httpd.conf

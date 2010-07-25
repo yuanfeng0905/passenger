@@ -625,7 +625,11 @@ private:
 					DEFAULT_BACKEND_ACCOUNT_RIGHTS,
 					false,
 					config->analyticsEnabled(),
-					log->isNull() ? AnalyticsLogPtr() : log
+					log->isNull() ? AnalyticsLogPtr() : log,
+					config->getMaxInstances(),
+					config->getMemoryLimit(),
+					config->useRollingRestarts(),
+					!config->showFriendlyErrorPages()
 				);
 				options.environmentVariables = ptr(new EnvironmentVariablesStringListCreator(r));
 				
@@ -938,6 +942,13 @@ private:
 		} else {
 			addHeader(headers, "SCRIPT_NAME", baseURI);
 			addHeader(headers, "PATH_INFO", r->uri + strlen(baseURI));
+		}
+		
+		// Phusion Passenger-specific variables.
+		if (config->getMaxRequestTime() > 0) {
+			addHeader(headers, "PASSENGER_MAX_REQUEST_TIME",
+				apr_psprintf(r->pool, "%lu", config->getMaxRequestTime())
+			);
 		}
 		
 		// Set HTTP headers.

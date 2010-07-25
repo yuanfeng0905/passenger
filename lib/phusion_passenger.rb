@@ -15,6 +15,8 @@ module PhusionPassenger
 	PREFERRED_PCRE_VERSION  = '8.02'
 	STANDALONE_INTERFACE_VERSION  = 1
 	
+	ENTERPRISE_SERVER = true
+	
 	
 	###### Directories ######
 	# Don't forget to modify ext/common/ResourceLocator.h too.
@@ -30,11 +32,11 @@ module PhusionPassenger
 		return @natively_packaged
 	end
 	
-	NATIVELY_PACKAGED_SOURCE_ROOT        = "/usr/share/phusion-passenger/source"
-	NATIVELY_PACKAGED_NATIVE_SUPPORT_DIR = "/usr/lib/phusion-passenger/native_support/#{VERSION_STRING}"
-	NATIVELY_PACKAGED_DOCDIR             = "/usr/share/doc/phusion-passenger"
-	NATIVELY_PACKAGED_AGENTS_DIR         = "/usr/lib/phusion-passenger/agents"
-	NATIVELY_PACKAGED_HELPER_SCRIPTS_DIR = "/usr/share/phusion-passenger/helper-scripts"
+	NATIVELY_PACKAGED_SOURCE_ROOT        = "/usr/share/phusion-passenger-enterprise/source"
+	NATIVELY_PACKAGED_NATIVE_SUPPORT_DIR = "/usr/lib/phusion-passenger-enterprise/native_support/#{VERSION_STRING}"
+	NATIVELY_PACKAGED_DOCDIR             = "/usr/share/doc/phusion-passenger-enterprise"
+	NATIVELY_PACKAGED_AGENTS_DIR         = "/usr/lib/phusion-passenger-enterprise/agents"
+	NATIVELY_PACKAGED_HELPER_SCRIPTS_DIR = "/usr/share/phusion-passenger-enterprise/helper-scripts"
 	NATIVELY_PACKAGED_APACHE2_MODULE     = "/usr/lib/apache2/modules/mod_passenger.so"
 	
 	# Directory containing the Phusion Passenger Ruby libraries.
@@ -44,18 +46,18 @@ module PhusionPassenger
 	TEMPLATES_DIR  = File.join(LIBDIR, "phusion_passenger", "templates")
 	
 	# Subdirectory under $HOME to use for storing resource files.
-	LOCAL_DIR      = ".passenger"
+	LOCAL_DIR      = ".passenger-enterprise"
 	
 	# Directories in which to look for plugins.
 	PLUGIN_DIRS    = ["/usr/share/phusion-passenger/plugins",
 		"/usr/local/share/phusion-passenger/plugins",
-		"~/#{LOCAL_DIR}/plugins"]
+		"~/.passenger/plugins"]
 	
 	# Directory under $HOME for storing Phusion Passenger Standalone resource files.
 	LOCAL_STANDALONE_RESOURCE_DIR  = File.join(LOCAL_DIR, "standalone")
 	
 	# System-wide directory for storing Phusion Passenger Standalone resource files.
-	GLOBAL_STANDALONE_RESOURCE_DIR = "/var/lib/passenger-standalone"
+	GLOBAL_STANDALONE_RESOURCE_DIR = "/var/lib/passenger-enterprise-standalone"
 	
 	if !natively_packaged?
 		# Top directory of the Phusion Passenger source code.
@@ -87,7 +89,7 @@ module PhusionPassenger
 	
 	###### Other resource locations ######
 	
-	STANDALONE_BINARIES_URL_ROOT  = "http://standalone-binaries.modrails.com"
+	STANDALONE_BINARIES_URL_ROOT  = nil
 	
 	
 	if $LOAD_PATH.first != LIBDIR

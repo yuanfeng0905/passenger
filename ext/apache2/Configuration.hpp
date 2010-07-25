@@ -178,6 +178,40 @@ struct DirConfig {
 	Threeway analytics;
 	
 	/*************************************/
+	
+	/*
+	 * The maximum number of instances that may be spawned
+	 * for the corresponding application.
+	 */
+	unsigned long maxInstances;
+	
+	/** Indicates whether the maxInstances option was explicitly specified
+	 * in the directory configuration. */
+	bool maxInstancesSpecified;
+	
+	/**
+	 * The maximum amount of time (in seconds) that the current application
+	 * may spend on a request.
+	 */
+	unsigned long maxRequestTime;
+	
+	/** Indicates whether the maxRequestTime option was explicitly.
+	 * specified in the directory configuration. */
+	bool maxRequestTimeSpecified;
+	
+	/**
+	 * The maximum amount of memory (in MB) the spawned application may use.
+	 * A value of 0 means unlimited.
+	 */
+	unsigned long memoryLimit;
+	
+	/** Indicates whether the memoryLimit option was explicitly specified
+	 * in the directory configuration. */
+	bool memoryLimitSpecified;
+	
+	/** Whether rolling restarts should be used. */
+	Threeway rollingRestarts;
+	
 	/*************************************/
 	
 	bool isEnabled() const {
@@ -322,6 +356,34 @@ struct DirConfig {
 	}
 	
 	/*************************************/
+	
+	unsigned long getMaxInstances() const {
+		if (maxInstancesSpecified) {
+			return maxInstances;
+		} else {
+			return 0;
+		}
+	}
+	
+	unsigned long getMaxRequestTime() const {
+		if (maxRequestTimeSpecified) {
+			return maxRequestTime;
+		} else {
+			return 0;
+		}
+	}
+	
+	unsigned long getMemoryLimit() const {
+		if (memoryLimitSpecified) {
+			return memoryLimit;
+		} else {
+			return 0;
+		}
+	}
+	
+	bool useRollingRestarts() const {
+		return rollingRestarts == ENABLED;
+	}
 };
 
 

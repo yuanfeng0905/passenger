@@ -19,15 +19,19 @@
 #include <sys/ioctl.h>
 #include <sys/un.h>
 #include <sys/socket.h>
+#include <sys/time.h>
+#include <sys/select.h>
 #include <sys/uio.h>
 #include <sys/time.h>
 #include <sys/resource.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <signal.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <errno.h>
+#include <pthread.h>
 #include <limits.h>
 #include <grp.h>
 #include <signal.h>
@@ -66,6 +70,7 @@ static VALUE S_ProcessTimes;
 #ifdef HAVE_KQUEUE
 	static VALUE cFileSystemWatcher;
 #endif
+static VALUE cDeadlineTimer;
 
 /*
  * call-seq: send_fd(socket_fd, fd_to_send)
@@ -977,6 +982,210 @@ fs_watcher_close(VALUE self) {
 
 /***************************/
 
+typedef struct {
+	pthread_t thr;
+	int channel[2];
+} DeadlineTimer;
+
+#define THREAD_STACK_SIZE (128 * 1024)
+
+static void deadline_timer_free(void *p);
+static void *deadline_timer_thread_main(void *p);
+
+static VALUE
+deadline_timer_new(VALUE klass) {
+	DeadlineTimer *dt;
+	VALUE result;
+	pthread_attr_t attr;
+	int ret;
+	unsigned int min_stack_size;
+	
+	dt = (DeadlineTimer *) malloc(sizeof(DeadlineTimer));
+	if (dt == NULL) {
+		rb_raise(rb_eNoMemError, "Cannot allocate memory.");
+		return Qnil;
+	}
+	
+	if (pipe(dt->channel) != 0) {
+		int e = errno;
+		free(dt);
+		errno = e;
+		rb_sys_fail("Cannot create a pipe");
+		return Qnil;
+	}
+	
+	ret = pthread_attr_init(&attr);
+	if (ret != 0) {
+		close(dt->channel[0]);
+		close(dt->channel[1]);
+		free(dt);
+		rb_raise(rb_eRuntimeError, "Cannot initialize thread attributes.");
+		return Qnil;
+	}
+	#ifdef PTHREAD_STACK_MIN
+		min_stack_size = PTHREAD_STACK_MIN;
+	#else
+		min_stack_size = 64 * 1024;
+	#endif
+	if (THREAD_STACK_SIZE < min_stack_size) {
+		pthread_attr_setstacksize(&attr, min_stack_size);
+	} else {
+		pthread_attr_setstacksize(&attr, THREAD_STACK_SIZE);
+	}
+	
+	ret = pthread_create(&dt->thr, NULL, deadline_timer_thread_main, dt);
+	pthread_attr_destroy(&attr);
+	if (ret != 0) {
+		close(dt->channel[0]);
+		close(dt->channel[1]);
+		free(dt);
+		errno = ret;
+		rb_sys_fail("Cannot create a new thread");
+		return Qnil;
+	}
+	
+	result = Data_Wrap_Struct(klass, 0, deadline_timer_free, dt);
+	rb_obj_call_init(result, 0, NULL);
+	return result;
+}
+
+static void *
+deadline_timer_thread_main(void *p) {
+	DeadlineTimer *dt = (DeadlineTimer *) p;
+	fd_set set;
+	int timeout, ret;
+	struct timeval tv;
+	ssize_t size;
+	char tmp;
+	int done = 0;
+	
+	while (!done) {
+		do {
+			size = read(dt->channel[0], &timeout, sizeof(timeout));
+		} while (size == -1 && errno == EINTR);
+		if (size == -1) {
+			ret = errno;
+			fprintf(stderr, "*** Passenger::DeadlineTimer thread: cannot read from channel: %s (%d)\n",
+				strerror(ret), ret);
+			fflush(stderr);
+			done = 1;
+		} else if (size == 0) {
+			done = 1;
+		} else {
+			FD_ZERO(&set);
+			FD_SET(dt->channel[0], &set);
+			tv.tv_sec = timeout;
+			tv.tv_usec = 0;
+			
+			do {
+				ret = select(dt->channel[0] + 1, &set, NULL, NULL, &tv);
+			} while (ret == -1 && errno == EINTR);
+			if (ret == 0) {
+				fprintf(stderr,
+					"*** Passenger: Killing process %ld because "
+					"its deadline of %d seconds has expired.\n",
+					(long) getpid(),
+					timeout);
+				fflush(stderr);
+				do {
+					ret = kill(getpid(), SIGKILL);
+				} while (ret == -1 && errno == EINTR);
+			} else if (ret == -1) {
+				ret = errno;
+				fprintf(stderr, "*** Passenger::DeadlineTimer "
+					"thread: cannot call select() on channel: %s (%d)\n",
+					strerror(ret), ret);
+				fflush(stderr);
+				done = 1;
+			} else {
+				// Read single byte and discard it.
+				do {
+					size = read(dt->channel[0], &tmp, 1);
+				} while (size == -1 && errno == EINTR);
+			}
+		}
+	}
+	return NULL;
+}
+
+static VALUE
+deadline_timer_init(VALUE self) {
+	/* A no-op. */
+	return Qnil;
+}
+
+static VALUE
+deadline_timer_start(VALUE self, VALUE timeout) {
+	DeadlineTimer *dt;
+	int timeout_value;
+	ssize_t size;
+	
+	Data_Get_Struct(self, DeadlineTimer, dt);
+	timeout_value = NUM2INT(timeout);
+	do {
+		size = write(dt->channel[1], &timeout_value, sizeof(timeout_value));
+	} while (size == -1 && errno == EINTR);
+	if (size == -1) {
+		rb_sys_fail("Cannot write to pipe");
+	}
+	return Qnil;
+}
+
+static VALUE
+deadline_timer_stop(VALUE self) {
+	DeadlineTimer *dt;
+	ssize_t size;
+	
+	Data_Get_Struct(self, DeadlineTimer, dt);
+	do {
+		size = write(dt->channel[1], "x", 1);
+	} while (size == -1 && errno == EINTR);
+	if (size == -1) {
+		rb_sys_fail("Cannot write to pipe");
+	}
+	return Qnil;
+}
+
+static VALUE
+deadline_timer_cleanup(VALUE self) {
+	DeadlineTimer *dt;
+	int ret;
+	
+	Data_Get_Struct(self, DeadlineTimer, dt);
+	do {
+		ret = close(dt->channel[1]);
+	} while (ret == -1 && errno == EINTR);
+	do {
+		ret = pthread_join(dt->thr, NULL);
+	} while (ret == EINTR);
+	do {
+		ret = close(dt->channel[0]);
+	} while (ret == -1 && errno == EINTR);
+	
+	dt->channel[0] = -1;
+	
+	return Qnil;
+}
+
+static void
+deadline_timer_free(void *p) {
+	DeadlineTimer *dt = (DeadlineTimer *) p;
+	int ret;
+	
+	if (dt->channel[0] != -1) {
+		do {
+			ret = close(dt->channel[1]);
+		} while (ret == -1 && errno == EINTR);
+		do {
+			ret = pthread_join(dt->thr, NULL);
+		} while (ret == EINTR);
+		do {
+			ret = close(dt->channel[0]);
+		} while (ret == -1 && errno == EINTR);
+	}
+	free(dt);
+}
+
 void
 Init_native_support() {
 	struct sockaddr_un addr;
@@ -1018,4 +1227,30 @@ Init_native_support() {
 	rb_define_const(mNativeSupport, "UNIX_PATH_MAX", INT2NUM(sizeof(addr.sun_path)));
 	/* The maximum size of the data that may be passed to #writev. */
 	rb_define_const(mNativeSupport, "SSIZE_MAX", LL2NUM(SSIZE_MAX));
+	
+	/*
+	 * A deadline timer is used to abort the current process if an operation
+	 * takes too much time. Example usage:
+	 *
+	 *   timer = Passenger::DeadlineTimer.new
+	 *   timer.start(5)   # Set deadline to 5 seconds.
+	 *   begin
+	 *      # If timer.stop isn't called within 5 seconds, then the
+	 *      # current process will be killed by SIGKILL.
+	 *      do_something
+	 *   ensure
+	 *      timer.stop
+	 *   end
+	 *   timer.cleanup
+	 *
+	 * Be very careful with using this class. It does not perform a lot
+	 * of error checking. A #start call *must* be followed by a #stop call.
+	 * #cleanup *must* be called then the timer is no longer needed.
+	 */
+	cDeadlineTimer = rb_define_class_under(mPassenger, "DeadlineTimer", rb_cObject);
+	rb_define_singleton_method(cDeadlineTimer, "new", deadline_timer_new, 0);
+	rb_define_method(cDeadlineTimer, "initialize", deadline_timer_init, 0);
+	rb_define_method(cDeadlineTimer, "start", deadline_timer_start, 1);
+	rb_define_method(cDeadlineTimer, "stop", deadline_timer_stop, 0);
+	rb_define_method(cDeadlineTimer, "cleanup", deadline_timer_cleanup, 0);
 }

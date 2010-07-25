@@ -21,13 +21,16 @@ module Packaging
 		'passenger-install-apache2-module',
 		'passenger-install-nginx-module',
 		'passenger-config',
-		'passenger-stress-test'
+		'passenger-stress-test',
+		'passenger-find-frozen-apps',
+		'passenger-show-backtrace'
 	]
 	
 	SUPER_USER_EXECUTABLES = [
 		'passenger-status',
 		'passenger-memory-stats',
-		'passenger-make-enterprisey'
+		'passenger-make-enterprisey',
+		'passenger-irb'
 	]
 	
 	# A list of globs which match all files that should be packaged

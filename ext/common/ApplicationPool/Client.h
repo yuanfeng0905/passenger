@@ -108,6 +108,7 @@ protected:
 		string socketType;
 		string socketName;
 		int id;
+		string stickySessionId;
 		
 		/** The session's socket connection to the process. */
 		int fd;
@@ -220,6 +221,23 @@ protected:
 		
 		virtual pid_t getPid() const {
 			return pid;
+		}
+		
+		virtual string getStickySessionId() const {
+			return stickySessionId;
+		}
+		
+		virtual void setStickySessionId(const string &stickySessionId) {
+			TRACE_POINT();
+			if (data->connected()) {
+				data->channel.write("setStickySessionId",
+					toString(id).c_str(),
+					stickySessionId.c_str(),
+					NULL);
+				this->stickySessionId = stickySessionId;
+			} else {
+				throw IOException("Not connected.");
+			}
 		}
 	};
 	

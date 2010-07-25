@@ -208,6 +208,39 @@ struct PoolOptions {
 	/*********************************/
 	
 	/**
+	 * The maximum number of application instances that may be spawned
+	 * for this app root. This option only has effect if it's lower than
+	 * the application pool's maxPerApp option and lower than its pool size.
+	 *
+	 * A value of 0 (the default) means unspecified, and has no effect.
+	 */
+	unsigned int maxInstances;
+	
+	/**
+	 * The maximum amount of memory (in MB) the spawned application may use.
+	 * A value of 0 means unlimited.
+	 */
+	unsigned long memoryLimit;
+	
+	/**
+	 * Whether rolling restarting should be used. Defaults to false.
+	 */
+	bool rollingRestart;
+	
+	/**
+	 * Whether to ignore spawn errors when possible by reusing existing
+	 * processes. Defaults to false.
+	 */
+	bool ignoreSpawnErrors;
+	
+	/**
+	 * Attempt to checkout only the process that has the given sticky
+	 * session ID. Set to the empty string (the default) if you do not
+	 * wish to use sticky sessions.
+	 */
+	string stickySessionId;
+	
+	/**
 	 * Creates a new PoolOptions object with the default values filled in.
 	 * One must still set appRoot manually, after having used this constructor.
 	 */
@@ -229,6 +262,11 @@ struct PoolOptions {
 		printExceptions         = true;
 		
 		/*********************************/
+		
+		maxInstances   = 0;
+		memoryLimit    = 0;
+		rollingRestart = false;
+		ignoreSpawnErrors = false;
 	}
 	
 	/**
@@ -254,7 +292,12 @@ struct PoolOptions {
 		Account::Rights rights       = DEFAULT_BACKEND_ACCOUNT_RIGHTS,
 		bool debugger                = false,
 		bool analytics               = false,
-		const AnalyticsLogPtr &log   = AnalyticsLogPtr()
+		const AnalyticsLogPtr &log   = AnalyticsLogPtr(),
+		unsigned int maxInstances    = 0,
+		unsigned long memoryLimit    = 0,
+		bool rollingRestart          = false,
+		bool ignoreSpawnErrors       = false,
+		string stickySessionId       = ""
 	) {
 		this->appRoot                 = appRoot;
 		this->appGroupName            = appGroupName;
@@ -281,6 +324,12 @@ struct PoolOptions {
 		this->printExceptions         = true;
 		
 		/*********************************/
+		
+		this->maxInstances   = maxInstances;
+		this->memoryLimit    = memoryLimit;
+		this->rollingRestart = rollingRestart;
+		this->ignoreSpawnErrors = ignoreSpawnErrors;
+		this->stickySessionId = stickySessionId;
 	}
 	
 	/**
@@ -351,6 +400,12 @@ struct PoolOptions {
 		offset += 2;
 		
 		/*********************************/
+		
+		maxInstances   = atoi(vec[startIndex + offset]);             offset += 2;
+		memoryLimit    = atol(vec[startIndex + offset]);             offset += 2;
+		rollingRestart = vec[startIndex + offset] == "true";         offset += 2;
+		ignoreSpawnErrors = vec[startIndex + offset] == "true";      offset += 2;
+		stickySessionId = vec[startIndex + offset];                  offset += 2;
 	}
 	
 	/**
@@ -363,8 +418,8 @@ struct PoolOptions {
 	 * @throws Anything thrown by environmentVariables->getItems().
 	 */
 	void toVector(vector<string> &vec, bool storeEnvVars = true) const {
-		if (vec.capacity() < vec.size() + 40) {
-			vec.reserve(vec.size() + 40);
+		if (vec.capacity() < vec.size() + 44) {
+			vec.reserve(vec.size() + 44);
 		}
 		appendKeyValue (vec, "app_root",           appRoot);
 		appendKeyValue (vec, "app_group_name",     getAppGroupName());
@@ -403,6 +458,12 @@ struct PoolOptions {
 		}
 		
 		/*********************************/
+		
+		appendKeyValue3(vec, "max_instances", maxInstances);
+		appendKeyValue3(vec, "memory_limit",  memoryLimit);
+		appendKeyValue (vec, "rolling_restart", rollingRestart ? "true" : "false");
+		appendKeyValue (vec, "ignore_spawn_errors", ignoreSpawnErrors ? "true" : "false");
+		appendKeyValue (vec, "sticky_session_id", stickySessionId);
 	}
 	
 	PoolOptions own() const {
