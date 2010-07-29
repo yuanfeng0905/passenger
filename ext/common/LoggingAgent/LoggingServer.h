@@ -25,6 +25,7 @@
 #include <ctime>
 
 #include "RemoteSender.h"
+#include "ChangeNotifier.h"
 #include "../EventedMessageServer.h"
 #include "../MessageReadersWriters.h"
 #include "../StaticString.h"
@@ -271,9 +272,15 @@ private:
 	typedef shared_ptr<Transaction> TransactionPtr;
 	typedef map<string, LogSinkPtr> LogSinkCache;
 	
-	struct Client: public EventedMessageServer::Client {
+	enum ClientType {
+		UNINITIALIZED,
+		LOGGER,
+		WATCHER
+	};
+	
+	struct Client: public EventedMessageClient {
 		string nodeName;
-		bool initialized;
+		ClientType type;
 		char nodeId[MD5_HEX_SIZE];
 		/**
 		 * Set of transaction IDs opened by this client.
@@ -284,10 +291,10 @@ private:
 		TransactionPtr currentTransaction;
 		string currentTimestamp;
 		
-		Client(LoggingServer *server)
-			: EventedMessageServer::Client(server)
+		Client(struct ev_loop *loop, const FileDescriptor &fd)
+			: EventedMessageClient(loop, fd)
 		{
-			initialized = false;
+			type = UNINITIALIZED;
 			dataReader.setMaxSize(1024 * 128);
 		}
 	};
@@ -300,6 +307,7 @@ private:
 	string dirPermissions;
 	mode_t filePermissions;
 	RemoteSender remoteSender;
+	ChangeNotifier changeNotifier;
 	ev::timer garbageCollectionTimer;
 	ev::timer logFlushingTimer;
 	ev::timer exitTimer;
@@ -308,28 +316,27 @@ private:
 	RandomGenerator randomGenerator;
 	bool exitRequested;
 	
-	void sendErrorToClient(const EventedServer::ClientPtr &client, const string &message) {
-		writeArrayMessage(client, "error", message.c_str(), NULL);
+	void sendErrorToClient(Client *client, const string &message) {
+		client->writeArrayMessage("error", message.c_str(), NULL);
 		logError(client, message);
 	}
 	
-	bool expectingArgumentsCount(const EventedMessageServer::ClientPtr &client, const vector<StaticString> &args, unsigned int size) {
+	bool expectingArgumentsCount(Client *client, const vector<StaticString> &args, unsigned int size) {
 		if (args.size() == size) {
 			return true;
 		} else {
 			sendErrorToClient(client, "Invalid number of arguments");
-			disconnect(client);
+			client->disconnect();
 			return false;
 		}
 	}
 	
-	bool expectingInitialized(const EventedMessageServer::ClientPtr &eclient) {
-		Client *client = static_cast<Client *>(eclient.get());
-		if (client->initialized) {
+	bool expectingLoggerType(Client *client) {
+		if (client->type == LOGGER) {
 			return true;
 		} else {
-			sendErrorToClient(eclient, "Not yet initialized");
-			disconnect(eclient);
+			sendErrorToClient(client, "Client not initialized as logger");
+			client->disconnect();
 			return false;
 		}
 	}
@@ -517,21 +524,20 @@ private:
 		}
 	}
 	
-	bool writeLogEntry(const EventedServer::ClientPtr &eclient,
-		const TransactionPtr &transaction, const StaticString &timestamp,
-		const StaticString &data)
+	bool writeLogEntry(Client *client, const TransactionPtr &transaction,
+		const StaticString &timestamp, const StaticString &data)
 	{
 		if (OXT_UNLIKELY( !validLogContent(data) )) {
-			if (eclient != NULL) {
-				sendErrorToClient(eclient, "Log entry data contains an invalid character.");
-				disconnect(eclient);
+			if (client != NULL) {
+				sendErrorToClient(client, "Log entry data contains an invalid character.");
+				client->disconnect();
 			}
 			return false;
 		}
 		if (OXT_UNLIKELY( !validTimestamp(timestamp) )) {
-			if (eclient != NULL) {
-				sendErrorToClient(eclient, "Log entry timestamp is invalid.");
-				disconnect(eclient);
+			if (client != NULL) {
+				sendErrorToClient(client, "Log entry timestamp is invalid.");
+				client->disconnect();
 			}
 			return false;
 		}
@@ -559,31 +565,47 @@ private:
 		return true;
 	}
 	
-	void writeDetachEntry(const EventedServer::ClientPtr &eclient,
-		const TransactionPtr &transaction)
-	{
+	void writeDetachEntry(Client *client, const TransactionPtr &transaction) {
 		char timestamp[2 * sizeof(unsigned long long) + 1];
 		integerToHexatri<unsigned long long>(SystemTime::getUsec(), timestamp);
-		writeDetachEntry(eclient, transaction, timestamp);
+		writeDetachEntry(client, transaction, timestamp);
 	}
 	
-	void writeDetachEntry(const EventedServer::ClientPtr &eclient,
-		const TransactionPtr &transaction, const StaticString &timestamp)
+	void writeDetachEntry(Client *client, const TransactionPtr &transaction,
+		const StaticString &timestamp)
 	{
-		writeLogEntry(eclient, transaction, timestamp, "DETACH");
+		writeLogEntry(client, transaction, timestamp, "DETACH");
 	}
 	
-	bool requireRights(const EventedMessageServer::ClientPtr &eclient, Account::Rights rights) {
-		Client *client = (Client *) eclient.get();
+	bool requireRights(Client *client, Account::Rights rights) {
 		if (client->messageServer.account->hasRights(rights)) {
 			return true;
 		} else {
 			P_TRACE(2, "Security error: insufficient rights to execute this command.");
-			writeArrayMessage(eclient, "SecurityException",
+			client->writeArrayMessage("SecurityException",
 				"Insufficient rights to execute this command.",
 				NULL);
-			disconnect(eclient);
+			client->disconnect();
 			return false;
+		}
+	}
+	
+	string getLastPos(const StaticString &groupName, const StaticString &nodeName,
+		const StaticString &category)
+	{
+		// TODO
+		return string();
+	}
+	
+	static void pendingDataFlushed(EventedClient *_client) {
+		Client *client = (Client *) _client;
+		LoggingServer *self = (LoggingServer *) client->userData;
+		
+		if (OXT_UNLIKELY( client->type != WATCHER )) {
+			P_WARN("BUG: pendingDataFlushed() called even though client type is not WATCHER.");
+			client->disconnect(true);
+		} else {
+			self->changeNotifier.addClient(client->detach());
 		}
 	}
 	
@@ -635,16 +657,16 @@ private:
 	}
 	
 protected:
-	virtual EventedServer::ClientPtr createClient() {
-		return ClientPtr(new Client(this));
+	virtual EventedClient *createClient(const FileDescriptor &fd) {
+		return new Client(getLoop(), fd);
 	}
 	
-	virtual bool onMessageReceived(const EventedMessageServer::ClientPtr &eclient, const vector<StaticString> &args) {
-		Client *client = static_cast<Client *>(eclient.get());
+	virtual bool onMessageReceived(EventedMessageClient *_client, const vector<StaticString> &args) {
+		Client *client = (Client *) _client;
 		
 		if (args[0] == "log") {
-			if (OXT_UNLIKELY( !expectingArgumentsCount(eclient, args, 3)
-			               || !expectingInitialized(eclient) )) {
+			if (OXT_UNLIKELY( !expectingArgumentsCount(client, args, 3)
+			               || !expectingLoggerType(client) )) {
 				return true;
 			}
 			
@@ -653,17 +675,14 @@ protected:
 			
 			TransactionMap::iterator it = transactions.find(txnId);
 			if (OXT_UNLIKELY( it == transactions.end() )) {
-				writeArrayMessage(eclient, "error",
-					"Cannot log data: transaction does not exist",
-					NULL);
-				disconnect(eclient);
+				sendErrorToClient(client, "Cannot log data: transaction does not exist");
+				client->disconnect();
 			} else {
 				set<string>::iterator sit = client->openTransactions.find(txnId);
 				if (OXT_UNLIKELY( sit == client->openTransactions.end() )) {
-					writeArrayMessage(eclient, "error",
-						"Cannot log data: transaction not opened in this connection",
-						NULL);
-					disconnect(eclient);
+					sendErrorToClient(client,
+						"Cannot log data: transaction not opened in this connection");
+					client->disconnect();
 					return true;
 				}
 				// Expecting the log data in a scalar message.
@@ -673,8 +692,8 @@ protected:
 			}
 			
 		} else if (args[0] == "openTransaction") {
-			if (OXT_UNLIKELY( !expectingArgumentsCount(eclient, args, 7)
-			               || !expectingInitialized(eclient) )) {
+			if (OXT_UNLIKELY( !expectingArgumentsCount(client, args, 7)
+			               || !expectingLoggerType(client) )) {
 				return true;
 			}
 			
@@ -686,29 +705,29 @@ protected:
 			bool         crashProtect    = args[6] == "true";
 			
 			if (OXT_UNLIKELY( !validTxnId(txnId) )) {
-				sendErrorToClient(eclient, "Invalid transaction ID format");
-				disconnect(eclient);
+				sendErrorToClient(client, "Invalid transaction ID format");
+				client->disconnect();
 				return true;
 			}
 			if (!unionStationKey.empty()
 			 && OXT_UNLIKELY( !validUnionStationKey(unionStationKey) )) {
-				sendErrorToClient(eclient, "Invalid Union Station key format");
-				disconnect(eclient);
+				sendErrorToClient(client, "Invalid Union Station key format");
+				client->disconnect();
 				return true;
 			}
 			if (OXT_UNLIKELY( client->openTransactions.find(txnId) !=
 				client->openTransactions.end() ))
 			{
-				sendErrorToClient(eclient, "Cannot open transaction: transaction already opened in this connection");
-				disconnect(eclient);
+				sendErrorToClient(client, "Cannot open transaction: transaction already opened in this connection");
+				client->disconnect();
 				return true;
 			}
 			
 			TransactionPtr transaction = transactions[txnId];
 			if (transaction == NULL) {
 				if (OXT_UNLIKELY( !supportedCategory(category) )) {
-					sendErrorToClient(eclient, "Unsupported category");
-					disconnect(eclient);
+					sendErrorToClient(client, "Unsupported category");
+					client->disconnect();
 					return true;
 				}
 				
@@ -733,24 +752,26 @@ protected:
 				transactions[txnId]       = transaction;
 			} else {
 				if (OXT_UNLIKELY( groupName != transaction->groupName )) {
-					sendErrorToClient(eclient, "Cannot open transaction: transaction already opened with a different group name");
-					disconnect(eclient);
+					sendErrorToClient(client,
+						"Cannot open transaction: transaction already opened with a different group name");
+					client->disconnect();
 					return true;
 				}
 				if (OXT_UNLIKELY( category != transaction->category )) {
-					sendErrorToClient(eclient, "Cannot open transaction: transaction already opened with a different category name");
-					disconnect(eclient);
+					sendErrorToClient(client,
+						"Cannot open transaction: transaction already opened with a different category name");
+					client->disconnect();
 					return true;
 				}
 			}
 			
 			client->openTransactions.insert(txnId);
 			transaction->refcount++;
-			writeLogEntry(eclient, transaction, timestamp, "ATTACH");
+			writeLogEntry(client, transaction, timestamp, "ATTACH");
 			
 		} else if (args[0] == "closeTransaction") {
-			if (OXT_UNLIKELY( !expectingArgumentsCount(eclient, args, 3)
-			               || !expectingInitialized(eclient) )) {
+			if (OXT_UNLIKELY( !expectingArgumentsCount(client, args, 3)
+			               || !expectingLoggerType(client) )) {
 				return true;
 			}
 			
@@ -759,25 +780,25 @@ protected:
 			
 			TransactionMap::iterator it = transactions.find(txnId);
 			if (OXT_UNLIKELY( it == transactions.end() )) {
-				sendErrorToClient(eclient,
+				sendErrorToClient(client,
 					"Cannot close transaction " + txnId +
 					": transaction does not exist");
-				disconnect(eclient);
+				client->disconnect();
 			} else {
 				TransactionPtr &transaction = it->second;
 				
 				set<string>::const_iterator sit = client->openTransactions.find(txnId);
 				if (OXT_UNLIKELY( sit == client->openTransactions.end() )) {
-					sendErrorToClient(eclient,
+					sendErrorToClient(client,
 						"Cannot close transaction " + txnId +
 						": transaction not opened in this connection");
-					disconnect(eclient);
+					client->disconnect();
 					return true;
 				} else {
 					client->openTransactions.erase(sit);
 				}
 				
-				writeDetachEntry(eclient, transaction, timestamp);
+				writeDetachEntry(client, transaction, timestamp);
 				transaction->refcount--;
 				if (transaction->refcount == 0) {
 					transactions.erase(it);
@@ -785,12 +806,12 @@ protected:
 			}
 		
 		} else if (args[0] == "init") {
-			if (OXT_UNLIKELY( client->initialized )) {
-				sendErrorToClient(eclient, "Already initialized");
-				disconnect(eclient);
+			if (OXT_UNLIKELY( client->type != UNINITIALIZED )) {
+				sendErrorToClient(client, "Already initialized");
+				client->disconnect();
 				return true;
 			}
-			if (OXT_UNLIKELY( !expectingArgumentsCount(eclient, args, 2) )) {
+			if (OXT_UNLIKELY( !expectingArgumentsCount(client, args, 2) )) {
 				return true;
 			}
 			
@@ -804,48 +825,65 @@ protected:
 			md5_finish(&state, digest);
 			toHex(StaticString((const char *) digest, MD5_SIZE), client->nodeId);
 			
-			client->initialized = true;
+			client->type = LOGGER;
+			
+		} else if (args[0] == "watchChanges") {
+			if (OXT_UNLIKELY( client->type != UNINITIALIZED )) {
+				sendErrorToClient(client, "This command cannot be invoked "
+					"if the 'init' command is already invoked.");
+				client->disconnect();
+				return true;
+			}
+			
+			client->type = WATCHER;
+			client->notifyReads(false);
+			discardReadData();
+			
+			// Add to the change notifier after all pending data
+			// has been written out.
+			client->onPendingDataFlushed = pendingDataFlushed;
+			client->writeArrayMessage("ok", NULL);
 			
 		} else if (args[0] == "flush") {
 			flushAllLogs(logFlushingTimer);
-			writeArrayMessage(eclient, "ok", NULL);
+			client->writeArrayMessage("ok", NULL);
 			
 		} else if (args[0] == "info") {
 			stringstream stream;
 			dump(stream);
-			writeArrayMessage(eclient, "info", stream.str().c_str(), NULL);
+			client->writeArrayMessage("info", stream.str().c_str(), NULL);
 		
 		} else if (args[0] == "exit") {
-			if (!requireRights(eclient, Account::EXIT)) {
-				disconnect(eclient);
+			if (!requireRights(client, Account::EXIT)) {
+				client->disconnect();
 				return true;
 			}
 			if (args.size() == 2 && args[1] == "immediately") {
 				ev_unloop(getLoop(), EVUNLOOP_ONE);
 			} else {
-				writeArrayMessage(eclient, "Passed security", NULL);
-				writeArrayMessage(eclient, "exit command received", NULL);
+				client->writeArrayMessage("Passed security", NULL);
+				client->writeArrayMessage("exit command received", NULL);
 				// We shut down a few seconds after the last client has exited.
 				exitRequested = true;
 			}
 			
 		} else {
-			sendErrorToClient(eclient, "Unknown command '" + args[0] + "'");
-			disconnect(eclient);
+			sendErrorToClient(client, "Unknown command '" + args[0] + "'");
+			client->disconnect();
 		}
 		
 		return true;
 	}
 	
-	virtual pair<size_t, bool> onOtherDataReceived(const EventedMessageServer::ClientPtr &_client,
+	virtual pair<size_t, bool> onOtherDataReceived(EventedMessageClient *_client,
 		const char *data, size_t size)
 	{
 		// In here we read the scalar message that's expected to come
 		// after the "log" command.
-		Client *client = static_cast<Client *>(_client.get());
+		Client *client = (Client *) _client;
 		size_t consumed = client->dataReader.feed(data, size);
 		if (client->dataReader.done()) {
-			writeLogEntry(_client,
+			writeLogEntry(client,
 				client->currentTransaction,
 				client->currentTimestamp,
 				client->dataReader.value());
@@ -857,16 +895,16 @@ protected:
 		}
 	}
 	
-	virtual void onNewClient(const EventedServer::ClientPtr &client) {
+	virtual void onNewClient(EventedClient *client) {
 		EventedMessageServer::onNewClient(client);
 		if (exitRequested) {
 			exitTimer.stop();
 		}
 	}
 	
-	virtual void onClientDisconnected(const EventedServer::ClientPtr &_client) {
+	virtual void onClientDisconnected(EventedClient *_client) {
 		EventedMessageServer::onClientDisconnected(_client);
-		Client *client = static_cast<Client *>(_client.get());
+		Client *client = (Client *) _client;
 		set<string>::const_iterator sit;
 		set<string>::const_iterator send = client->openTransactions.end();
 		
@@ -881,7 +919,7 @@ protected:
 			
 			TransactionPtr &transaction = it->second;
 			if (transaction->crashProtect) {
-				writeDetachEntry(_client, transaction);
+				writeDetachEntry(client, transaction);
 			} else {
 				transaction->discard();
 			}
@@ -912,6 +950,7 @@ public:
 		  remoteSender(unionStationServiceAddress,
 		               unionStationServicePort,
 		               unionStationServiceCert),
+		  changeNotifier(loop),
 		  garbageCollectionTimer(loop),
 		  logFlushingTimer(loop),
 		  exitTimer(loop)
@@ -920,6 +959,8 @@ public:
 		this->gid = gid;
 		dirPermissions = permissions;
 		filePermissions = parseModeString(permissions) & ~(S_IXUSR | S_IXGRP | S_IXOTH);
+		changeNotifier.getLastPos = boost::bind(&LoggingServer::getLastPos,
+			this, _1, _2, _3);
 		garbageCollectionTimer.set<LoggingServer, &LoggingServer::garbageCollect>(this);
 		garbageCollectionTimer.start(60 * 60, 60 * 60);
 		logFlushingTimer.set<LoggingServer, &LoggingServer::flushAllLogs>(this);
@@ -934,7 +975,7 @@ public:
 		for (it = transactions.begin(); it != end; it++) {
 			TransactionPtr &transaction = it->second;
 			if (transaction->crashProtect) {
-				writeDetachEntry(EventedServer::ClientPtr(), transaction);
+				writeDetachEntry(NULL, transaction);
 			} else {
 				transaction->discard();
 			}

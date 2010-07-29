@@ -42,6 +42,12 @@ public:
 	void clear() {
 		func = function<void()>();
 	}
+	
+	void runNow() {
+		function<void ()> oldFunc = func;
+		func = function<void()>();
+		oldFunc();
+	}
 };
 
 

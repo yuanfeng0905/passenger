@@ -254,6 +254,7 @@ describe "Apache 2 module" do
 			@foobar.destroy
 			@mycook2.destroy
 			@mycook3.destroy
+			@mycook4.destroy
 		end
 		
 		before :each do
@@ -261,6 +262,7 @@ describe "Apache 2 module" do
 			@foobar.reset
 			@mycook2.reset
 			@mycook3.reset
+			@mycook4.reset
 		end
 		
 		it "ignores the Rails application if RailsAutoDetect is off" do
@@ -330,81 +332,6 @@ describe "Apache 2 module" do
 			after :each do
 				# Restart Apache in order to reset the application pool's state.
 				@apache2.stop
-			end
-			
-			it "is off by default" do
-				@server = @mycook3_url_root
-				
-				# Spawn 3 application processes.
-				get('/')
-				eventually do
-					inspect_server(:processes).size == 3
-				end
-				
-				# Reserve all application pool slots.
-				threads = []
-				3.times do |i|
-					thread = Thread.new do
-						File.unlink("#{@mycook3.app_root}/#{i}.txt") rescue nil
-						get("/welcome/sleep_until_exists?name=#{i}.txt")
-					end
-					threads << thread
-				end
-				
-				# Wait until all application instances are waiting
-				# for the quit file.
-				eventually(5) do
-					File.exist?("#{@mycook3.app_root}/waiting_0.txt") &&
-					File.exist?("#{@mycook3.app_root}/waiting_1.txt") &&
-					File.exist?("#{@mycook3.app_root}/waiting_2.txt")
-				end
-				processes = inspect_server(:processes)
-				processes.should have(3).items
-				processes.each do |process|
-					process.sessions.should == 1
-				end
-				inspect_server(:global_queue_size).should == 0
-				
-				# While all slots are reserved, make two more requests.
-				first_request_done = false
-				second_request_done = false
-				thread = Thread.new do
-					get("/")
-					first_request_done = true
-				end
-				threads << thread
-				thread = Thread.new do
-					get("/")
-					second_request_done = true
-				end
-				threads << thread
-				
-				# These requests should both block.
-				eventually(5) do
-					sessions = []
-					inspect_server(:processes).each do |process|
-						sessions << process.sessions
-					end
-					sessions.sort == [1, 2, 2]
-				end
-				first_request_done.should be_false
-				second_request_done.should be_false
-				inspect_server(:global_queue_size).should == 0
-				
-				# At least one of the requests should still be blocked
-				# if one application instance frees up.
-				File.touch("#{@mycook3.app_root}/2.txt")
-				sleep 1
-				(!first_request_done || !second_request_done).should be_true
-				
-				File.touch("#{@mycook3.app_root}/0.txt")
-				File.touch("#{@mycook3.app_root}/1.txt")
-				eventually(5) do
-					first_request_done && second_request_done
-				end
-				threads.each do |thread|
-					thread.join
-				end
 			end
 			
 			it "works and is per-virtual host" do
