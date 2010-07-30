@@ -23,7 +23,9 @@
 #include <grp.h>
 #include <cstring>
 #include <ctime>
+#include <cassert>
 
+#include "DataStoreId.h"
 #include "RemoteSender.h"
 #include "ChangeNotifier.h"
 #include "../EventedMessageServer.h"
@@ -48,13 +50,44 @@ using namespace oxt;
 class LoggingServer: public EventedMessageServer {
 private:
 	static const int MAX_LOG_SINK_CACHE_SIZE = 512;
+	static const int GARBAGE_COLLECTION_TIMEOUT = 1.25 * 60 * 60;  // 1 hour 15 minutes
+	
+	struct LogSink;
+	typedef shared_ptr<LogSink> LogSinkPtr;
+	typedef map<string, LogSinkPtr> LogSinkCache;
 	
 	struct LogSink {
-		time_t lastUsed;
-		time_t lastFlushed;
+		LoggingServer *server;
 		
-		LogSink() {
-			lastUsed = time(NULL);
+		/**
+		 * Marks how many times this LogSink is currently opened, i.e. the
+		 * number of Transaction objects currently referencing this LogSink.
+		 * @invariant
+		 *    (opened == 0) == (this LogSink is in LoggingServer.inactiveLogSinks)
+		 */
+		int opened;
+		
+		/** Last time this LogSink hit an open count of 0. */
+		ev_tstamp lastUsed;
+		
+		/** Last time data was actually written to the underlying storage device. */
+		ev_tstamp lastFlushed;
+		
+		/**
+		 * This LogSink's iterator inside LoggingServer.logSinkCache.
+		 */
+		LogSinkCache::iterator cacheIterator;
+		
+		/**
+		 * This LogSink's iterator inside LoggingServer.inactiveLogSinks.
+		 * Only valid when opened == 0.
+		 */
+		list<LogSinkPtr>::iterator inactiveLogSinksIterator;
+		
+		LogSink(LoggingServer *_server) {
+			server = _server;
+			opened = 0;
+			lastUsed = ev_now(server->getLoop());
 			lastFlushed = 0;
 		}
 		
@@ -67,12 +100,11 @@ private:
 			return false;
 		}
 		
-		virtual void append(const StaticString data[], unsigned int count) = 0;
+		virtual void append(const DataStoreId &dataStoreId,
+			const StaticString &data) = 0;
 		virtual void flush() { }
-		virtual void dump(stringstream &stream) const { };
+		virtual void dump(stringstream &stream) const { }
 	};
-	
-	typedef shared_ptr<LogSink> LogSinkPtr;
 	
 	struct LogFile: public LogSink {
 		static const unsigned int BUFFER_CAPACITY = 8 * 1024;
@@ -82,8 +114,14 @@ private:
 		char buffer[BUFFER_CAPACITY];
 		unsigned int bufferSize;
 		
-		LogFile(const string &filename, mode_t filePermissions)
-			: LogSink()
+		/**
+		 * Contains every (groupName, nodeName, category) tuple for
+		 * which their data is currently buffered in this sink.
+		 */
+		set<DataStoreId> dataStoreIds;
+		
+		LogFile(LoggingServer *server, const string &filename, mode_t filePermissions)
+			: LogSink(server)
 		{
 			int ret;
 			
@@ -106,42 +144,46 @@ private:
 			flush();
 		}
 		
-		virtual void append(const StaticString data[], unsigned int count) {
-			size_t totalSize = 0;
-			unsigned int i;
+		void notifyChanges() {
+			set<DataStoreId>::const_iterator it;
+			set<DataStoreId>::const_iterator end = dataStoreIds.end();
 			
-			for (i = 0; i < count; i++) {
-				totalSize += data[i].size();
+			for (it = dataStoreIds.begin(); it != dataStoreIds.end(); it++) {
+				server->changeNotifier.changed(*it);
 			}
-			if (bufferSize + totalSize > BUFFER_CAPACITY) {
-				StaticString data2[count + 1];
-				
+			dataStoreIds.clear();
+		}
+		
+		virtual void append(const DataStoreId &dataStoreId, const StaticString &data) {
+			dataStoreIds.insert(dataStoreId);
+			if (bufferSize + data.size() > BUFFER_CAPACITY) {
+				StaticString data2[2];
 				data2[0] = StaticString(buffer, bufferSize);
-				for (i = 0; i < count; i++) {
-					data2[i + 1] = data[i];
-				}
-				lastFlushed = time(NULL);
-				gatheredWrite(fd, data2, count + 1);
+				data2[1] = data;
+				
+				gatheredWrite(fd, data2, 2);
+				lastFlushed = ev_now(server->getLoop());
 				bufferSize = 0;
+				notifyChanges();
 			} else {
-				for (i = 0; i < count; i++) {
-					memcpy(buffer + bufferSize, data[i].data(), data[i].size());
-					bufferSize += data[i].size();
-				}
+				memcpy(buffer + bufferSize, data.data(), data.size());
+				bufferSize += data.size();
 			}
 		}
 		
 		virtual void flush() {
 			if (bufferSize > 0) {
-				lastFlushed = time(NULL);
+				lastFlushed = ev_now(server->getLoop());
 				MessageChannel(fd).writeRaw(StaticString(buffer, bufferSize));
 				bufferSize = 0;
+				notifyChanges();
 			}
 		}
 		
 		virtual void dump(stringstream &stream) const {
 			stream << "   Log file: file=" << filename << ", "
-				"age = " << (lastUsed - time(NULL)) << "\n";
+				"opened=" << opened << ", "
+				"age=" << long(lastUsed - ev_now(server->getLoop())) << "\n";
 		}
 	};
 	
@@ -165,7 +207,6 @@ private:
 			4 * 64 * 1024 -
 			16 * 1024;
 		
-		LoggingServer *server;
 		string unionStationKey;
 		string nodeName;
 		string category;
@@ -174,8 +215,8 @@ private:
 		
 		RemoteSink(LoggingServer *server, const string &unionStationKey,
 			const string &nodeName, const string &category)
+			: LogSink(server)
 		{
-			this->server = server;
 			this->unionStationKey = unionStationKey;
 			this->nodeName = nodeName;
 			this->category = category;
@@ -190,35 +231,25 @@ private:
 			return true;
 		}
 		
-		virtual void append(const StaticString data[], unsigned int count) {
-			size_t totalSize = 0;
-			unsigned int i;
-			
-			for (i = 0; i < count; i++) {
-				totalSize += data[i].size();
-			}
-			if (bufferSize + totalSize > BUFFER_CAPACITY) {
-				StaticString data2[count + 1];
-				
+		virtual void append(const DataStoreId &dataStoreId, const StaticString &data) {
+			if (bufferSize + data.size() > BUFFER_CAPACITY) {
+				StaticString data2[2];
 				data2[0] = StaticString(buffer, bufferSize);
-				for (i = 0; i < count; i++) {
-					data2[i + 1] = data[i];
-				}
-				lastFlushed = time(NULL);
+				data2[1] = data;
+				
 				server->remoteSender.schedule(unionStationKey, nodeName,
-					category, data2, count + 1);
+					category, data2, 2);
+				lastFlushed = ev_now(server->getLoop());
 				bufferSize = 0;
 			} else {
-				for (i = 0; i < count; i++) {
-					memcpy(buffer + bufferSize, data[i].data(), data[i].size());
-					bufferSize += data[i].size();
-				}
+				memcpy(buffer + bufferSize, data.data(), data.size());
+				bufferSize += data.size();
 			}
 		}
 		
 		virtual void flush() {
 			if (bufferSize > 0) {
-				lastFlushed = time(NULL);
+				lastFlushed = ev_now(server->getLoop());
 				StaticString data(buffer, bufferSize);
 				server->remoteSender.schedule(unionStationKey, nodeName,
 					category, &data, 1);
@@ -231,29 +262,45 @@ private:
 				"key=" << unionStationKey << ", "
 				"node=" << nodeName << ", "
 				"category=" << category << ", "
-				"age=" << (lastUsed - time(NULL)) << "\n";
+				"opened=" << opened << ", "
+				"age=" << long(lastUsed - ev_now(server->getLoop())) << "\n";
 		}
 	};
 	
 	struct Transaction {
+		LoggingServer *server;
 		LogSinkPtr logSink;
 		string txnId;
-		string groupName;
-		string category;
+		DataStoreId dataStoreId;
 		unsigned int writeCount;
-		unsigned int refcount;
+		int refcount;
 		bool crashProtect, discarded;
 		string data;
 		
-		Transaction() {
+		Transaction(LoggingServer *server) {
+			this->server = server;
 			data.reserve(8 * 1024);
 		}
 		
 		~Transaction() {
-			if (!discarded) {
-				StaticString data = this->data;
-				logSink->append(&data, 1);
+			if (logSink != NULL) {
+				if (!discarded) {
+					logSink->append(dataStoreId, data);
+				}
+				server->closeLogSink(logSink);
 			}
+		}
+		
+		StaticString getGroupName() const {
+			return dataStoreId.getGroupName();
+		}
+		
+		StaticString getNodeName() const {
+			return dataStoreId.getNodeName();
+		}
+		
+		StaticString getCategory() const {
+			return dataStoreId.getCategory();
 		}
 		
 		void discard() {
@@ -263,14 +310,14 @@ private:
 		
 		void dump(stringstream &stream) const {
 			stream << "   Transaction " << txnId << ":\n";
-			stream << "      Group: " << groupName << "\n";
-			stream << "      Category: " << category << "\n";
+			stream << "      Group   : " << getGroupName() << "\n";
+			stream << "      Node    : " << getNodeName() << "\n";
+			stream << "      Category: " << getCategory() << "\n";
 			stream << "      Refcount: " << refcount << "\n";
 		}
 	};
 	
 	typedef shared_ptr<Transaction> TransactionPtr;
-	typedef map<string, LogSinkPtr> LogSinkCache;
 	
 	enum ClientType {
 		UNINITIALIZED,
@@ -309,10 +356,19 @@ private:
 	RemoteSender remoteSender;
 	ChangeNotifier changeNotifier;
 	ev::timer garbageCollectionTimer;
-	ev::timer logFlushingTimer;
+	ev::timer sinkFlushingTimer;
 	ev::timer exitTimer;
 	TransactionMap transactions;
 	LogSinkCache logSinkCache;
+	/**
+	 * @invariant
+	 *    inactiveLogSinks is sorted from oldest to youngest (by lastTime member).
+	 *    for all s in inactiveLogSinks:
+	 *       s.opened == 0
+	 *    inactiveLogSinks.size() == inactiveLogSinksCount
+	 */
+	list<LogSinkPtr> inactiveLogSinks;
+	int inactiveLogSinksCount;
 	RandomGenerator randomGenerator;
 	bool exitRequested;
 	
@@ -405,15 +461,17 @@ private:
 	}
 	
 	string determineFilename(const StaticString &groupName, const char *nodeId,
-		const StaticString &category, const StaticString &txnId) const
+		const StaticString &category, const StaticString &txnId = "") const
 	{
 		time_t timestamp;
 		struct tm tm;
 		char time_str[14];
 		
-		timestamp = extractTimestamp(txnId);
-		gmtime_r(&timestamp, &tm);
-		strftime(time_str, sizeof(time_str), "%Y/%m/%d/%H", &tm);
+		if (!txnId.empty()) {
+			timestamp = extractTimestamp(txnId);
+			gmtime_r(&timestamp, &tm);
+			strftime(time_str, sizeof(time_str), "%Y/%m/%d/%H", &tm);
+		}
 		
 		string filename;
 		filename.reserve(dir.size()
@@ -432,43 +490,12 @@ private:
 		filename.append(nodeId, MD5_HEX_SIZE);
 		filename.append(1, '/');
 		filename.append(category.c_str(), category.size());
-		filename.append(1, '/');
-		filename.append(time_str);
-		filename.append("/log.txt");
+		if (!txnId.empty()) {
+			filename.append(1, '/');
+			filename.append(time_str);
+			filename.append("/log.txt");
+		}
 		return filename;
-	}
-	
-	bool openLogFileWithCache(const string &filename, LogSinkPtr &theLogSink) {
-		string cacheKey = "file:" + filename;
-		LogSinkCache::iterator it = logSinkCache.find(cacheKey);
-		if (it == logSinkCache.end()) {
-			trimLogSinkCache(MAX_LOG_SINK_CACHE_SIZE - 1);
-			makeDirTree(extractDirName(filename), dirPermissions,
-				USER_NOT_GIVEN, gid);
-			LogFilePtr logFile(new LogFile(filename, filePermissions));
-			theLogSink = logSinkCache[cacheKey] = logFile;
-			return false;
-		} else {
-			theLogSink = it->second;
-			theLogSink->lastUsed = time(NULL);
-			return true;
-		}
-	}
-	
-	void trimLogSinkCache(unsigned int size) {
-		while (logSinkCache.size() > size) {
-			LogSinkCache::iterator it = logSinkCache.begin();
-			LogSinkCache::iterator end = logSinkCache.end();
-			LogSinkCache::iterator smallest_it = it;
-			
-			// Find least recently used log sink and remove it.
-			for (it++; it != end; it++) {
-				if (it->second->lastUsed < smallest_it->second->lastUsed) {
-					smallest_it = it;
-				}
-			}
-			logSinkCache.erase(smallest_it);
-		}
 	}
 	
 	void setupGroupAndNodeDir(Client *client, const StaticString &groupName) {
@@ -503,6 +530,30 @@ private:
 		}
 	}
 	
+	bool openLogFileWithCache(const string &filename, LogSinkPtr &theLogSink) {
+		string cacheKey = "file:" + filename;
+		LogSinkCache::iterator it = logSinkCache.find(cacheKey);
+		if (it == logSinkCache.end()) {
+			trimLogSinkCache(MAX_LOG_SINK_CACHE_SIZE - 1);
+			makeDirTree(extractDirName(filename), dirPermissions,
+				USER_NOT_GIVEN, gid);
+			theLogSink.reset(new LogFile(this, filename, filePermissions));
+			pair<LogSinkCache::iterator, bool> p =
+				logSinkCache.insert(make_pair(cacheKey, theLogSink));
+			theLogSink->cacheIterator = p.first;
+			theLogSink->opened = 1;
+			return false;
+		} else {
+			theLogSink = it->second;
+			theLogSink->opened++;
+			if (theLogSink->opened == 1) {
+				inactiveLogSinks.erase(theLogSink->inactiveLogSinksIterator);
+				inactiveLogSinksCount--;
+			}
+			return true;
+		}
+	}
+	
 	void openRemoteSink(const StaticString &unionStationKey, const string &nodeName,
 		const string &category, LogSinkPtr &theLogSink)
 	{
@@ -515,18 +566,60 @@ private:
 		
 		LogSinkCache::iterator it = logSinkCache.find(cacheKey);
 		if (it == logSinkCache.end()) {
-			theLogSink = ptr(new RemoteSink(this, unionStationKey,
+			trimLogSinkCache(MAX_LOG_SINK_CACHE_SIZE - 1);
+			theLogSink.reset(new RemoteSink(this, unionStationKey,
 				nodeName, category));
-			logSinkCache[cacheKey] = theLogSink;
+			pair<LogSinkCache::iterator, bool> p =
+				logSinkCache.insert(make_pair(cacheKey, theLogSink));
+			theLogSink->cacheIterator = p.first;
+			theLogSink->opened = 1;
 		} else {
 			theLogSink = it->second;
-			theLogSink->lastUsed = time(NULL);
+			theLogSink->opened++;
+			if (theLogSink->opened == 1) {
+				inactiveLogSinks.erase(theLogSink->inactiveLogSinksIterator);
+				inactiveLogSinksCount--;
+			}
+		}
+	}
+	
+	/**
+	 * 'Closes' the given log sink. It's not actually deleted from memory;
+	 * instead it's marked as inactive and cached for later use. May be
+	 * deleted later when resources are low.
+	 *
+	 * No need to call this manually. Automatically called by Transaction's
+	 * destructor.
+	 */
+	void closeLogSink(const LogSinkPtr &logSink) {
+		logSink->opened--;
+		assert(logSink->opened >= 0);
+		logSink->lastUsed = ev_now(getLoop());
+		if (logSink->opened == 0) {
+			inactiveLogSinks.push_back(logSink);
+			logSink->inactiveLogSinksIterator = inactiveLogSinks.end();
+			logSink->inactiveLogSinksIterator--;
+			inactiveLogSinksCount++;
+			trimLogSinkCache(MAX_LOG_SINK_CACHE_SIZE);
+		}
+	}
+	
+	/** Try to reduce the log sink cache size to the given size. */
+	void trimLogSinkCache(unsigned int size) {
+		while (!inactiveLogSinks.empty() && logSinkCache.size() > size) {
+			const LogSinkPtr logSink = inactiveLogSinks.front();
+			inactiveLogSinks.pop_front();
+			inactiveLogSinksCount--;
+			logSinkCache.erase(logSink->cacheIterator);
 		}
 	}
 	
 	bool writeLogEntry(Client *client, const TransactionPtr &transaction,
 		const StaticString &timestamp, const StaticString &data)
 	{
+		if (transaction->discarded) {
+			return true;
+		}
 		if (OXT_UNLIKELY( !validLogContent(data) )) {
 			if (client != NULL) {
 				sendErrorToClient(client, "Log entry data contains an invalid character.");
@@ -567,6 +660,8 @@ private:
 	
 	void writeDetachEntry(Client *client, const TransactionPtr &transaction) {
 		char timestamp[2 * sizeof(unsigned long long) + 1];
+		// Must use System::getUsec() here instead of ev_now() because the
+		// precision of the time is very important.
 		integerToHexatri<unsigned long long>(SystemTime::getUsec(), timestamp);
 		writeDetachEntry(client, transaction, timestamp);
 	}
@@ -590,11 +685,64 @@ private:
 		}
 	}
 	
-	string getLastPos(const StaticString &groupName, const StaticString &nodeName,
-		const StaticString &category)
-	{
-		// TODO
-		return string();
+	bool isDirectory(const string &dir, struct dirent *entry) const {
+		#ifdef __sun__
+			string path = dir;
+			path.append("/");
+			path.append(entry->d_name);
+			return getFileType(path) == FT_DIRECTORY;
+		#else
+			return entry->d_type == DT_DIR;
+		#endif
+	}
+	
+	bool looksLikeNumber(const char *str) const {
+		const char *current = str;
+		while (*current != '\0') {
+			char c = *current;
+			if (!(c >= '0' && c <= '9')) {
+				return false;
+			}
+			current++;
+		}
+		return true;
+	}
+	
+	bool getLastEntryInDirectory(const string &path, string &result) const {
+		DIR *dir = opendir(path.c_str());
+		struct dirent *entry;
+		vector<string> subdirs;
+		
+		if (dir == NULL) {
+			int e = errno;
+			throw FileSystemException("Cannot open directory " + path,
+				e, path);
+		}
+		while ((entry = readdir(dir)) != NULL) {
+			if (isDirectory(path, entry) && looksLikeNumber(entry->d_name)) {
+				subdirs.push_back(entry->d_name);
+			}
+		}
+		closedir(dir);
+		
+		if (subdirs.empty()) {
+			return false;
+		}
+		
+		vector<string>::const_iterator it = subdirs.begin();
+		vector<string>::const_iterator end = subdirs.end();
+		vector<string>::const_iterator largest_it = subdirs.begin();
+		int largest = atoi(subdirs[0]);
+		for (it++; it != end; it++) {
+			const string &subdir = *it;
+			int number = atoi(subdir.c_str());
+			if (number > largest) {
+				largest_it = it;
+				largest = number;
+			}
+		}
+		result = *largest_it;
+		return true;
 	}
 	
 	static void pendingDataFlushed(EventedClient *_client) {
@@ -609,36 +757,36 @@ private:
 		}
 	}
 	
-	/* Release all log sinks that haven't been used for more than 2 hours. */
-	void releaseStaleLogSinks(time_t now) {
-		LogSinkCache::iterator it;
-		LogSinkCache::iterator end = logSinkCache.end();
-		vector<string> toDelete;
+	/* Release all inactive log sinks that have been inactive for more than
+	 * GARBAGE_COLLECTION_TIMEOUT seconds.
+	 */
+	void releaseInactiveLogSinks(ev_tstamp now) {
+		bool done = false;
 		
-		for (it = logSinkCache.begin(); it != end; it++) {
-			if (now - it->second->lastUsed > 2 * 60 * 60) {
-				toDelete.push_back(it->first);
+		while (!done && !inactiveLogSinks.empty()) {
+			const LogSinkPtr logSink = inactiveLogSinks.front();
+			if (now - logSink->lastUsed >= GARBAGE_COLLECTION_TIMEOUT) {
+				inactiveLogSinks.pop_front();
+				inactiveLogSinksCount--;
+				logSinkCache.erase(logSink->cacheIterator);
+			} else {
+				done = true;
 			}
-		}
-		
-		vector<string>::const_iterator it2;
-		for (it2 = toDelete.begin(); it2 != toDelete.end(); it2++) {
-			logSinkCache.erase(*it2);
 		}
 	}
 	
 	void garbageCollect(ev::timer &timer, int revents) {
-		time_t now = time(NULL);
 		P_DEBUG("Garbage collection time");
-		releaseStaleLogSinks(now);
+		releaseInactiveLogSinks(ev_now(getLoop()));
 	}
 	
-	void flushAllLogs(ev::timer &timer, int revents = 0) {
+	void flushAllSinks(ev::timer &timer, int revents = 0) {
+		P_TRACE(2, "Flushing all sinks");
 		LogSinkCache::iterator it;
 		LogSinkCache::iterator end = logSinkCache.end();
-		time_t now = time(NULL);
+		ev_tstamp now = ev_now(getLoop());
 		
-		// Flush log files every 5 seconds, remote sinks every 30 seconds.
+		// Flush log file sinks every 5 seconds, remote sinks every 30 seconds.
 		for (it = logSinkCache.begin(); it != end; it++) {
 			LogSink *sink = it->second.get();
 			
@@ -723,15 +871,16 @@ protected:
 				return true;
 			}
 			
-			TransactionPtr transaction = transactions[txnId];
-			if (transaction == NULL) {
+			TransactionMap::iterator it = transactions.find(txnId);
+			TransactionPtr transaction;
+			if (it == transactions.end()) {
 				if (OXT_UNLIKELY( !supportedCategory(category) )) {
 					sendErrorToClient(client, "Unsupported category");
 					client->disconnect();
 					return true;
 				}
 				
-				transaction.reset(new Transaction());
+				transaction.reset(new Transaction(this));
 				if (unionStationKey.empty()) {
 					string filename = determineFilename(groupName, client->nodeId,
 						category, txnId);
@@ -743,21 +892,28 @@ protected:
 						category, transaction->logSink);
 				}
 				transaction->txnId        = txnId;
-				transaction->groupName    = groupName;
-				transaction->category     = category;
+				transaction->dataStoreId  = DataStoreId(groupName,
+					client->nodeName, category);
 				transaction->writeCount   = 0;
 				transaction->refcount     = 0;
 				transaction->crashProtect = crashProtect;
 				transaction->discarded    = false;
-				transactions[txnId]       = transaction;
+				transactions.insert(make_pair(txnId, transaction));
 			} else {
-				if (OXT_UNLIKELY( groupName != transaction->groupName )) {
+				transaction = it->second;
+				if (OXT_UNLIKELY( transaction->getGroupName() != groupName )) {
 					sendErrorToClient(client,
 						"Cannot open transaction: transaction already opened with a different group name");
 					client->disconnect();
 					return true;
 				}
-				if (OXT_UNLIKELY( category != transaction->category )) {
+				if (OXT_UNLIKELY( transaction->getNodeName() != client->nodeName )) {
+					sendErrorToClient(client,
+						"Cannot open transaction: transaction already opened with a different node name");
+					client->disconnect();
+					return true;
+				}
+				if (OXT_UNLIKELY( transaction->getCategory() != category )) {
 					sendErrorToClient(client,
 						"Cannot open transaction: transaction already opened with a different category name");
 					client->disconnect();
@@ -800,6 +956,7 @@ protected:
 				
 				writeDetachEntry(client, transaction, timestamp);
 				transaction->refcount--;
+				assert(transaction->refcount >= 0);
 				if (transaction->refcount == 0) {
 					transactions.erase(it);
 				}
@@ -845,7 +1002,7 @@ protected:
 			client->writeArrayMessage("ok", NULL);
 			
 		} else if (args[0] == "flush") {
-			flushAllLogs(logFlushingTimer);
+			flushAllSinks(sinkFlushingTimer);
 			client->writeArrayMessage("ok", NULL);
 			
 		} else if (args[0] == "info") {
@@ -912,7 +1069,7 @@ protected:
 		for (sit = client->openTransactions.begin(); sit != send; sit++) {
 			const string &txnId = *sit;
 			TransactionMap::iterator it = transactions.find(txnId);
-			if (OXT_UNLIKELY(it == transactions.end())) {
+			if (OXT_UNLIKELY( it == transactions.end() )) {
 				P_ERROR("Bug: client->openTransactions is not a subset of this->transactions!");
 				abort();
 			}
@@ -924,6 +1081,7 @@ protected:
 				transaction->discard();
 			}
 			transaction->refcount--;
+			assert(transaction->refcount >= 0);
 			if (transaction->refcount == 0) {
 				transactions.erase(it);
 			}
@@ -952,7 +1110,7 @@ public:
 		               unionStationServiceCert),
 		  changeNotifier(loop),
 		  garbageCollectionTimer(loop),
-		  logFlushingTimer(loop),
+		  sinkFlushingTimer(loop),
 		  exitTimer(loop)
 	{
 		this->dir = dir;
@@ -962,12 +1120,13 @@ public:
 		changeNotifier.getLastPos = boost::bind(&LoggingServer::getLastPos,
 			this, _1, _2, _3);
 		garbageCollectionTimer.set<LoggingServer, &LoggingServer::garbageCollect>(this);
-		garbageCollectionTimer.start(60 * 60, 60 * 60);
-		logFlushingTimer.set<LoggingServer, &LoggingServer::flushAllLogs>(this);
-		logFlushingTimer.start(5, 5);
+		garbageCollectionTimer.start(GARBAGE_COLLECTION_TIMEOUT, GARBAGE_COLLECTION_TIMEOUT);
+		sinkFlushingTimer.set<LoggingServer, &LoggingServer::flushAllSinks>(this);
+		sinkFlushingTimer.start(5, 5);
 		exitTimer.set<LoggingServer, &LoggingServer::stopLoop>(this);
 		exitTimer.set(5, 0);
 		exitRequested = false;
+		inactiveLogSinksCount = 0;
 	}
 	
 	~LoggingServer() {
@@ -987,6 +1146,61 @@ public:
 		logSinkCache.clear();
 	}
 	
+	string getLastPos(const StaticString &groupName, const StaticString &nodeName,
+		const StaticString &category) const
+	{
+		md5_state_t state;
+		md5_byte_t  digest[MD5_SIZE];
+		char        nodeId[MD5_HEX_SIZE];
+		md5_init(&state);
+		md5_append(&state, (const md5_byte_t *) nodeName.data(), nodeName.size());
+		md5_finish(&state, digest);
+		toHex(StaticString((const char *) digest, MD5_SIZE), nodeId);
+		
+		string dir = determineFilename(groupName, nodeId, category);
+		string subdir, component;
+		subdir.reserve(13); // It's a string that looks like: "2010/06/24/12"
+		
+		try {
+			// Loop 4 times to process year, month, day, hour.
+			for (int i = 0; i < 4; i++) {
+				bool found = getLastEntryInDirectory(dir, component);
+				if (!found) {
+					return string();
+				}
+				dir.append("/");
+				dir.append(component);
+				if (i != 0) {
+					subdir.append("/");
+				}
+				subdir.append(component);
+			}
+			// After the loop, new dir == old dir + "/" + subdir
+		} catch (const SystemException &e) {
+			if (e.code() == ENOENT) {
+				return string();
+			} else {
+				throw;
+			}
+		}
+		
+		string &filename = dir;
+		filename.append("/log.txt");
+		
+		struct stat buf;
+		if (stat(filename.c_str(), &buf) == -1) {
+			if (errno == ENOENT) {
+				return string();
+			} else {
+				int e = errno;
+				throw FileSystemException("Cannot stat() " + filename, e,
+					filename);
+			}
+		} else {
+			return subdir + "/" + toString(buf.st_size);
+		}
+	}
+	
 	void dump(stringstream &stream) const {
 		TransactionMap::const_iterator it;
 		TransactionMap::const_iterator end = transactions.end();
@@ -1000,7 +1214,8 @@ public:
 		
 		LogSinkCache::const_iterator sit;
 		LogSinkCache::const_iterator send = logSinkCache.end();
-		stream << "Log sinks: " << logSinkCache.size() << "\n";
+		stream << "Log sinks: " << logSinkCache.size() <<
+			" (" << inactiveLogSinksCount << " inactive)\n";
 		for (sit = logSinkCache.begin(); sit != send; sit++) {
 			const LogSinkPtr &logSink = sit->second;
 			logSink->dump(stream);

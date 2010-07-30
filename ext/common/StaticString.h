@@ -11,6 +11,7 @@
 
 #include <string>
 #include <cstring>
+#include <ostream>
 
 namespace Passenger {
 
@@ -173,6 +174,12 @@ operator+(const string &lhs, const StaticString &rhs) {
 	string result = lhs;
 	result.append(rhs.data(), rhs.size());
 	return result;
+}
+
+inline ostream &
+operator<<(ostream &os, const StaticString &str) {
+	os.write(str.data(), str.size());
+	return os;
 }
 
 } // namespace Passenger
