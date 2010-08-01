@@ -13,6 +13,7 @@
 #include <oxt/macros.hpp>
 #include <boost/shared_ptr.hpp>
 #include <string>
+#include <ostream>
 #include <sstream>
 #include <map>
 #include <ev++.h>
@@ -103,7 +104,7 @@ private:
 		virtual void append(const DataStoreId &dataStoreId,
 			const StaticString &data) = 0;
 		virtual void flush() { }
-		virtual void dump(stringstream &stream) const { }
+		virtual void dump(ostream &stream) const { }
 	};
 	
 	struct LogFile: public LogSink {
@@ -180,7 +181,7 @@ private:
 			}
 		}
 		
-		virtual void dump(stringstream &stream) const {
+		virtual void dump(ostream &stream) const {
 			stream << "   Log file: file=" << filename << ", "
 				"opened=" << opened << ", "
 				"age=" << long(lastUsed - ev_now(server->getLoop())) << "\n";
@@ -257,7 +258,7 @@ private:
 			}
 		}
 		
-		virtual void dump(stringstream &stream) const {
+		virtual void dump(ostream &stream) const {
 			stream << "   Remote sink: "
 				"key=" << unionStationKey << ", "
 				"node=" << nodeName << ", "
@@ -308,7 +309,7 @@ private:
 			discarded = true;
 		}
 		
-		void dump(stringstream &stream) const {
+		void dump(ostream &stream) const {
 			stream << "   Transaction " << txnId << ":\n";
 			stream << "      Group   : " << getGroupName() << "\n";
 			stream << "      Node    : " << getNodeName() << "\n";
@@ -370,7 +371,9 @@ private:
 	list<LogSinkPtr> inactiveLogSinks;
 	int inactiveLogSinksCount;
 	RandomGenerator randomGenerator;
+	bool refuseNewConnections;
 	bool exitRequested;
+	unsigned long long exitBeginTime;
 	
 	void sendErrorToClient(Client *client, const string &message) {
 		client->writeArrayMessage("error", message.c_str(), NULL);
@@ -394,6 +397,16 @@ private:
 			sendErrorToClient(client, "Client not initialized as logger");
 			client->disconnect();
 			return false;
+		}
+	}
+	
+	bool checkWhetherConnectionAreAcceptable(Client *client) {
+		if (refuseNewConnections) {
+			client->writeArrayMessage("server shutting down", NULL);
+			client->disconnect();
+			return false;
+		} else {
+			return true;
 		}
 	}
 	
@@ -780,16 +793,17 @@ private:
 		releaseInactiveLogSinks(ev_now(getLoop()));
 	}
 	
-	void flushAllSinks(ev::timer &timer, int revents = 0) {
-		P_TRACE(2, "Flushing all sinks");
+	void sinkFlushTimeout(ev::timer &timer, int revents) {
+		P_TRACE(2, "Flushing all sinks (periodic action)");
 		LogSinkCache::iterator it;
 		LogSinkCache::iterator end = logSinkCache.end();
 		ev_tstamp now = ev_now(getLoop());
 		
-		// Flush log file sinks every 5 seconds, remote sinks every 30 seconds.
 		for (it = logSinkCache.begin(); it != end; it++) {
 			LogSink *sink = it->second.get();
 			
+			// Flush log file sinks every 5 seconds,
+			// remote sinks every 30 seconds.
 			if (sink->isRemote()) {
 				if (now - sink->lastFlushed >= 30) {
 					sink->flush();
@@ -800,8 +814,24 @@ private:
 		}
 	}
 	
-	void stopLoop(ev::timer &timer, int revents = 0) {
-		ev_unloop(getLoop(), EVUNLOOP_ONE);
+	void flushAllSinks() {
+		P_TRACE(2, "Flushing all sinks");
+		LogSinkCache::iterator it;
+		LogSinkCache::iterator end = logSinkCache.end();
+		
+		for (it = logSinkCache.begin(); it != end; it++) {
+			LogSink *sink = it->second.get();
+			sink->flush();
+		}
+	}
+	
+	void exitTimerTimeout(ev::timer &timer, int revents) {
+		if (SystemTime::getMsec() >= exitBeginTime + 5000) {
+			exitTimer.stop();
+			exitRequested = false;
+			refuseNewConnections = false;
+			ev_unloop(getLoop(), EVUNLOOP_ONE);
+		}
 	}
 	
 protected:
@@ -971,6 +1001,9 @@ protected:
 			if (OXT_UNLIKELY( !expectingArgumentsCount(client, args, 2) )) {
 				return true;
 			}
+			if (OXT_UNLIKELY( !checkWhetherConnectionAreAcceptable(client) )) {
+				return true;
+			}
 			
 			StaticString nodeName = args[1];
 			client->nodeName = nodeName;
@@ -983,8 +1016,12 @@ protected:
 			toHex(StaticString((const char *) digest, MD5_SIZE), client->nodeId);
 			
 			client->type = LOGGER;
+			client->writeArrayMessage("ok", NULL);
 			
 		} else if (args[0] == "watchChanges") {
+			if (OXT_UNLIKELY( !checkWhetherConnectionAreAcceptable(client) )) {
+				return true;
+			}
 			if (OXT_UNLIKELY( client->type != UNINITIALIZED )) {
 				sendErrorToClient(client, "This command cannot be invoked "
 					"if the 'init' command is already invoked.");
@@ -1002,7 +1039,7 @@ protected:
 			client->writeArrayMessage("ok", NULL);
 			
 		} else if (args[0] == "flush") {
-			flushAllSinks(sinkFlushingTimer);
+			flushAllSinks();
 			client->writeArrayMessage("ok", NULL);
 			
 		} else if (args[0] == "info") {
@@ -1010,19 +1047,30 @@ protected:
 			dump(stream);
 			client->writeArrayMessage("info", stream.str().c_str(), NULL);
 		
+		} else if (args[0] == "ping") {
+			client->writeArrayMessage("pong", NULL);
+		
 		} else if (args[0] == "exit") {
 			if (!requireRights(client, Account::EXIT)) {
 				client->disconnect();
 				return true;
 			}
 			if (args.size() == 2 && args[1] == "immediately") {
+				// Immediate exit.
 				ev_unloop(getLoop(), EVUNLOOP_ONE);
+			} else if (args.size() == 2 && args[1] == "semi-gracefully") {
+				// Semi-graceful exit: refuse new connections, shut down
+				// a few seconds after the last client has disconnected.
+				refuseNewConnections = true;
+				exitRequested = true;
 			} else {
+				// Graceful exit: shut down a few seconds after the
+				// last client has disconnected.
 				client->writeArrayMessage("Passed security", NULL);
 				client->writeArrayMessage("exit command received", NULL);
-				// We shut down a few seconds after the last client has exited.
 				exitRequested = true;
 			}
+			client->disconnect();
 			
 		} else {
 			sendErrorToClient(client, "Unknown command '" + args[0] + "'");
@@ -1053,10 +1101,10 @@ protected:
 	}
 	
 	virtual void onNewClient(EventedClient *client) {
-		EventedMessageServer::onNewClient(client);
-		if (exitRequested) {
+		if (exitRequested && exitTimer.is_active()) {
 			exitTimer.stop();
 		}
+		EventedMessageServer::onNewClient(client);
 	}
 	
 	virtual void onClientDisconnected(EventedClient *_client) {
@@ -1091,6 +1139,11 @@ protected:
 		// Possibly start exit timer.
 		if (exitRequested && getClients().empty()) {
 			exitTimer.start();
+			/* Using SystemTime here instead of setting a correct
+			 * timeout directly on the timer, so that we can
+			 * manipulate the clock in LoggingServer unit tests.
+			 */
+			exitBeginTime = SystemTime::getMsec();
 		}
 	}
 
@@ -1121,10 +1174,11 @@ public:
 			this, _1, _2, _3);
 		garbageCollectionTimer.set<LoggingServer, &LoggingServer::garbageCollect>(this);
 		garbageCollectionTimer.start(GARBAGE_COLLECTION_TIMEOUT, GARBAGE_COLLECTION_TIMEOUT);
-		sinkFlushingTimer.set<LoggingServer, &LoggingServer::flushAllSinks>(this);
+		sinkFlushingTimer.set<LoggingServer, &LoggingServer::sinkFlushTimeout>(this);
 		sinkFlushingTimer.start(5, 5);
-		exitTimer.set<LoggingServer, &LoggingServer::stopLoop>(this);
-		exitTimer.set(5, 0);
+		exitTimer.set<LoggingServer, &LoggingServer::exitTimerTimeout>(this);
+		exitTimer.set(0.05, 0.05);
+		refuseNewConnections = false;
 		exitRequested = false;
 		inactiveLogSinksCount = 0;
 	}
@@ -1141,9 +1195,11 @@ public:
 		}
 		
 		// Invoke destructors, causing all transactions and log sinks to
-		// be flushed before RemoteSender is being destroyed.
+		// be flushed before RemoteSender and ChangeNotifier are being
+		// destroyed.
 		transactions.clear();
 		logSinkCache.clear();
+		inactiveLogSinks.clear();
 	}
 	
 	string getLastPos(const StaticString &groupName, const StaticString &nodeName,
@@ -1201,7 +1257,7 @@ public:
 		}
 	}
 	
-	void dump(stringstream &stream) const {
+	void dump(ostream &stream) const {
 		TransactionMap::const_iterator it;
 		TransactionMap::const_iterator end = transactions.end();
 		
