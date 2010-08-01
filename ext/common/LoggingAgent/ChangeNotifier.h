@@ -326,7 +326,7 @@ public:
 		loop = _loop;
 	}
 	
-	~ChangeNotifier() {
+	virtual ~ChangeNotifier() {
 		ClientSet::iterator it;
 		ClientSet::iterator end = clients.end();
 		
@@ -337,7 +337,7 @@ public:
 		clients.clear();
 	}
 	
-	void addClient(const FileDescriptor &fd) {
+	virtual void addClient(const FileDescriptor &fd) {
 		Client *client = new Client(loop, fd);
 		ScopeGuard guard(boost::bind(&ChangeNotifier::destroyClient, client));
 		client->notifier     = this;
@@ -349,7 +349,7 @@ public:
 		guard.clear();
 	}
 	
-	void changed(const DataStoreId &dataStoreId) {
+	virtual void changed(const DataStoreId &dataStoreId) {
 		ClientSet::iterator it;
 		ClientSet::iterator end = clients.end();
 		
@@ -362,6 +362,8 @@ public:
 		}
 	}
 };
+
+typedef shared_ptr<ChangeNotifier> ChangeNotifierPtr;
 
 
 } // namespace Passenger
