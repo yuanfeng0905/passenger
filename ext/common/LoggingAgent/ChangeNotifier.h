@@ -189,8 +189,7 @@ private:
 		store->lastPosCheckRetryTimer.start();
 	}
 	
-	void sendChangeNotification(Client *client, const DataStoreId &id)
-	{
+	void sendChangeNotification(Client *client, const DataStoreId &id) {
 		StaticString args[] = { "changed", id.getGroupName(),
 			id.getNodeName(), id.getCategory() };
 		int count = sizeof(args) / sizeof(StaticString);
@@ -203,9 +202,21 @@ private:
 		client->write(out, outSize);
 	}
 	
+	void sendErrorToClient(Client *client, const StaticString &message) {
+		StaticString args[] = { "error", message };
+		int count = sizeof(args) / sizeof(StaticString);
+		
+		char headerBuf[sizeof(uint16_t)];
+		unsigned int outSize = ArrayMessage::outputSize(count);
+		StaticString out[outSize];
+		
+		ArrayMessage::generate(args, count, headerBuf, out, outSize);
+		client->write(out, outSize);
+	}
+	
 	void processDoneMessage(Client *client, const vector<StaticString> &args) {
 		if (OXT_UNLIKELY( args.size() != 4 )) {
-			client->writeArrayMessage(client, "error",
+			sendErrorToClient(client,
 				"Invalid number of arguments for the 'done' message.");
 			client->disconnect();
 			return;

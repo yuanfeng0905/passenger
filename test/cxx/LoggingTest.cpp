@@ -770,4 +770,6 @@ namespace tut {
 		AnalyticsLogPtr log = logger->newTransaction("foobar");
 		ensure(log->isNull());
 	}
+	
+	/************************************/
 }
