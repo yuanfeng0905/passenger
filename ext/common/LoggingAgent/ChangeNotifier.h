@@ -141,7 +141,7 @@ private:
 	}
 	
 	string getClientName(const EventedClient *client) const {
-		return toString(client->fd);
+		return toString(client);
 	}
 	
 	void logError(const EventedClient *client, const string &message) {
@@ -168,7 +168,6 @@ private:
 		store->identifier = id;
 		store->lastPosCheckRetry = 0;
 		store->lastPosCheckRetryTimer.set(loop);
-		store->lastPosCheckRetryTimer.set(30.0, 0.0);
 		store->lastPosCheckRetryTimer.set
 			<DataStore, &DataStore::retryLastPositionCheck>
 			(store.get());
@@ -205,6 +204,13 @@ private:
 	}
 	
 	void processDoneMessage(Client *client, const vector<StaticString> &args) {
+		if (OXT_UNLIKELY( args.size() != 4 )) {
+			client->writeArrayMessage(client, "error",
+				"Invalid number of arguments for the 'done' message.");
+			client->disconnect();
+			return;
+		}
+		
 		StaticString groupName = args[1];
 		StaticString nodeName  = args[2];
 		StaticString category  = args[3];
@@ -219,7 +225,7 @@ private:
 		}
 		
 		const DataStorePtr store = it->second;
-		if (store->lastPosCheckRetryTimer.is_active()) {
+		if (OXT_UNLIKELY( store->lastPosCheckRetryTimer.is_active() )) {
 			logError(client, "Duplicate 'done' message received");
 			client->disconnect();
 			return;
@@ -236,6 +242,12 @@ private:
 			realLastPos = getLastPos(identifier.getGroupName(),
 				identifier.getNodeName(),
 				identifier.getCategory());
+			if (realLastPos.empty()) {
+				logError(client,
+					"Cannot query last position for " +
+					createHumanReadableIdentifier(store->identifier) +
+					": unknown error");
+			}
 		} catch (const SystemException &e) {
 			logSystemError(client,
 				"Cannot query last position for " +
@@ -263,6 +275,12 @@ private:
 			realLastPos = getLastPos(store->identifier.getGroupName(),
 				store->identifier.getNodeName(),
 				store->identifier.getCategory());
+			if (realLastPos.empty()) {
+				logError(client,
+					"Cannot query last position for " +
+					createHumanReadableIdentifier(store->identifier) +
+					": unknown error");
+			}
 		} catch (const SystemException &e) {
 			logSystemError(client,
 				"Cannot query last position for " +
@@ -278,7 +296,7 @@ private:
 				logError(client,
 					"Giving up trying to query last position of " +
 					createHumanReadableIdentifier(store->identifier) +
-					" because too many error occurred");
+					" because too many errors occurred");
 				unmarkClientProcessing(client, store->identifier);
 			} else {
 				startLastPosCheckRetryTimer(store, store->lastPosCheckRetry);
