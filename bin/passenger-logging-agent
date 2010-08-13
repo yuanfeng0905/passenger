@@ -90,7 +90,7 @@ def start
 			"fire_and_forget", "true",
 			"analytics_log_dir", options[:dir],
 			"log_level", options[:log_level],
-			"logging_agent_password", ""
+			"logging_agent_password", "nopassword"
 		]
 		
 		args << "logging_agent_address"
