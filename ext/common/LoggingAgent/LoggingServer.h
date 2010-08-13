@@ -515,7 +515,9 @@ private:
 		return filename;
 	}
 	
-	void setupGroupAndNodeDir(Client *client, const StaticString &groupName) {
+	void setupGroupAndNodeDir(const StaticString &groupName, const StaticString &nodeName,
+		const char *nodeId)
+	{
 		string filename, groupDir, nodeDir;
 		
 		filename.append(dir);
@@ -523,7 +525,7 @@ private:
 		groupDir = filename;
 		
 		filename.append("/");
-		filename.append(client->nodeId, MD5_HEX_SIZE);
+		filename.append(nodeId, MD5_HEX_SIZE);
 		nodeDir = filename;
 		
 		createFile(groupDir + "/group_name.txt", groupName,
@@ -536,7 +538,7 @@ private:
 				false);
 		}
 		
-		createFile(nodeDir + "/node_name.txt", client->nodeName,
+		createFile(nodeDir + "/node_name.txt", nodeName,
 			filePermissions, USER_NOT_GIVEN, GROUP_NOT_GIVEN,
 			false);
 		if (getFileType(nodeDir + "/uuid.txt") == FT_NONEXISTANT) {
@@ -890,10 +892,6 @@ protected:
 			StaticString unionStationKey = args[6];
 			bool         crashProtect    = args[7] == "true";
 			
-			if (nodeName.empty()) {
-				nodeName = client->nodeName;
-			}
-			
 			if (OXT_UNLIKELY( !validTxnId(txnId) )) {
 				sendErrorToClient(client, "Invalid transaction ID format");
 				client->disconnect();
@@ -913,6 +911,15 @@ protected:
 				return true;
 			}
 			
+			const char *nodeId;
+			
+			if (nodeName.empty()) {
+				nodeName = client->nodeName;
+				nodeId = client->nodeId;
+			} else {
+				nodeId = NULL;
+			}
+			
 			TransactionMap::iterator it = transactions.find(txnId);
 			TransactionPtr transaction;
 			if (it == transactions.end()) {
@@ -924,28 +931,26 @@ protected:
 				
 				transaction.reset(new Transaction(this));
 				if (unionStationKey.empty()) {
-					string filename;
-					if (nodeName.empty()) {
-						filename = determineFilename(groupName, client->nodeId,
-							category, txnId);
-					} else {
+					char tempNodeId[MD5_HEX_SIZE];
+					
+					if (nodeId == NULL) {
 						md5_state_t state;
 						md5_byte_t  digest[MD5_SIZE];
-						char        nodeId[MD5_HEX_SIZE];
-						
+
 						md5_init(&state);
 						md5_append(&state,
 							(const md5_byte_t *) nodeName.data(),
 							nodeName.size());
 						md5_finish(&state, digest);
 						toHex(StaticString((const char *) digest, MD5_SIZE),
-							nodeId);
-						
-						filename = determineFilename(groupName, nodeId,
-							category, txnId);
+							tempNodeId);
+						nodeId = tempNodeId;
 					}
+					
+					string filename = determineFilename(groupName, nodeId,
+						category, txnId);
 					if (!openLogFileWithCache(filename, transaction->logSink)) {
-						setupGroupAndNodeDir(client, groupName);
+						setupGroupAndNodeDir(groupName, nodeName, nodeId);
 					}
 				} else {
 					openRemoteSink(unionStationKey, client->nodeName,
