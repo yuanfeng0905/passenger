@@ -73,8 +73,12 @@ private:
 				curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0);
 			} else {
 				curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1);
-				curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 2);
-				curl_easy_setopt(curl, CURLOPT_SSLCERT, certificate.c_str());
+				/* No host name verification because Curl thinks the
+				 * host name is the IP address. Doesn't matter as
+				 * long as we have the certificate.
+				 */
+				curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0);
+				curl_easy_setopt(curl, CURLOPT_CAINFO, certificate.c_str());
 			}
 			responseBody.clear();
 		}
@@ -120,12 +124,13 @@ private:
 		}
 		
 		bool ping() {
+			P_DEBUG("Pinging Union Station gateway " << ip << ":" << port);
 			ScopeGuard guard(boost::bind(&Server::resetConnection, this));
 			prepareRequest("/ping");
 			
 			curl_easy_setopt(curl, CURLOPT_HTTPGET, 1);
 			if (curl_easy_perform(curl) != 0) {
-				P_DEBUG("Could not ping Union Station service server " << ip
+				P_DEBUG("Could not ping Union Station gateway server " << ip
 					<< ": " << lastErrorMessage);
 				return false;
 			}
@@ -133,7 +138,7 @@ private:
 				guard.clear();
 				return true;
 			} else {
-				P_DEBUG("Union Station service server " << ip <<
+				P_DEBUG("Union Station gateway server " << ip <<
 					" returned an unexpected ping message: " <<
 					responseBody);
 				return false;
@@ -189,9 +194,10 @@ private:
 			
 			if (code == 0) {
 				guard.clear();
+				// TODO: check response
 				return true;
 			} else {
-				P_DEBUG("Could not send data to Union Station service server " << ip
+				P_DEBUG("Could not send data to Union Station gateway server " << ip
 					<< ": " << lastErrorMessage);
 				return false;
 			}
@@ -244,7 +250,7 @@ private:
 	}
 	
 	void recheckServers() {
-		P_DEBUG("Rechecking Union Station service servers");
+		P_DEBUG("Rechecking Union Station gateway servers (" << serviceAddress << ")...");
 		
 		vector<string> ips;
 		vector<string>::const_iterator it;
@@ -252,6 +258,7 @@ private:
 		bool someServersAreDown = false;
 		
 		ips = resolveHostname(serviceAddress, servicePort);
+		P_DEBUG(ips.size() << " Union Station gateway servers found");
 		
 		servers.clear();
 		for (it = ips.begin(); it != ips.end(); it++) {

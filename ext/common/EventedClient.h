@@ -350,7 +350,12 @@ public:
 		writeWatcher.set(fd, ev::WRITE);
 	}
 	
-	virtual ~EventedClient() { }
+	virtual ~EventedClient() {
+		// Unregister file descriptor from the event loop poller before
+		// closing the file descriptor.
+		watchReadEvents(false);
+		watchWriteEvents(false);
+	}
 	
 	/**
 	 * Increase reference count.
