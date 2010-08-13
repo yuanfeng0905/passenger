@@ -23,7 +23,8 @@ module Packaging
 		'passenger-config',
 		'passenger-stress-test',
 		'passenger-find-frozen-apps',
-		'passenger-show-backtrace'
+		'passenger-show-backtrace',
+		'passenger-logging-agent'
 	]
 	
 	SUPER_USER_EXECUTABLES = [
