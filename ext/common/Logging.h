@@ -489,7 +489,7 @@ public:
 	}
 	
 	AnalyticsLogPtr newTransaction(const string &groupName, const string &category = "requests",
-		const string &unionStationKey = "")
+		const string &unionStationKey = string())
 	{
 		if (serverAddress.empty()) {
 			return ptr(new AnalyticsLog());
@@ -538,6 +538,7 @@ public:
 					sharedData->client.write("openTransaction",
 						txnId,
 						groupName.c_str(),
+						"",
 						category.c_str(),
 						timestampStr,
 						unionStationKey.c_str(),
@@ -571,7 +572,7 @@ public:
 	}
 	
 	AnalyticsLogPtr continueTransaction(const string &txnId, const string &groupName,
-		const string &category = "requests", const string &unionStationKey = "")
+		const string &category = "requests", const string &unionStationKey = string())
 	{
 		if (serverAddress.empty() || txnId.empty()) {
 			return ptr(new AnalyticsLog());
@@ -594,6 +595,7 @@ public:
 					sharedData->client.write("openTransaction",
 						txnId.c_str(),
 						groupName.c_str(),
+						"",
 						category.c_str(),
 						timestampStr,
 						unionStationKey.c_str(),
