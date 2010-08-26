@@ -23,7 +23,7 @@ def parse_options
 	}
 	parser = OptionParser.new do |opts|
 		nl = "\n#{' ' * 37}"
-		opts.banner = "Usage: passenger-logging-agent [options]"
+		opts.banner = "Usage: passenger-archive-server [options]"
 		opts.separator ""
 		
 		opts.separator "Normal options:"
@@ -81,8 +81,8 @@ def start
 		require 'phusion_passenger/logging_agent/installer'
 		PhusionPassenger::LoggingAgent::Installer.new(options).start
 	elsif !File.exist?(LOGGING_AGENT)
-		STDERR.puts "*** ERROR: The Phusion Passenger Logging Agent isn't " +
-			"properly compiled/installed. Please run `passenger-logging-agent " +
+		STDERR.puts "*** ERROR: The Phusion Passenger Archive Server isn't " +
+			"properly compiled/installed. Please run `passenger-archive-server " +
 			"--install` first."
 		exit 1
 	else
