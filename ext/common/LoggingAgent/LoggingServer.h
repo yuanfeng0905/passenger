@@ -811,10 +811,10 @@ private:
 		for (it = logSinkCache.begin(); it != end; it++) {
 			LogSink *sink = it->second.get();
 			
-			// Flush log file sinks every 5 seconds,
-			// remote sinks every 30 seconds.
+			// Flush log file sinks every 15 seconds,
+			// remote sinks every 60 seconds.
 			if (sink->isRemote()) {
-				if (now - sink->lastFlushed >= 30) {
+				if (now - sink->lastFlushed >= 60) {
 					sink->flush();
 				}
 			} else {
@@ -957,13 +957,8 @@ protected:
 						category, transaction->logSink);
 				}
 				transaction->txnId        = txnId;
-				if (nodeName.empty()) {
-					transaction->dataStoreId  = DataStoreId(groupName,
-						client->nodeName, category);
-				} else {
-					transaction->dataStoreId  = DataStoreId(groupName,
-						nodeName, category);
-				}
+				transaction->dataStoreId  = DataStoreId(groupName,
+					nodeName, category);
 				transaction->writeCount   = 0;
 				transaction->refcount     = 0;
 				transaction->crashProtect = crashProtect;
@@ -1212,7 +1207,7 @@ public:
 		garbageCollectionTimer.set<LoggingServer, &LoggingServer::garbageCollect>(this);
 		garbageCollectionTimer.start(GARBAGE_COLLECTION_TIMEOUT, GARBAGE_COLLECTION_TIMEOUT);
 		sinkFlushingTimer.set<LoggingServer, &LoggingServer::sinkFlushTimeout>(this);
-		sinkFlushingTimer.start(5, 5);
+		sinkFlushingTimer.start(15, 15);
 		exitTimer.set<LoggingServer, &LoggingServer::exitTimerTimeout>(this);
 		exitTimer.set(0.05, 0.05);
 		refuseNewConnections = false;
