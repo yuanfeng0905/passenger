@@ -974,7 +974,7 @@ spec = Gem::Specification.new do |s|
 	s.add_dependency 'daemon_controller', '>= 0.2.5'
 	s.add_dependency 'file-tail'
 	s.add_dependency 'rack'
-	s.files = FileList[*Packaging::GLOB]
+	s.files = FileList[*Packaging::GLOB] - FileList[*Packaging::EXCLUDE_GLOB]
 	s.executables = Packaging::USER_EXECUTABLES + Packaging::SUPER_USER_EXECUTABLES
 	s.has_rdoc = true
 	s.extra_rdoc_files = ['README']
@@ -1047,6 +1047,7 @@ task :fakeroot => [:apache2, :nginx] + Packaging::ASCII_DOCS do
 	fake_source_root = "#{fakeroot}#{NATIVELY_PACKAGED_SOURCE_ROOT}"
 	fake_apache2_module = "#{fakeroot}#{NATIVELY_PACKAGED_APACHE2_MODULE}"
 	fake_apache2_module_dir = File.dirname(fake_apache2_module)
+	fake_certificates_dir = "#{fakeroot}/usr/share/phusion-passenger/certificates"
 	
 	sh "rm -rf #{fakeroot}"
 	sh "mkdir -p #{fakeroot}"
@@ -1089,6 +1090,9 @@ task :fakeroot => [:apache2, :nginx] + Packaging::ASCII_DOCS do
 	
 	sh "mkdir -p #{fake_apache2_module_dir}"
 	sh "cp #{APACHE2_MODULE} #{fake_apache2_module_dir}/"
+	
+	sh "mkdir -p #{fake_certificates_dir}"
+	sh "cp #{CERTIFICATES_DIR}/*.crt #{fake_certificates_dir}/"
 	
 	sh "mkdir -p #{fake_source_root}"
 	spec.files.each do |filename|
