@@ -108,7 +108,7 @@ file "ext/phusion_passenger/#{native_support_archdir}/Makefile" => 'ext/phusion_
 	if !File.exist?("ext/phusion_passenger/#{native_support_archdir}")
 		sh "mkdir -p ext/phusion_passenger/#{native_support_archdir}"
 	end
-	sh "cd ext/phusion_passenger/#{native_support_archdir} && #{RUBY} ../extconf.rb"
+	sh "cd ext/phusion_passenger/#{native_support_archdir} && #{PlatformInfo.ruby_command} ../extconf.rb"
 end
 
 file "ext/phusion_passenger/#{native_support_archdir}/native_support.#{LIBEXT}" => [
@@ -821,7 +821,7 @@ end
 	desc "Run unit tests for the Ruby libraries"
 	task 'test:ruby' => [:native_support, 'agents/PassengerLoggingAgent', 'test/stub/allocate_memory'] do
 		if PlatformInfo.rspec.nil?
-			abort "RSpec is not installed for Ruby interpreter '#{PlatformInfo::RUBY}'. Please install it."
+			abort "RSpec is not installed for Ruby interpreter '#{PlatformInfo.ruby_command}'. Please install it."
 		else
 			Dir.chdir("test") do
 				ruby "#{PlatformInfo.rspec} -c -f s ruby/*_spec.rb ruby/*/*_spec.rb"
@@ -832,7 +832,7 @@ end
 	desc "Run coverage tests for the Ruby libraries"
 	task 'test:rcov' => :native_support do
 		if PlatformInfo.rspec.nil?
-			abort "RSpec is not installed for Ruby interpreter '#{PlatformInfo::RUBY}'. Please install it."
+			abort "RSpec is not installed for Ruby interpreter '#{PlatformInfo.ruby_command}'. Please install it."
 		else
 			Dir.chdir("test") do
 				sh "rcov", "--exclude",
@@ -853,7 +853,7 @@ end
 	desc "Run Apache 2 integration tests"
 	task 'test:integration:apache2' => [:apache2, :native_support, 'test/stub/allocate_memory'] do
 		if PlatformInfo.rspec.nil?
-			abort "RSpec is not installed for Ruby interpreter '#{PlatformInfo::RUBY}'. Please install it."
+			abort "RSpec is not installed for Ruby interpreter '#{PlatformInfo.ruby_command}'. Please install it."
 		else
 			Dir.chdir("test") do
 				ruby "#{PlatformInfo.rspec} -c -f s integration_tests/apache2_tests.rb"
@@ -868,7 +868,7 @@ end
 	desc "Run Nginx integration tests"
 	task 'test:integration:nginx' => :nginx do
 		if PlatformInfo.rspec.nil?
-			abort "RSpec is not installed for Ruby interpreter '#{PlatformInfo::RUBY}'. Please install it."
+			abort "RSpec is not installed for Ruby interpreter '#{PlatformInfo.ruby_command}'. Please install it."
 		else
 			Dir.chdir("test") do
 				ruby "#{PlatformInfo.rspec} -c -f s integration_tests/nginx_tests.rb"
