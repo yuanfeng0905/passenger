@@ -45,8 +45,7 @@ private
 	def compile
 		new_screen
 		color_puts "<banner>Compiling...</banner>"
-		return sh(PlatformInfo::RUBY, "-S", PlatformInfo.rake,
-			"agents/PassengerLoggingAgent")
+		return sh("#{PlatformInfo.rake_command} agents/PassengerLoggingAgent")
 	end
 	
 	def check_whether_we_can_write_to(dir)
