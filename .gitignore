@@ -11,8 +11,9 @@
 *.la
 *.slo
 *.dSYM
-config.rb
+/config.rb
 agents
+build/cache
 ext/libev/Makefile
 ext/libev/config.h
 ext/libev/config.log
