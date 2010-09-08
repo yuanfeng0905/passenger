@@ -186,7 +186,7 @@ private
 			opts.on("--nginx-tarball FILENAME", String,
 				wrap_desc("If Nginx needs to be installed, then the given tarball will " +
 				          "be used instead of downloading from the Internet")) do |value|
-				@options[:nginx_tarball] = value
+				@options[:nginx_tarball] = File.expand_path(value)
 			end
 		end
 		@plugin.call_hook(:done_parsing_options)
@@ -347,15 +347,19 @@ private
 		
 		if @app_finder.multi_mode?
 			puts
-			if listening_on_unix_domain_socket?
-				puts "Serving these applications:"
+			if @apps.empty?
+				puts "No web applications detected. Waiting until you create one..."
 			else
-				puts "Serving these applications on #{@options[:address]} port #{@options[:port]}:"
-			end
-			puts " Host name                     Directory"
-			puts "------------------------------------------------------------"
-			@apps.each do |app|
-				printf " %-26s    %s\n", app[:server_names][0], app[:root]
+				if listening_on_unix_domain_socket?
+					puts "Serving these applications:"
+				else
+					puts "Serving these applications on #{@options[:address]} port #{@options[:port]}:"
+				end
+				puts " Host name                     Directory"
+				puts "------------------------------------------------------------"
+				@apps.each do |app|
+					printf " %-26s    %s\n", app[:server_names][0], app[:root]
+				end
 			end
 		else
 			puts "Accessible via: #{listen_url}"
@@ -528,17 +532,25 @@ private
 					write_nginx_config_file
 					Process.kill('HUP', pid) rescue nil
 					@console_mutex.synchronize do
-						puts "Now serving these applications:"
-						puts " Host name                     Directory"
-						puts "------------------------------------------------------------"
-						@apps.each do |app|
-							printf " %-26s    %s\n", app[:server_names][0], app[:root]
-						end
-						puts "------------------------------------------------------------"
+						show_new_app_list(apps)
 					end
 					@plugin.call_hook(:found_apps_again, apps)
 				end
 			end
+		end
+	end
+	
+	def show_new_app_list(apps)
+		if apps.empty?
+			puts "No web applications detected. Waiting until you create one..."
+		else
+			puts "Now serving these applications:"
+			puts " Host name                     Directory"
+			puts "------------------------------------------------------------"
+			apps.each do |app|
+				printf " %-26s    %s\n", app[:server_names][0], app[:root]
+			end
+			puts "------------------------------------------------------------"
 		end
 	end
 end
