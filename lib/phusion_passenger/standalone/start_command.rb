@@ -350,6 +350,16 @@ private
 			if @apps.empty?
 				puts "No web applications detected. Waiting until you create one..."
 			else
+				require_hosts_file_parser
+				begin
+					if should_check_hosts_file?
+						hosts_file = PhusionPassenger::Utils::HostsFileParser.new
+					end
+				rescue Errno::EACCES, Errno::ENOENT
+					hosts_file = nil
+				end
+				warnings = 0
+				
 				if listening_on_unix_domain_socket?
 					puts "Serving these applications:"
 				else
@@ -358,7 +368,17 @@ private
 				puts " Host name                     Directory"
 				puts "------------------------------------------------------------"
 				@apps.each do |app|
-					printf " %-26s    %s\n", app[:server_names][0], app[:root]
+					host_name = app[:server_names][0]
+					if hosts_file && !hosts_file.resolves_to_localhost?(host_name)
+						host_name += " [!]"
+						warnings += 1
+					end
+					printf " %-26s    %s\n", host_name, app[:root]
+				end
+				if warnings > 0
+					puts
+					puts "[!] = This host name does not resolve to localhost. You should add it to"
+					puts "      /etc/hosts if you want to access it locally"
 				end
 			end
 		else
@@ -508,6 +528,21 @@ private
 	
 	#################
 	
+	def should_check_hosts_file?
+		require_platform_info_operating_system
+		return PlatformInfo.os_name == "macosx"
+	end
+	
+	def require_platform_info_operating_system
+		require 'phusion_passenger/platform_info/operating_system' \
+			if !defined?(PlatformInfo) || !PlatformInfo.respond_to?(:os_name)
+	end
+	
+	def require_hosts_file_parser
+		require 'phusion_passenger/utils/hosts_file_parser' \
+			if !defined?(PhusionPassenger::Utils::HostsFileParser)
+	end
+	
 	def monitor_app_directories_in_background
 		@threads << Thread.new do
 			@app_finder.monitor(@termination_pipe[0]) do |apps|
@@ -544,11 +579,31 @@ private
 		if apps.empty?
 			puts "No web applications detected. Waiting until you create one..."
 		else
+			require_hosts_file_parser
+			begin
+				if should_check_hosts_file?
+					hosts_file = PhusionPassenger::Utils::HostsFileParser.new
+				end
+			rescue Errno::EACCES, Errno::ENOENT
+				hosts_file = nil
+			end
+			warnings = 0
+			
 			puts "Now serving these applications:"
 			puts " Host name                     Directory"
 			puts "------------------------------------------------------------"
 			apps.each do |app|
-				printf " %-26s    %s\n", app[:server_names][0], app[:root]
+				host_name = app[:server_names][0]
+				if hosts_file && !hosts_file.resolves_to_localhost?(host_name)
+					host_name += " [!]"
+					warnings += 1
+				end
+				printf " %-26s    %s\n", host_name, app[:root]
+			end
+			if warnings > 0
+				puts
+				puts "[!] = This host name does not resolve to localhost. You should add it to"
+				puts "      /etc/hosts if you want to access it locally"
 			end
 			puts "------------------------------------------------------------"
 		end
