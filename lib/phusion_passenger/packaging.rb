@@ -72,7 +72,7 @@ module Packaging
 		'ext/oxt/*.hpp',
 		'ext/oxt/*.cpp',
 		'ext/oxt/detail/*.hpp',
-		'ext/phusion_passenger/*.{c,rb}',
+		'ext/ruby/*.{c,rb}',
 		'misc/*',
 		'test/*.example',
 		'test/support/*.{cpp,h,rb}',

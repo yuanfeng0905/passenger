@@ -461,7 +461,7 @@ f_generic_writev(VALUE fd, VALUE *array_of_components, unsigned int count) {
 	vector_offset = 0;
 	for (i = 0; i < count; i++) {
 		components = array_of_components[i];
-		for (j = 0; j < RARRAY_LEN(components); j++) {
+		for (j = 0; j < (unsigned int) RARRAY_LEN(components); j++) {
 			str = rb_ary_entry(components, j);
 			str = rb_obj_as_string(str);
 			total_size += (unsigned int) RSTRING_LEN(str);
@@ -1187,7 +1187,7 @@ deadline_timer_free(void *p) {
 }
 
 void
-Init_native_support() {
+Init_passenger_native_support() {
 	struct sockaddr_un addr;
 	
 	/* */

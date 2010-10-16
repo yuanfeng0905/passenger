@@ -307,7 +307,7 @@ struct DirConfig {
 		if (minInstancesSpecified) {
 			return minInstances;
 		} else {
-			return 0;
+			return 1;
 		}
 	}
 	

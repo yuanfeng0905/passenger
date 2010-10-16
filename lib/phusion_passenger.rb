@@ -9,10 +9,10 @@ module PhusionPassenger
 	###### Version numbers ######
 	
 	# Phusion Passenger version number. Don't forget to edit ext/common/Constants.h too.
-	VERSION_STRING = '3.0.0.pre1'
+	VERSION_STRING = '3.0.0'
 	
-	PREFERRED_NGINX_VERSION = '0.7.67'
-	PREFERRED_PCRE_VERSION  = '8.02'
+	PREFERRED_NGINX_VERSION = '0.8.52'
+	PREFERRED_PCRE_VERSION  = '8.10'
 	STANDALONE_INTERFACE_VERSION  = 1
 	
 	ENTERPRISE_SERVER = true
@@ -33,7 +33,6 @@ module PhusionPassenger
 	end
 	
 	NATIVELY_PACKAGED_SOURCE_ROOT        = "/usr/share/phusion-passenger-enterprise/source"
-	NATIVELY_PACKAGED_NATIVE_SUPPORT_DIR = "/usr/lib/phusion-passenger-enterprise/native_support/#{VERSION_STRING}"
 	NATIVELY_PACKAGED_DOCDIR             = "/usr/share/doc/phusion-passenger-enterprise"
 	NATIVELY_PACKAGED_AGENTS_DIR         = "/usr/lib/phusion-passenger-enterprise/agents"
 	NATIVELY_PACKAGED_HELPER_SCRIPTS_DIR = "/usr/share/phusion-passenger-enterprise/helper-scripts"
@@ -63,9 +62,6 @@ module PhusionPassenger
 		# Top directory of the Phusion Passenger source code.
 		SOURCE_ROOT        = File.expand_path(File.join(LIBDIR, ".."))
 		
-		# Directory containing #{archdir}/native_support.so.
-		NATIVE_SUPPORT_DIR = File.join(SOURCE_ROOT, "ext", "phusion_passenger")
-		
 		# Documentation directory.
 		DOCDIR             = File.join(SOURCE_ROOT, "doc")
 		
@@ -77,9 +73,12 @@ module PhusionPassenger
 		
 		# Location of the Apache 2 module.
 		APACHE2_MODULE     = File.join(SOURCE_ROOT, "ext", "apache2", "mod_passenger.so")
+		
+		# Directory possibly containing #{archdir}/passenger_native_support.so.
+		# Not available when natively packaged.
+		NATIVE_SUPPORT_DIR = File.join(SOURCE_ROOT, "ext", "ruby")
 	else
-		SOURCE_ROOT        = NATIVELY_PACKAGED_SOURCE_DIR
-		NATIVE_SUPPORT_DIR = NATIVELY_PACKAGED_NATIVE_SUPPORT_DIR
+		SOURCE_ROOT        = NATIVELY_PACKAGED_SOURCE_ROOT
 		DOCDIR             = NATIVELY_PACKAGED_DOCDIR
 		AGENTS_DIR         = NATIVELY_PACKAGED_AGENTS_DIR
 		HELPER_SCRIPTS_DIR = NATIVELY_PACKAGED_HELPER_SCRIPTS_DIR
