@@ -482,6 +482,7 @@ struct PoolOptions {
 		if (copy.environmentVariables != NULL) {
 			copy.environmentVariables->getItems(); // Prefetch items now while we still can.
 		}
+		copy.log.reset();
 		return copy;
 	}
 	

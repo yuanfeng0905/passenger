@@ -142,13 +142,9 @@ private
 				wrap_desc("The spawn method to use (default: #{@options[:spawn_method]})")) do |value|
 				@options[:spawn_method] = value
 			end
-			opts.on("--analytics",
-				wrap_desc("Enable analytics support")) do
-				@options[:analytics] = true
-			end
-			opts.on("--debugger",
-				wrap_desc("Enable debugger support")) do
-				@options[:debugger] = true
+			opts.on("--union-station-key", String,
+				wrap_desc("Specify Union Station key")) do |value|
+				@options[:union_station_key] = value
 			end
 			
 			opts.separator ""

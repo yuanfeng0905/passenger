@@ -10,18 +10,23 @@
 #define _PASSENGER_FILE_DESCRIPTOR_H_
 
 #include <boost/shared_ptr.hpp>
+#include <boost/make_shared.hpp>
 #include <oxt/system_calls.hpp>
 
+#include <utility>
 #include <unistd.h>
 #include <cerrno>
 
-#include "MessageChannel.h"
-#include "Exceptions.h"
+#include <Exceptions.h>
 
 namespace Passenger {
 
+using namespace std;
 using namespace boost;
 using namespace oxt;
+
+
+void safelyClose(int fd);
 
 
 /**
@@ -55,16 +60,21 @@ private:
 			}
 		}
 		
-		void close() {
+		void close(bool checkErrors = true) {
 			if (fd >= 0) {
 				this_thread::disable_syscall_interruption dsi;
 				int theFd = fd;
 				fd = -1;
-				if (syscalls::close(theFd) == -1 && errno != ENOTCONN) {
-					int e = errno;
-					throw SystemException("Cannot close file descriptor", e);
+				if (checkErrors) {
+					safelyClose(theFd);
+				} else {
+					syscalls::close(fd);
 				}
 			}
+		}
+		
+		void detach() {
+			fd = -1;
 		}
 	};
 
@@ -96,7 +106,7 @@ public:
 			 *    }
 			 */
 			int e = errno;
-			data.reset(new SharedData(fd));
+			data = make_shared<SharedData>(fd);
 			errno = e;
 		}
 	}
@@ -106,14 +116,37 @@ public:
 	 * nothing will happen. If there are multiple copies of this FileDescriptor
 	 * then the underlying file descriptor will be closed for every one of them.
 	 *
+	 * @params checkErrors Whether a SystemException should be thrown in case
+	 *                     closing the file descriptor fails. If false, errors
+	 *                     are silently ignored.
 	 * @throws SystemException Something went wrong while closing
-	 *                         the file descriptor.
+	 *                         the file descriptor. Only thrown if
+	 *                         checkErrors is true.
 	 * @post *this == -1
 	 */
-	void close() {
+	void close(bool checkErrors = true) {
 		if (data != NULL) {
-			data->close();
+			data->close(checkErrors);
 			data.reset();
+		}
+	}
+	
+	/**
+	 * Detach from the underlying file descriptor without closing it.
+	 * This FileDescriptor and all copies will no longer affect the
+	 * underlying file descriptors.
+	 *
+	 * @return The underlying file descriptor, or -1 if already closed.
+	 * @post *this == -1
+	 */
+	int detach() {
+		if (data != NULL) {
+			int fd = data->fd;
+			data->detach();
+			data.reset();
+			return fd;
+		} else {
+			return -1;
 		}
 	}
 	
@@ -143,7 +176,7 @@ public:
 		 */
 		int e = errno;
 		if (fd >= 0) {
-			data.reset(new SharedData(fd));
+			data = make_shared<SharedData>(fd);
 		} else {
 			data.reset();
 		}
@@ -168,6 +201,33 @@ public:
 		return *this;
 	}
 };
+
+/**
+ * A structure containing two FileDescriptor objects. Behaves like a pair
+ * and like a two-element array.
+ */
+class FileDescriptorPair: public pair<FileDescriptor, FileDescriptor> {
+public:
+	FileDescriptorPair() { }
+	
+	FileDescriptorPair(const FileDescriptor &a, const FileDescriptor &b)
+		: pair<FileDescriptor, FileDescriptor>(a, b)
+		{ }
+	
+	FileDescriptor &operator[](int index) {
+		if (index == 0) {
+			return first;
+		} else if (index == 1) {
+			return second;
+		} else {
+			throw ArgumentException("Index must be either 0 of 1");
+		}
+	}
+};
+
+// Convenience aliases.
+typedef FileDescriptorPair Pipe;
+typedef FileDescriptorPair SocketPair;
 
 /**
  * A synchronization mechanism that's implemented with file descriptors,
@@ -200,7 +260,11 @@ public:
 	}
 	
 	void notify() {
-		MessageChannel(writer).writeRaw("x", 1);
+		ssize_t ret = syscalls::write(writer, "x", 1);
+		if (ret == -1 && errno != EAGAIN) {
+			int e = errno;
+			throw SystemException("Cannot write notification data", e);
+		}
 	}
 	
 	int fd() const {
