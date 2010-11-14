@@ -21,7 +21,7 @@ task 'test:integration' => ['test:integration:apache2', 'test:integration:nginx'
 end
 
 desc "Run Apache 2 integration tests"
-task 'test:integration:apache2' => [:apache2, :native_support, 'test/stub/allocate_memory'] do
+task 'test:integration:apache2' => [:apache2, :native_support, 'test/support/allocate_memory'] do
 	if PlatformInfo.rspec.nil?
 		abort "RSpec is not installed for Ruby interpreter '#{PlatformInfo.ruby_command}'. Please install it."
 	else

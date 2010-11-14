@@ -177,6 +177,9 @@ TEST_CXX_OBJECTS = {
 		test/cxx/VariantMapTest.cpp
 		ext/common/MessageChannel.h
 		ext/common/Utils/VariantMap.h),
+	'test/cxx/ProcessMetricsCollectorTest.o' => %w(
+		test/cxx/ProcessMetricsCollectorTest.cpp
+		ext/common/Utils/ProcessMetricsCollector.h),
 	'test/cxx/UtilsTest.o' => %w(
 		test/cxx/UtilsTest.cpp
 		ext/common/Utils.h),
@@ -186,7 +189,7 @@ TEST_CXX_OBJECTS = {
 }
 
 desc "Run unit tests for the Apache 2 and Nginx C++ components"
-task 'test:cxx' => ['test/cxx/CxxTestMain', :native_support] do
+task 'test:cxx' => ['test/cxx/CxxTestMain', 'test/support/allocate_memory', :native_support] do
         if ENV['GROUPS'].to_s.empty?
 	        sh "cd test && ./cxx/CxxTestMain"
         else

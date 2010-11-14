@@ -66,9 +66,9 @@ struct DirConfig {
 	/** Whether to autodetect WSGI applications. */
 	Threeway autoDetectWSGI;
 	
-	/** The environment (i.e. value for RAILS_ENV) under which
-	 * Rails applications should operate. */
-	const char *railsEnv;
+	/** The environment (RAILS_ENV/RACK_ENV/WSGI_ENV) under which
+	 * applications should operate. */
+	const char *environment;
 	
 	/** The path to the application's root (for example: RAILS_ROOT
 	 * for Rails applications, directory containing 'config.ru'
@@ -167,6 +167,8 @@ struct DirConfig {
 	 */
 	const char *uploadBufferDir;
 	
+	string unionStationKey;
+	
 	/**
 	 * Whether Phusion Passenger should show friendly error pages.
 	 */
@@ -258,17 +260,9 @@ struct DirConfig {
 		}
 	}
 	
-	const char *getRailsEnv() const {
-		if (railsEnv != NULL) {
-			return railsEnv;
-		} else {
-			return "production";
-		}
-	}
-	
-	const char *getRackEnv() const {
-		if (rackEnv != NULL) {
-			return rackEnv;
+	const char *getEnvironment() const {
+		if (environment != NULL) {
+			return environment;
 		} else {
 			return "production";
 		}
@@ -429,6 +423,10 @@ struct ServerConfig {
 	/** The temp directory that Passenger should use. */
 	string tempDir;
 	
+	string unionStationGatewayAddress;
+	int unionStationGatewayPort;
+	string unionStationGatewayCert;
+	
 	/** Directory in which analytics logs should be saved. */
 	string analyticsLogDir;
 	string analyticsLogUser;
@@ -448,6 +446,9 @@ struct ServerConfig {
 		userSwitching      = true;
 		defaultUser        = DEFAULT_WEB_APP_USER;
 		tempDir            = getSystemTempDir();
+		unionStationGatewayAddress = DEFAULT_UNION_STATION_GATEWAY_ADDRESS;
+		unionStationGatewayPort    = DEFAULT_UNION_STATION_GATEWAY_PORT;
+		unionStationGatewayCert    = "";
 		analyticsLogUser   = DEFAULT_ANALYTICS_LOG_USER;
 		analyticsLogGroup  = DEFAULT_ANALYTICS_LOG_GROUP;
 		analyticsLogPermissions = DEFAULT_ANALYTICS_LOG_PERMISSIONS;

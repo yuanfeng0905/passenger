@@ -16,7 +16,7 @@ describe Utils::MemoryMeasurer do
 	# Spawn a process whose only job is to allocate +size+ amount of memory, in MB.
 	# Yields the given block and passes the PID to the block.
 	def spawn_process(size)
-		exe = File.dirname(__FILE__) + "/../../stub/allocate_memory"
+		exe = File.dirname(__FILE__) + "/../../support/allocate_memory"
 		pid = IO.popen("#{exe} #{size}").pid
 		# Give it some time to start.
 		sleep 0.3
