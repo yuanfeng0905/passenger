@@ -22,7 +22,6 @@ module Packaging
 		'passenger-install-apache2-module',
 		'passenger-install-nginx-module',
 		'passenger-config',
-		'passenger-stress-test',
 		'passenger-find-frozen-apps',
 		'passenger-show-backtrace',
 		'passenger-archive-server'
