@@ -11,6 +11,7 @@ $LOAD_PATH.unshift("#{source_root}/lib")
 require 'phusion_passenger'
 require 'phusion_passenger/admin_tools/server_instance'
 require 'phusion_passenger/message_channel'
+require 'phusion_passenger/platform_info'
 require 'phusion_passenger/platform_info/ruby'
 require 'readline' rescue nil
 require 'optparse'
@@ -109,15 +110,18 @@ def attach_debugger(process)
 	if process.server_sockets[:ruby_debug_cmd]
 		cmd_host, cmd_port   = process.server_sockets[:ruby_debug_cmd].address.split(/:/, 2)
 		ctrl_host, ctrl_port = process.server_sockets[:ruby_debug_ctrl].address.split(/:/, 2)
-		rdebug = PlatformInfo.locate_ruby_executable('rdebug')
+		rdebug = PlatformInfo.locate_ruby_tool('rdebug')
 		puts "*** Attaching debugger to process #{process.pid}."
 		puts "*** Press Ctrl-C or Ctrl-D to exit debugger."
 		prev_int_handler = trap('INT', 'DEFAULT')
 		begin
-			system(PlatformInfo::RUBY, rdebug, "-c",
-				"-h", "127.0.0.1",
-				"--port", cmd_port,
-				"--cport", ctrl_port)
+			# ruby-debug reversed the control port and command port!
+			# Unlikely to be fixed any time soon especially seeing that
+			# the 1.8 and 1.9 versions are seperate, better work around
+			# it by reversing it here as well...
+			command = "#{PlatformInfo.ruby_command} #{rdebug} " +
+				"-c -h 127.0.0.1 --port #{ctrl_port} --cport #{cmd_port}"
+			system(command)
 			return true
 		ensure
 			trap('INT', prev_int_handler)
