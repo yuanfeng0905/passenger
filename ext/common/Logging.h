@@ -495,7 +495,8 @@ public:
 	}
 	
 	AnalyticsLogPtr newTransaction(const string &groupName, const string &category = "requests",
-		const string &unionStationKey = string())
+		const string &unionStationKey = string(),
+		const string &filters = string())
 	{
 		if (serverAddress.empty()) {
 			return ptr(new AnalyticsLog());
@@ -549,6 +550,7 @@ public:
 						timestampStr,
 						unionStationKey.c_str(),
 						"true",
+						filters.c_str(),
 						NULL);
 					return ptr(new AnalyticsLog(sharedData,
 						string(txnId, end - txnId),
