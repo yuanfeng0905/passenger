@@ -63,6 +63,9 @@ private:
 		string hostHeader;
 		string responseBody;
 		
+		string pingURL;
+		string sinkURL;
+		
 		void resetConnection() {
 			if (curl != NULL) {
 				#ifdef HAS_CURL_EASY_RESET
@@ -96,8 +99,7 @@ private:
 			responseBody.clear();
 		}
 		
-		void prepareRequest(const string &uri) {
-			string url = string("https://") + ip + ":" + toString(port) + uri;
+		void prepareRequest(const string &url) {
 			curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
 			responseBody.clear();
 		}
@@ -121,6 +123,13 @@ private:
 				throw IOException("Unable to create a CURL linked list");
 			}
 			
+			// Older libcurl versions didn't strdup() any option 
+			// strings so we need to keep these in memory.
+			pingURL = string("https://") + ip + ":" + toString(port) +
+				"/ping";
+			sinkURL = string("https://") + ip + ":" + toString(port) +
+				"/sink";
+			
 			curl = NULL;
 			resetConnection();
 		}
@@ -135,7 +144,7 @@ private:
 		bool ping() {
 			P_DEBUG("Pinging Union Station gateway " << ip << ":" << port);
 			ScopeGuard guard(boost::bind(&Server::resetConnection, this));
-			prepareRequest("/ping");
+			prepareRequest(pingURL);
 			
 			curl_easy_setopt(curl, CURLOPT_HTTPGET, 1);
 			if (curl_easy_perform(curl) != 0) {
@@ -156,7 +165,7 @@ private:
 		
 		bool send(const Item &item) {
 			ScopeGuard guard(boost::bind(&Server::resetConnection, this));
-			prepareRequest("/sink");
+			prepareRequest(sinkURL);
 			
 			struct curl_httppost *post = NULL;
 			struct curl_httppost *last = NULL;
