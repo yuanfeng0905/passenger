@@ -1053,7 +1053,7 @@ private:
 			addHeader(headers, env[i].key, env[i].val);
 		}
 		
-		if (config->useUnionStation()) {
+		if (!log->isNull()) {
 			addHeader(headers, "PASSENGER_GROUP_NAME",
 				config->getAppGroupName(appRoot).c_str());
 			addHeader(headers, "PASSENGER_TXN_ID", log->getTxnId().c_str());
