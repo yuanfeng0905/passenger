@@ -41,7 +41,6 @@ class StartCommand < Command
 		sanity_check_options
 		
 		ensure_nginx_installed
-		require_file_tail if should_watch_logs?
 		determine_various_resource_locations
 		require_app_finder
 		@app_finder = AppFinder.new(@args, @options)
@@ -90,15 +89,6 @@ class StartCommand < Command
 	end
 
 private
-	def require_file_tail
-		begin
-			require 'file/tail'
-		rescue LoadError
-			error "Please install file-tail first: sudo gem install file-tail"
-			exit 1
-		end
-	end
-	
 	def require_file_utils
 		require 'fileutils' unless defined?(FileUtils)
 	end
@@ -129,6 +119,10 @@ private
 			opts.on("-e", "--environment ENV", String,
 				wrap_desc("Framework environment (default: #{@options[:env]})")) do |value|
 				@options[:env] = value
+			end
+			opts.on("-R", "--rackup FILE", String,
+				wrap_desc("If Rack application detected, run this rackup file")) do |value|
+				ENV["RACKUP_FILE"] = value
 			end
 			opts.on("--max-pool-size NUMBER", Integer,
 				wrap_desc("Maximum number of application processes (default: #{@options[:max_pool_size]})")) do |value|
@@ -456,7 +450,6 @@ private
 	end
 	
 	def watch_log_files_in_background
-		require_file_tail
 		@apps.each do |app|
 			thread = Thread.new do
 				watch_log_file("#{app[:root]}/log/#{@options[:env]}.log")

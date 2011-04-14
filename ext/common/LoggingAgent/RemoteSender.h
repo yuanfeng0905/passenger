@@ -81,6 +81,8 @@ private:
 					throw IOException("Unable to create a CURL handle");
 				}
 			}
+			curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1);
+			curl_easy_setopt(curl, CURLOPT_TIMEOUT, 180);
 			curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, lastErrorMessage);
 			curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
 			curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, curlDataReceived);
@@ -451,7 +453,13 @@ public:
 			}
 		}
 		
-		queue.add(item);
+		if (!queue.tryAdd(item)) {
+			P_WARN("The Union Station gateway isn't responding quickly enough; dropping packet.");
+		}
+	}
+	
+	unsigned int queued() const {
+		return queue.size();
 	}
 };
 

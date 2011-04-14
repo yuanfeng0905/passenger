@@ -297,7 +297,9 @@ private:
 	 *                                     before we were able to send back the
 	 *                                     full response.
 	 */
-	void forwardResponse(SessionPtr &session, FileDescriptor &clientFd) {
+	void forwardResponse(SessionPtr &session, FileDescriptor &clientFd,
+		const AnalyticsLogPtr &log)
+	{
 		TRACE_POINT();
 		HttpStatusExtractor ex;
 		int stream = session->getStream();
@@ -329,6 +331,11 @@ private:
 					writeExact(clientFd, statusLine);
 					UPDATE_TRACE_POINT();
 					writeExact(clientFd, ex.getBuffer());
+					if (!log->isNull()) {
+						string partialStatusLine = ex.getStatusLine();
+						partialStatusLine.erase(partialStatusLine.size() - 2, 2);
+						log->message("Status: " + partialStatusLine);
+					}
 					break;
 				} catch (const SystemException &e) {
 					if (e.code() == EPIPE) {
@@ -543,7 +550,7 @@ private:
 					scope.success();
 				}
 				
-				forwardResponse(session, clientFd);
+				forwardResponse(session, clientFd, log);
 				
 				requestProxyingScope.success();
 			} catch (const SpawnException &e) {
