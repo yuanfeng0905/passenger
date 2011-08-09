@@ -160,7 +160,7 @@ public:
 	 * @throws boost::thread_interrupted
 	 */
 	virtual void sendHeaders(const StaticString &headers) {
-		sendHeaders(headers.c_str(), headers.size());
+		sendHeaders(headers.c_str(), (unsigned int) headers.size());
 	}
 	
 	/**

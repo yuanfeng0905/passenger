@@ -26,6 +26,7 @@
 #include <sstream>
 #include <cstdio>
 #include <ctime>
+#include <cerrno>
 
 #include "RandomGenerator.h"
 #include "FileDescriptor.h"
@@ -133,7 +134,7 @@ void setDebugFile(const char *logFile = NULL);
 #endif
 
 
-/********** Transaction logging facilities *********/
+/********** Analytics logging facilities *********/
 
 struct AnalyticsLoggerSharedData {
 	boost::mutex lock;
