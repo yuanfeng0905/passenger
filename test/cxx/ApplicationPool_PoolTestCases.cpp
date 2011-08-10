@@ -1136,9 +1136,9 @@
 		session2.reset();
 		
 		// The pool will eventually notice that spawning has failed...
-		usleep(500000);
-		ensure_equals("(2)", pool->getActive(), 1u);
-		ensure_equals("(3)", pool->getCount(), 1u);
+		EVENTUALLY(4,
+			result = pool->getActive() == 1u && pool->getCount() == 1u;
+		);
 		
 		// ...and its group should then be flagged as 'bad' so that
 		// another get() won't cause it to spawn a new process even
@@ -1148,9 +1148,9 @@
 		session2 = pool2->get(options);
 		ensure_equals("(4)", session2->getPid(), session1->getPid());
 		
-		usleep(500000);
-		ensure_equals("(5)", pool->getActive(), 1u);
-		ensure_equals("(6)", pool->getCount(), 1u);
+		EVENTUALLY(4,
+			result = pool->getActive() == 1u && pool->getCount() == 1u;
+		);
 		
 		// Until the user explicitly restarts the app.
 		touchFile("rackapp1.tmp/tmp/restart.txt");
