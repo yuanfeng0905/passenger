@@ -1399,6 +1399,8 @@ public:
 			serverConfig.unionStationGatewayAddress,
 			serverConfig.unionStationGatewayPort,
 			serverConfig.unionStationGatewayCert,
+			serverConfig.unionStationProxyAddress,
+			serverConfig.unionStationProxyType,
 			serverConfig.prestartURLs);
 		
 		analyticsLogger = ptr(new AnalyticsLogger(agentsStarter.getLoggingSocketAddress(),

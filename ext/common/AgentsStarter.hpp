@@ -368,6 +368,8 @@ public:
 	           const string &unionStationGatewayAddress,
 	           unsigned short unionStationGatewayPort,
 	           const string &unionStationGatewayCert,
+	           const string &unionStationProxyAddress,
+	           const string &unionStationProxyType,
 	           const set<string> &prestartURLs,
 	           const function<void ()> &afterFork = function<void ()>())
 	{
@@ -409,6 +411,8 @@ public:
 			.set    ("union_station_gateway_address",  unionStationGatewayAddress)
 			.setInt ("union_station_gateway_port", unionStationGatewayPort)
 			.set    ("union_station_gateway_cert", realUnionStationGatewayCert)
+			.set    ("union_station_proxy_address", unionStationProxyAddress)
+			.set    ("union_station_proxy_type",   unionStationProxyType)
 			.set    ("prestart_urls",   serializePrestartURLs(prestartURLs));
 		
 		SocketPair fds;
