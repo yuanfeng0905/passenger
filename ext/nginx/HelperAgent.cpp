@@ -44,6 +44,8 @@
 #include "Exceptions.h"
 #include "Utils.h"
 #include "Utils/Timer.h"
+#include <Utils/IOUtils.h>
+#include <Utils/MessageIO.h>
 #include <Utils/Dechunker.h>
 #include <Utils/HttpHeaderBufferer.h>
 #include <Utils/StreamBoyerMooreHorspool.h>
@@ -436,10 +438,9 @@ private:
 	 */
 	bool readAndCheckPassword(FileDescriptor &fd) {
 		TRACE_POINT();
-		MessageChannel channel(fd);
 		char buf[REQUEST_SOCKET_PASSWORD_SIZE];
 		
-		if (channel.readRaw(buf, sizeof(buf))) {
+		if (readExact(fd, buf, sizeof(buf)) == sizeof(buf)) {
 			const char *password_data;
 			
 			password_data = const_cast<const string &>(password).c_str();
@@ -802,6 +803,7 @@ private:
 				parser.getHeader("PASSENGER_APP_RIGHTS"),
 				DEFAULT_BACKEND_ACCOUNT_RIGHTS);
 			options.minProcesses   = atol(parser.getHeader("PASSENGER_MIN_INSTANCES"));
+			options.maxRequests    = atol(parser.getHeader("PASSENGER_MAX_REQUESTS"));
 			options.frameworkSpawnerTimeout = atol(parser.getHeader("PASSENGER_FRAMEWORK_SPAWNER_IDLE_TIME"));
 			options.appSpawnerTimeout       = atol(parser.getHeader("PASSENGER_APP_SPAWNER_IDLE_TIME"));
 			options.debugger       = parser.getHeader("PASSENGER_DEBUGGER") == "true";
@@ -1031,7 +1033,6 @@ private:
 	unsigned int numberOfThreads;
 	FileDescriptor requestSocket;
 	string requestSocketPassword;
-	MessageChannel feedbackChannel;
 	ServerInstanceDir serverInstanceDir;
 	ServerInstanceDir::GenerationPtr generation;
 	set<ClientPtr> clients;
@@ -1163,7 +1164,6 @@ public:
 		this->userSwitching = userSwitching;
 		this->defaultUser   = defaultUser;
 		this->defaultGroup  = defaultGroup;
-		feedbackChannel     = MessageChannel(feedbackFd);
 		numberOfThreads     = maxPoolSize * 4;
 		
 		sbmh_init(NULL, &statusFinder_occ,
@@ -1208,7 +1208,8 @@ public:
 		messageServer->addHandler(ptr(new ExitHandler(exitEvent)));
 		
 		UPDATE_TRACE_POINT();
-		feedbackChannel.write("initialized",
+		writeArrayMessage(feedbackFd,
+			"initialized",
 			getRequestSocketFilename().c_str(),
 			messageServer->getSocketFilename().c_str(),
 			NULL);

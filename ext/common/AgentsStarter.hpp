@@ -20,19 +20,19 @@
 #include <unistd.h>
 #include <signal.h>
 
-#include "Constants.h"
-#include "FileDescriptor.h"
-#include "MessageChannel.h"
-#include "MessageClient.h"
-#include "ServerInstanceDir.h"
-#include "Exceptions.h"
-#include "ResourceLocator.h"
-#include "Utils.h"
-#include "Utils/IOUtils.h"
-#include "Utils/Base64.h"
-#include "Utils/Timer.h"
-#include "Utils/ScopeGuard.h"
-#include "Utils/VariantMap.h"
+#include <Constants.h>
+#include <FileDescriptor.h>
+#include <MessageClient.h>
+#include <ServerInstanceDir.h>
+#include <Exceptions.h>
+#include <ResourceLocator.h>
+#include <Utils.h>
+#include <Utils/IOUtils.h>
+#include <Utils/MessageIO.h>
+#include <Utils/Base64.h>
+#include <Utils/Timer.h>
+#include <Utils/ScopeGuard.h>
+#include <Utils/VariantMap.h>
 
 namespace Passenger {
 
@@ -109,8 +109,8 @@ private:
 		if (fd != FEEDBACK_FD && syscalls::dup2(fd, FEEDBACK_FD) == -1) {
 			int e = errno;
 			try {
-				MessageChannel channel(fd);
-				channel.write("system error",
+				writeArrayMessage(fd,
+					"system error",
 					"dup2() failed",
 					toString(e).c_str(),
 					NULL);
@@ -450,8 +450,10 @@ public:
 			execl(watchdogFilename.c_str(), "PassengerWatchdog", (char *) 0);
 			e = errno;
 			try {
-				MessageChannel channel(FEEDBACK_FD);
-				channel.write("exec error", toString(e).c_str(), NULL);
+				writeArrayMessage(FEEDBACK_FD,
+					"exec error",
+					toString(e).c_str(),
+					NULL);
 				_exit(1);
 			} catch (...) {
 				fprintf(stderr, "Passenger AgentsStarter: could not execute %s: %s (%d)\n",
@@ -467,7 +469,6 @@ public:
 			// Parent
 			UPDATE_TRACE_POINT();
 			FileDescriptor feedbackFd = fds[0];
-			MessageChannel feedbackChannel(fds[0]);
 			vector<string> args;
 			bool result, allAgentsStarted;
 			
@@ -485,7 +486,7 @@ public:
 			 * reading the arguments. We'll notice that later.
 			 */
 			try {
-				watchdogArgs.writeToChannel(feedbackChannel);
+				watchdogArgs.writeToFd(feedbackFd);
 			} catch (const SystemException &e) {
 				if (e.code() != EPIPE && e.code() != ECONNRESET) {
 					inspectWatchdogCrashReason(pid);
@@ -500,7 +501,7 @@ public:
 			UPDATE_TRACE_POINT();
 			
 			try {
-				result = feedbackChannel.read(args);
+				result = readArrayMessage(feedbackFd, args);
 			} catch (const SystemException &ex) {
 				if (ex.code() == ECONNRESET) {
 					inspectWatchdogCrashReason(pid);
@@ -569,7 +570,7 @@ public:
 			while (!allAgentsStarted) {
 				try {
 					UPDATE_TRACE_POINT();
-					result = feedbackChannel.read(args);
+					result = readArrayMessage(feedbackFd, args);
 				} catch (const SystemException &ex) {
 					killProcessGroupAndWait(&pid, 5000);
 					guard.clear();

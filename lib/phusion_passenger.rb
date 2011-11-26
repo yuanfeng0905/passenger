@@ -11,7 +11,7 @@ module PhusionPassenger
 	# Phusion Passenger version number. Don't forget to edit ext/common/Constants.h too.
 	VERSION_STRING = '3.0.9'
 	
-	PREFERRED_NGINX_VERSION = '1.0.6'
+	PREFERRED_NGINX_VERSION = '1.0.10'
 	PREFERRED_PCRE_VERSION  = '8.12'
 	STANDALONE_INTERFACE_VERSION  = 1
 	
@@ -94,7 +94,7 @@ module PhusionPassenger
 	STANDALONE_BINARIES_URL_ROOT  = nil
 	
 	
-	if $LOAD_PATH.first != LIBDIR
+	if !$LOAD_PATH.include?(LIBDIR)
 		$LOAD_PATH.unshift(LIBDIR)
 		$LOAD_PATH.uniq!
 	end

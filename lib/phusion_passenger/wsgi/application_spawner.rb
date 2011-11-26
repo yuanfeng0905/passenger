@@ -54,7 +54,7 @@ class ApplicationSpawner
 
 private
 	def run(channel, options)
-		$0 = "WSGI: #{options['app_root']}"
+		$0 = "WSGI: #{options['app_group_name']}"
 		prepare_app_process("passenger_wsgi.py", options)
 		ENV['WSGI_ENV'] = options['environment']
 		
