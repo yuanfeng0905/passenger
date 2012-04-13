@@ -249,9 +249,7 @@ createUnixServer(const StaticString &filename, unsigned int backlogSize, bool au
 	try {
 		ret = syscalls::bind(fd, (const struct sockaddr *) &addr, sizeof(addr));
 	} catch (...) {
-		do {
-			ret = close(fd);
-		} while (ret == -1 && errno == EINTR);
+		safelyClose(fd, true);
 		throw;
 	}
 	if (ret == -1) {
@@ -259,9 +257,7 @@ createUnixServer(const StaticString &filename, unsigned int backlogSize, bool au
 		string message = "Cannot bind Unix socket '";
 		message.append(filename.toString());
 		message.append("'");
-		do {
-			ret = close(fd);
-		} while (ret == -1 && errno == EINTR);
+		safelyClose(fd, true);
 		throw SystemException(message, e);
 	}
 	
@@ -271,9 +267,7 @@ createUnixServer(const StaticString &filename, unsigned int backlogSize, bool au
 	try {
 		ret = syscalls::listen(fd, backlogSize);
 	} catch (...) {
-		do {
-			ret = close(fd);
-		} while (ret == -1 && errno == EINTR);
+		safelyClose(fd, true);
 		throw;
 	}
 	if (ret == -1) {
@@ -281,9 +275,7 @@ createUnixServer(const StaticString &filename, unsigned int backlogSize, bool au
 		string message = "Cannot listen on Unix socket '";
 		message.append(filename.toString());
 		message.append("'");
-		do {
-			ret = close(fd);
-		} while (ret == -1 && errno == EINTR);
+		safelyClose(fd, true);
 		throw SystemException(message, e);
 	}
 	
@@ -321,9 +313,7 @@ createTcpServer(const char *address, unsigned short port, unsigned int backlogSi
 	try {
 		ret = syscalls::bind(fd, (const struct sockaddr *) &addr, sizeof(addr));
 	} catch (...) {
-		do {
-			ret = close(fd);
-		} while (ret == -1 && errno == EINTR);
+		safelyClose(fd, true);
 		throw;
 	}
 	if (ret == -1) {
@@ -332,9 +322,7 @@ createTcpServer(const char *address, unsigned short port, unsigned int backlogSi
 		message.append(address);
 		message.append("' port ");
 		message.append(toString(port));
-		do {
-			ret = close(fd);
-		} while (ret == -1 && errno == EINTR);
+		safelyClose(fd, true);
 		throw SystemException(message, e);
 	}
 	
@@ -345,9 +333,7 @@ createTcpServer(const char *address, unsigned short port, unsigned int backlogSi
 				printf("so_reuseaddr failed: %s\n", strerror(errno));
 			}
 	} catch (...) {
-		do {
-			ret = close(fd);
-		} while (ret == -1 && errno == EINTR);
+		safelyClose(fd, true);
 		throw;
 	}
 	// Ignore SO_REUSEPORT error, it's not fatal.
@@ -358,9 +344,7 @@ createTcpServer(const char *address, unsigned short port, unsigned int backlogSi
 	try {
 		ret = syscalls::listen(fd, backlogSize);
 	} catch (...) {
-		do {
-			ret = close(fd);
-		} while (ret == -1 && errno == EINTR);
+		safelyClose(fd, true);
 		throw;
 	}
 	if (ret == -1) {
@@ -369,9 +353,7 @@ createTcpServer(const char *address, unsigned short port, unsigned int backlogSi
 		message.append(address);
 		message.append("' port ");
 		message.append(toString(port));
-		do {
-			ret = close(fd);
-		} while (ret == -1 && errno == EINTR);
+		safelyClose(fd, true);
 		throw SystemException(message, e);
 	}
 	
@@ -424,9 +406,7 @@ connectToUnixServer(const StaticString &filename) {
 		try {
 			ret = syscalls::connect(fd, (const sockaddr *) &addr, sizeof(addr));
 		} catch (...) {
-			do {
-				ret = close(fd);
-			} while (ret == -1 && errno == EINTR);
+			safelyClose(fd, true);
 			throw;
 		}
 		if (ret == -1) {
@@ -450,9 +430,7 @@ connectToUnixServer(const StaticString &filename) {
 				string message("Cannot connect to Unix socket '");
 				message.append(filename.toString());
 				message.append("'");
-				do {
-					ret = close(fd);
-				} while (ret == -1 && errno == EINTR);
+				safelyClose(fd, true);
 				throw SystemException(message, e);
 			}
 		} else {
@@ -498,9 +476,7 @@ connectToTcpServer(const StaticString &hostname, unsigned int port) {
 		ret = syscalls::connect(fd, res->ai_addr, res->ai_addrlen);
 	} catch (...) {
 		freeaddrinfo(res);
-		do {
-			ret = close(fd);
-		} while (ret == -1 && errno == EINTR);
+		safelyClose(fd, true);
 		throw;
 	}
 	e = errno;
@@ -511,9 +487,7 @@ connectToTcpServer(const StaticString &hostname, unsigned int port) {
 		message.append(":");
 		message.append(toString(port));
 		message.append("'");
-		do {
-			ret = close(fd);
-		} while (ret == -1 && errno == EINTR);
+		safelyClose(fd, true);
 		throw SystemException(message, e);
 	}
 	
@@ -990,7 +964,7 @@ writeFileDescriptor(int fd, int fdToSend, unsigned long long *timeout) {
 }
 
 void
-safelyClose(int fd) {
+safelyClose(int fd, bool ignoreErrors) {
 	if (syscalls::close(fd) == -1) {
 		/* FreeBSD has a kernel bug which can cause close() to return ENOTCONN.
 		 * This is harmless, ignore it. We check for this problem on all
@@ -999,7 +973,7 @@ safelyClose(int fd) {
 		 * http://www.freebsd.org/cgi/query-pr.cgi?pr=79138
 		 * http://www.freebsd.org/cgi/query-pr.cgi?pr=144061
 		 */
-		if (errno != ENOTCONN) {
+		if (errno != ENOTCONN && !ignoreErrors) {
 			int e = errno;
 			throw SystemException("Cannot close file descriptor", e);
 		}
