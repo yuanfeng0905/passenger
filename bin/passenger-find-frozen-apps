@@ -1,0 +1,112 @@
+#!/usr/bin/env ruby
+#  Phusion Passenger - http://www.modrails.com/
+#  Copyright (c) 2009 Phusion
+#
+#  "Phusion Passenger" is a trademark of Hongli Lai & Ninh Bui.
+#
+#  See LICENSE file for license information.
+$LOAD_PATH << File.expand_path(File.dirname(__FILE__) + "/../lib")
+$LOAD_PATH << File.expand_path(File.dirname(__FILE__) + "/../ext")
+
+require 'thread'
+require 'timeout'
+require 'socket'
+require 'passenger/message_channel'
+require 'passenger/utils'
+require 'passenger/admin_tools/control_process'
+
+include Passenger
+include Passenger::Utils
+include Passenger::AdminTools
+FIND_TIMEOUT = 10
+
+# ANSI color codes
+RESET   = "\e[0m"
+BOLD    = "\e[1m"
+YELLOW  = "#{BOLD}\e[33m"
+RED     = "#{BOLD}\e[31m"
+GREEN   = "#{BOLD}\e[32m"
+
+def start
+	if ARGV.empty?
+		control_processes = ControlProcess.list
+		if control_processes.empty?
+			STDERR.puts("ERROR: Phusion Passenger doesn't seem to be running.")
+			exit 2
+		elsif control_processes.size == 1
+			find_frozen_apps(control_processes.first)
+		else
+			puts "It appears that multiple Passenger instances are running. Please select a"
+			puts "specific one by running:"
+			puts
+			puts "  passenger-find-frozen-apps <PID>"
+			puts
+			puts "The following Passenger instances are running:"
+			control_processes.each do |control|
+				puts "  PID: #{control.pid}"
+			end
+			exit 1
+		end
+	else
+		find_frozen_apps(ControlProcess.new(ARGV[0].to_i))
+	end
+end
+
+def find_frozen_apps(control)
+	puts "Finding frozen applications. Please wait at least #{FIND_TIMEOUT} seconds..."
+	threads = []
+	frozen_pids = []
+	terminal_lock = Mutex.new
+	Thread.abort_on_exception = true
+	control.instances.each do |instance|
+		pid = instance.pid
+		thread = Thread.new do
+			if !ping_instance(instance)
+				terminal_lock.synchronize do
+					puts "PID #{pid}: #{RED}frozen#{RESET}"
+				end
+				frozen_pids << pid
+			else
+				terminal_lock.synchronize do
+					puts "PID #{pid}: #{GREEN}responsive#{RESET}"
+				end
+			end
+		end
+		threads << thread
+	end
+	threads.each do |thread|
+		thread.join
+	end
+	puts "-----------------------------------"
+	puts "#{frozen_pids.size} frozen application(s) found."
+	if !frozen_pids.empty?
+		puts
+		puts "Use #{YELLOW}passenger-show-backtrace <PID>#{RESET} to debug a frozen application."
+	end
+end
+
+def ping_instance(instance)
+	socket = UNIXSocket.new(instance.socket_name)
+	begin
+		channel = MessageChannel.new(socket)
+		channel.write_scalar("REQUEST_METHOD\0PING\0")
+		
+		if select([socket], nil, nil, FIND_TIMEOUT)
+			socket.read  # discard 'pong'
+			return true
+		else
+			return false
+		end
+	ensure
+		socket.close
+	end
+end
+
+def signal_process_to_print_backtrace(pid)
+	Process.kill('SIGQUIT', pid)
+rescue Errno::ESRCH
+	puts "PID #{pid} does not exist."
+	exit 2
+end
+
+start

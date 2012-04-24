@@ -4,23 +4,7 @@
  *
  *  "Phusion Passenger" is a trademark of Hongli Lai & Ninh Bui.
  *
- *  Permission is hereby granted, free of charge, to any person obtaining a copy
- *  of this software and associated documentation files (the "Software"), to deal
- *  in the Software without restriction, including without limitation the rights
- *  to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
- *  copies of the Software, and to permit persons to whom the Software is
- *  furnished to do so, subject to the following conditions:
- *
- *  The above copyright notice and this permission notice shall be included in
- *  all copies or substantial portions of the Software.
- *
- *  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- *  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- *  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- *  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- *  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
- *  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
- *  THE SOFTWARE.
+ *  See LICENSE file for license information.
  */
 #include <algorithm>
 #include <cstdlib>
@@ -210,6 +194,13 @@ passenger_config_create_dir(apr_pool_t *p, char *dirspec) {
 	config->unionStationSupport = DirConfig::UNSET;
 	config->bufferResponse = DirConfig::UNSET;
 	/*************************************/
+	config->maxInstances = 0;
+	config->maxInstancesSpecified = false;
+	config->maxRequestTime = 0;
+	config->maxRequestTimeSpecified = false;
+	config->memoryLimit = 0;
+	config->memoryLimitSpecified = false;
+	config->rollingRestarts = DirConfig::UNSET;
 	return config;
 }
 
@@ -260,6 +251,13 @@ passenger_config_merge_dir(apr_pool_t *p, void *basev, void *addv) {
 	MERGE_THREEWAY_CONFIG(unionStationSupport);
 	MERGE_THREEWAY_CONFIG(bufferResponse);
 	/*************************************/
+	config->maxInstances = (add->maxInstancesSpecified) ? add->maxInstances : base->maxInstances;
+	config->maxInstancesSpecified = base->maxInstancesSpecified || add->maxInstancesSpecified;
+	config->maxRequestTime = (add->maxRequestTimeSpecified) ? add->maxRequestTime : base->maxRequestTime;
+	config->maxRequestTimeSpecified = base->maxRequestTimeSpecified || add->maxRequestTimeSpecified;
+	config->memoryLimit = (add->memoryLimitSpecified) ? add->memoryLimit : base->memoryLimit;
+	config->memoryLimitSpecified = base->memoryLimitSpecified || add->memoryLimitSpecified;
+	config->rollingRestarts = (add->rollingRestarts == DirConfig::UNSET) ? base->rollingRestarts : add->rollingRestarts;
 	return config;
 }
 
@@ -293,6 +291,11 @@ cmd_passenger_pre_start(cmd_parms *cmd, void *pcfg, const char *arg) {
 	serverConfig.prestartURLs.insert(arg);
 	return NULL;
 }
+
+DEFINE_DIR_THREEWAY_CONFIG_SETTER(cmd_passenger_rolling_restarts, rollingRestarts)
+DEFINE_DIR_INT_CONFIG_SETTER(cmd_passenger_max_request_time, maxRequestTime, unsigned long, 0)
+DEFINE_DIR_INT_CONFIG_SETTER(cmd_passenger_max_instances, maxInstances, unsigned long, 0)
+DEFINE_DIR_INT_CONFIG_SETTER(cmd_passenger_memory_limit, memoryLimit, unsigned long, 0)
 
 DEFINE_DIR_INT_CONFIG_SETTER(cmd_passenger_min_instances, minInstances, unsigned long, 0)
 DEFINE_DIR_INT_CONFIG_SETTER(cmd_passenger_max_requests, maxRequests, unsigned long, 0)
@@ -668,6 +671,26 @@ const command_rec passenger_commands[] = {
 		"Whether to enable logging through Union Station."),
 	
 	/*****************************/
+	AP_INIT_TAKE1("PassengerMemoryLimit",
+		(Take1Func) cmd_passenger_memory_limit,
+		NULL,
+		OR_LIMIT | ACCESS_CONF | RSRC_CONF,
+		"The maximum amount of memory in MB that an application instance may use."),
+	AP_INIT_TAKE1("PassengerMaxInstances",
+		(Take1Func) cmd_passenger_max_instances,
+		NULL,
+		OR_LIMIT | ACCESS_CONF | RSRC_CONF,
+		"The maximum number of instances for the current application that Passenger may spawn."),
+	AP_INIT_TAKE1("PassengerMaxRequestTime",
+		(Take1Func) cmd_passenger_max_request_time,
+		NULL,
+		OR_ALL,
+		"The maximum time (in seconds) that the current application may spend on a request."),
+	AP_INIT_FLAG("PassengerRollingRestarts",
+		(FlagFunc) cmd_passenger_rolling_restarts,
+		NULL,
+		OR_OPTIONS | ACCESS_CONF | RSRC_CONF,
+		"Whether to turn on rolling restarts"),
 
 	// Rails-specific settings.
 	AP_INIT_TAKE1("RailsBaseURI",

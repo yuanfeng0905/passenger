@@ -4,23 +4,7 @@
  *
  *  "Phusion Passenger" is a trademark of Hongli Lai & Ninh Bui.
  *
- *  Permission is hereby granted, free of charge, to any person obtaining a copy
- *  of this software and associated documentation files (the "Software"), to deal
- *  in the Software without restriction, including without limitation the rights
- *  to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
- *  copies of the Software, and to permit persons to whom the Software is
- *  furnished to do so, subject to the following conditions:
- *
- *  The above copyright notice and this permission notice shall be included in
- *  all copies or substantial portions of the Software.
- *
- *  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- *  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- *  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- *  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- *  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
- *  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
- *  THE SOFTWARE.
+ *  See LICENSE file for license information.
  */
 #ifndef _PASSENGER_CONFIGURATION_HPP_
 #define _PASSENGER_CONFIGURATION_HPP_
@@ -192,6 +176,40 @@ struct DirConfig {
 	Threeway bufferResponse;
 	
 	/*************************************/
+	
+	/*
+	 * The maximum number of instances that may be spawned
+	 * for the corresponding application.
+	 */
+	unsigned long maxInstances;
+	
+	/** Indicates whether the maxInstances option was explicitly specified
+	 * in the directory configuration. */
+	bool maxInstancesSpecified;
+	
+	/**
+	 * The maximum amount of time (in seconds) that the current application
+	 * may spend on a request.
+	 */
+	unsigned long maxRequestTime;
+	
+	/** Indicates whether the maxRequestTime option was explicitly.
+	 * specified in the directory configuration. */
+	bool maxRequestTimeSpecified;
+	
+	/**
+	 * The maximum amount of memory (in MB) the spawned application may use.
+	 * A value of 0 means unlimited.
+	 */
+	unsigned long memoryLimit;
+	
+	/** Indicates whether the memoryLimit option was explicitly specified
+	 * in the directory configuration. */
+	bool memoryLimitSpecified;
+	
+	/** Whether rolling restarts should be used. */
+	Threeway rollingRestarts;
+	
 	/*************************************/
 	
 	bool isEnabled() const {
@@ -331,6 +349,34 @@ struct DirConfig {
 	}
 	
 	/*************************************/
+	
+	unsigned long getMaxInstances() const {
+		if (maxInstancesSpecified) {
+			return maxInstances;
+		} else {
+			return 0;
+		}
+	}
+	
+	unsigned long getMaxRequestTime() const {
+		if (maxRequestTimeSpecified) {
+			return maxRequestTime;
+		} else {
+			return 0;
+		}
+	}
+	
+	unsigned long getMemoryLimit() const {
+		if (memoryLimitSpecified) {
+			return memoryLimit;
+		} else {
+			return 0;
+		}
+	}
+	
+	bool useRollingRestarts() const {
+		return rollingRestarts == ENABLED;
+	}
 };
 
 

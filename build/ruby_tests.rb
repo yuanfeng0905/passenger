@@ -24,7 +24,7 @@
 ### Ruby components tests ###
 
 desc "Run unit tests for the Ruby libraries"
-task 'test:ruby' => [:native_support, AGENT_OUTPUT_DIR + 'PassengerLoggingAgent'] do
+task 'test:ruby' => [:native_support, AGENT_OUTPUT_DIR + 'PassengerLoggingAgent', 'test/support/allocate_memory'] do
 	if PlatformInfo.rspec.nil?
 		abort "RSpec is not installed for Ruby interpreter '#{PlatformInfo.ruby_command}'. Please install it."
 	else

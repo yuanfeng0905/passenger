@@ -63,6 +63,11 @@ typedef struct {
 #endif
 
     /************************************/
+
+    ngx_int_t    max_instances;
+    ngx_int_t    max_request_time;
+    ngx_int_t    memory_limit;
+    ngx_flag_t   rolling_restarts;
 } passenger_loc_conf_t;
 
 typedef struct {

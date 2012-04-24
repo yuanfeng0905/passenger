@@ -3,23 +3,7 @@
 #
 #  "Phusion Passenger" is a trademark of Hongli Lai & Ninh Bui.
 #
-#  Permission is hereby granted, free of charge, to any person obtaining a copy
-#  of this software and associated documentation files (the "Software"), to deal
-#  in the Software without restriction, including without limitation the rights
-#  to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-#  copies of the Software, and to permit persons to whom the Software is
-#  furnished to do so, subject to the following conditions:
-#
-#  The above copyright notice and this permission notice shall be included in
-#  all copies or substantial portions of the Software.
-#
-#  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-#  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-#  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-#  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-#  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-#  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-#  THE SOFTWARE.
+#  See LICENSE file for license information.
 require 'phusion_passenger/utils/file_system_watcher'
 
 module PhusionPassenger
@@ -45,14 +29,46 @@ class AppFinder
 		apps = []
 		watchlist = []
 		
-		app_root = find_app_root
-		apps << {
-			:server_names => ["_"],
-			:root => app_root
-		}
-		watchlist << app_root
-		watchlist << "#{app_root}/config" if File.exist?("#{app_root}/config")
-		watchlist << "#{app_root}/passenger.conf" if File.exist?("#{app_root}/passenger.conf")
+		if single_mode?
+			app_root = find_app_root
+			apps << {
+				:server_names => ["_"],
+				:root => app_root
+			}
+			watchlist << app_root
+			watchlist << "#{app_root}/config" if File.exist?("#{app_root}/config")
+			watchlist << "#{app_root}/passenger.conf" if File.exist?("#{app_root}/passenger.conf")
+		else
+			dirs = @dirs.empty? ? ["."] : @dirs
+			dirs.each do |dir|
+				if looks_like_app_directory?(dir)
+					app_root = File.expand_path(dir)
+					server_names = filename_to_server_names(dir)
+					apps << {
+						:server_names => server_names,
+						:root => app_root
+					}
+					watchlist << app_root
+					watchlist << "#{app_root}/config" if File.exist?("#{app_root}/config")
+					watchlist << "#{app_root}/passenger.conf" if File.exist?("#{app_root}/passenger.conf")
+				else
+					full_dir = File.expand_path(dir)
+					watchlist << full_dir
+					Dir["#{full_dir}/*"].each do |subdir|
+						if looks_like_app_directory?(subdir)
+							server_names = filename_to_server_names(subdir)
+							apps << {
+								:server_names => server_names,
+								:root => subdir
+							}
+						end
+						watchlist << subdir
+						watchlist << "#{subdir}/config" if File.exist?("#{subdir}/config")
+						watchlist << "#{subdir}/passenger.conf" if File.exist?("#{subdir}/passenger.conf")
+					end
+				end
+			end
+		end
 		
 		apps.sort! do |a, b|
 			a[:root] <=> b[:root]
@@ -113,6 +129,15 @@ class AppFinder
 	end
 	
 	##################
+	
+	def single_mode?
+		return (@dirs.empty? && looks_like_app_directory?(".")) ||
+			(@dirs.size == 1 && looks_like_app_directory?(@dirs[0]))
+	end
+	
+	def multi_mode?
+		return !single_mode?
+	end
 
 private
 	def find_app_root
@@ -147,6 +172,8 @@ private
 	def wait_on_io(io, timeout)
 		return !!select([io], nil, nil, timeout)
 	end
+	
+	##################
 end
 
 end # module Standalone

@@ -62,7 +62,7 @@ http {
     gzip_proxied any;
     gzip_types text/plain text/css application/javascript application/x-javascript;
     
-    <% if @apps.size > 1 %>
+    <% if @app_finder.multi_mode? %>
     # Default server entry.
     server {
         listen <%= nginx_listen_address %>;
@@ -86,6 +86,7 @@ http {
         rails_env <%= app[:env] %>;
         passenger_spawn_method <%= app[:spawn_method] %>;
         <% if app[:min_instances] %>passenger_min_instances <%= app[:min_instances] %>;<% end %>
+        <% if app[:debugger] %>passenger_debugger on;<% end %>
         <% if app[:union_station_key] %>
             union_station_support on;
             union_station_key <%= app[:union_station_key] %>;

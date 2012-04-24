@@ -3,23 +3,7 @@
 #
 #  "Phusion Passenger" is a trademark of Hongli Lai & Ninh Bui.
 #
-#  Permission is hereby granted, free of charge, to any person obtaining a copy
-#  of this software and associated documentation files (the "Software"), to deal
-#  in the Software without restriction, including without limitation the rights
-#  to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-#  copies of the Software, and to permit persons to whom the Software is
-#  furnished to do so, subject to the following conditions:
-#
-#  The above copyright notice and this permission notice shall be included in
-#  all copies or substantial portions of the Software.
-#
-#  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-#  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-#  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-#  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-#  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-#  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-#  THE SOFTWARE.
+#  See LICENSE file for license information.
 require 'socket'
 require 'thread'
 require 'etc'
@@ -74,6 +58,7 @@ class StartCommand < Command
 			Thread.abort_on_exception = true
 			@plugin.call_hook(:nginx_started, @nginx)
 			########################
+			monitor_app_directories_in_background if @app_finder.multi_mode?
 			########################
 			watch_log_files_in_background if should_watch_logs?
 			wait_until_nginx_has_exited
@@ -162,6 +147,10 @@ private
 			opts.on("--union-station-key KEY", String,
 				wrap_desc("Specify Union Station key")) do |value|
 				@options[:union_station_key] = value
+			end
+			opts.on("--debugger",
+				wrap_desc("Enable debugger support")) do
+				@options[:debugger] = true
 			end
 			
 			opts.separator ""
@@ -364,7 +353,45 @@ private
 		puts "Log file: #{@options[:log_file]}"
 		puts "Environment: #{@options[:env]}"
 		
-		puts "Accessible via: #{listen_url}"
+		if @app_finder.multi_mode?
+			puts
+			if @apps.empty?
+				puts "No web applications detected. Waiting until you create one..."
+			else
+				require_hosts_file_parser
+				begin
+					if should_check_hosts_file?
+						hosts_file = PhusionPassenger::Utils::HostsFileParser.new
+					end
+				rescue Errno::EACCES, Errno::ENOENT
+					hosts_file = nil
+				end
+				warnings = 0
+				
+				if listening_on_unix_domain_socket?
+					puts "Serving these applications:"
+				else
+					puts "Serving these applications on #{@options[:address]} port #{@options[:port]}:"
+				end
+				puts " Host name                     Directory"
+				puts "------------------------------------------------------------"
+				@apps.each do |app|
+					host_name = app[:server_names][0]
+					if hosts_file && !hosts_file.resolves_to_localhost?(host_name)
+						host_name += " [!]"
+						warnings += 1
+					end
+					printf " %-26s    %s\n", host_name, app[:root]
+				end
+				if warnings > 0
+					puts
+					puts "[!] = This host name does not resolve to localhost. You should add it to"
+					puts "      /etc/hosts if you want to access it locally"
+				end
+			end
+		else
+			puts "Accessible via: #{listen_url}"
+		end
 		
 		puts
 		if @options[:daemonize]
@@ -514,6 +541,87 @@ private
 	end
 	
 	#################
+	
+	def should_check_hosts_file?
+		require_platform_info_operating_system
+		return PlatformInfo.os_name == "macosx"
+	end
+	
+	def require_platform_info_operating_system
+		require 'phusion_passenger/platform_info/operating_system' \
+			if !defined?(PlatformInfo) || !PlatformInfo.respond_to?(:os_name)
+	end
+	
+	def require_hosts_file_parser
+		require 'phusion_passenger/utils/hosts_file_parser' \
+			if !defined?(PhusionPassenger::Utils::HostsFileParser)
+	end
+	
+	def monitor_app_directories_in_background
+		@threads << Thread.new do
+			@app_finder.monitor(@termination_pipe[0]) do |apps|
+				puts "*** #{Time.now}: redeploying applications ***"
+				ok = true
+				begin
+					pid = @nginx.pid
+				rescue SystemCallError, IOError => e
+					# Failing to read the PID file most likely means that the
+					# web server's no longer running, in which case we're supposed
+					# to quit anyway. Only print an error if the web server's still
+					# running.
+					if !wait_on_termination_pipe(3)
+						@console_mutex.synchronize do
+							error "Unable to retrieve the web server's PID (#{e})."
+						end
+						ok = false
+					end
+				end
+				if ok
+					@apps = apps
+					write_nginx_config_file
+					Process.kill('HUP', pid) rescue nil
+					@console_mutex.synchronize do
+						show_new_app_list(apps)
+					end
+					@plugin.call_hook(:found_apps_again, apps)
+				end
+			end
+		end
+	end
+	
+	def show_new_app_list(apps)
+		if apps.empty?
+			puts "No web applications detected. Waiting until you create one..."
+		else
+			require_hosts_file_parser
+			begin
+				if should_check_hosts_file?
+					hosts_file = PhusionPassenger::Utils::HostsFileParser.new
+				end
+			rescue Errno::EACCES, Errno::ENOENT
+				hosts_file = nil
+			end
+			warnings = 0
+			
+			puts "Now serving these applications:"
+			puts " Host name                     Directory"
+			puts "------------------------------------------------------------"
+			apps.each do |app|
+				host_name = app[:server_names][0]
+				if hosts_file && !hosts_file.resolves_to_localhost?(host_name)
+					host_name += " [!]"
+					warnings += 1
+				end
+				printf " %-26s    %s\n", host_name, app[:root]
+			end
+			if warnings > 0
+				puts
+				puts "[!] = This host name does not resolve to localhost. You should add it to"
+				puts "      /etc/hosts if you want to access it locally"
+			end
+			puts "------------------------------------------------------------"
+		end
+	end
 end
 
 end # module Standalone

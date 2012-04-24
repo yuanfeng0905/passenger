@@ -4,23 +4,7 @@
 #
 #  "Phusion Passenger" is a trademark of Hongli Lai & Ninh Bui.
 #
-#  Permission is hereby granted, free of charge, to any person obtaining a copy
-#  of this software and associated documentation files (the "Software"), to deal
-#  in the Software without restriction, including without limitation the rights
-#  to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-#  copies of the Software, and to permit persons to whom the Software is
-#  furnished to do so, subject to the following conditions:
-#
-#  The above copyright notice and this permission notice shall be included in
-#  all copies or substantial portions of the Software.
-#
-#  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-#  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-#  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-#  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-#  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-#  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-#  THE SOFTWARE.
+#  See LICENSE file for license information.
 
 require 'socket'
 require 'fcntl'
@@ -31,6 +15,7 @@ require 'phusion_passenger/message_channel'
 require 'phusion_passenger/message_client'
 require 'phusion_passenger/debug_logging'
 require 'phusion_passenger/utils'
+require 'phusion_passenger/utils/memory_measurer'
 require 'phusion_passenger/utils/tmpdir'
 require 'phusion_passenger/utils/unseekable_socket'
 require 'phusion_passenger/native_support'
@@ -111,6 +96,7 @@ class AbstractRequestHandler
 	REQUEST_METHOD      = 'REQUEST_METHOD'      # :nodoc:
 	PING                = 'PING'                # :nodoc:
 	PASSENGER_CONNECT_PASSWORD  = "PASSENGER_CONNECT_PASSWORD"   # :nodoc:
+	MAX_REQUEST_TIME    = 'PASSENGER_MAX_REQUEST_TIME'           # :nodoc:
 	
 	OBJECT_SPACE_SUPPORTS_LIVE_OBJECTS = ObjectSpace.respond_to?(:live_objects)
 	OBJECT_SPACE_SUPPORTS_ALLOCATED_OBJECTS = ObjectSpace.respond_to?(:allocated_objects)
@@ -207,6 +193,15 @@ class AbstractRequestHandler
 		end
 		
 		#############
+		
+		@memory_measurer = Utils::MemoryMeasurer.new
+		
+		@irb_socket_address, @irb_socket = create_unix_socket_on_filesystem
+		@server_sockets[:irb] = [@irb_socket_address, 'unix', @irb_socket]
+		
+		@async_irb_socket_address, @async_irb_socket = create_unix_socket_on_filesystem
+		@server_sockets[:async_irb] = [@async_irb_socket_address, 'unix', @async_irb_socket]
+		@async_irb_mutex = Mutex.new
 	end
 	
 	# Clean up temporary stuff created by the request handler.
@@ -261,6 +256,9 @@ class AbstractRequestHandler
 				end
 				@selectable_sockets << @owner_pipe
 				@selectable_sockets << @graceful_termination_pipe[0]
+				
+				@selectable_sockets.delete(@async_irb_socket)
+				start_async_irb_server
 			end
 			
 			install_useful_signal_handlers
@@ -275,6 +273,13 @@ class AbstractRequestHandler
 					break
 				end
 				@processed_requests += 1
+				if @memory_limit > 0
+					mem_usage = @memory_measurer.measure
+					if mem_usage && mem_usage > @memory_limit
+						warn "*** Exceeded memory limit of #{@memory_limit} MB; shutting down."
+						@graceful_termination_pipe[1].close rescue nil
+					end
+				end
 			end
 		rescue EOFError
 			# Exit main loop.
@@ -296,6 +301,7 @@ class AbstractRequestHandler
 			revert_signal_handlers
 			@main_loop_thread_lock.synchronize do
 				@graceful_termination_pipe[1].close rescue nil
+				stop_async_irb_server
 				@graceful_termination_pipe[0].close rescue nil
 				@selectable_sockets = []
 				@main_loop_generation += 1
@@ -440,7 +446,13 @@ private
 		end if trappable_signals.has_key?('ABRT')
 		
 		trap('QUIT') do
-			warn(global_backtrace_report)
+			output = global_backtrace_report
+			warn(output)
+			
+			filename = "#{passenger_tmpdir}/backend_ruby_backtrace.#{Process.pid}.txt"
+			File.open(filename, "w", 0600) do |f|
+				f.write(output)
+			end
 		end if trappable_signals.has_key?('QUIT')
 	end
 	
@@ -472,6 +484,9 @@ private
 			connection = socket_wrapper.wrap(@http_socket.accept)
 			headers, input_stream = parse_http_request(connection)
 			full_http_response = true
+		elsif ios.include?(@irb_socket)
+			connection = @irb_socket.accept
+			start_irb_session(connection)
 		else
 			# The other end of the owner pipe has been closed, or the
 			# graceful termination pipe has been closed. This is our
@@ -669,6 +684,12 @@ private
 		end
 		
 		#################
+		
+		max_request_time = headers[MAX_REQUEST_TIME].to_i
+		if max_request_time > 0
+			@timer = DeadlineTimer.new
+			@timer.start(max_request_time)
+		end
 	end
 	
 	def finalize_request(headers, has_error)
@@ -718,6 +739,139 @@ private
 		end
 		
 		#################
+		
+		if @timer
+			@timer.stop
+			@timer.cleanup
+			@timer = nil
+		end
+	end
+	
+	class IrbContext
+		def initialize(channel)
+			utility_class = Class.new do
+				include Utils
+				instance_methods.each do |method|
+					public(method)
+				end
+			end
+			@channel = channel
+			@mutex   = Mutex.new
+			@utils   = utility_class.new
+		end
+		
+		def help
+			puts "Available commands:"
+			puts
+			puts "  backtraces  Show the all threads' backtraces (requires Ruby Enterprise"
+			puts "              Edition or Ruby 1.9)."
+			puts "  debugger    Enter a ruby-debug console."
+			puts "  help        Show this help message."
+			return
+		end
+		
+		def puts(*args)
+			@mutex.synchronize do
+				io = StringIO.new
+				io.puts(*args)
+				@channel.write('puts', [io.string].pack('m'))
+				return nil
+			end
+		end
+		
+		def backtraces
+			puts @utils.global_backtrace_report
+			return nil
+		end
+	end
+	
+	def start_irb_session(socket)
+		channel = MessageChannel.new(socket)
+		irb_context = IrbContext.new(channel)
+		
+		password = channel.read_scalar
+		if password.nil?
+			return
+		elsif password == @connect_password
+			channel.write("ok")
+		else
+			channel.write("Invalid connect password.")
+		end
+		
+		while !socket.eof?
+			code = channel.read_scalar
+			break if code.nil?
+			begin
+				result = irb_context.instance_eval(code, '(passenger-irb)')
+				if result.respond_to?(:inspect)
+					result_str = "=> #{result.inspect}"
+				else
+					result_str = "(result object doesn't respond to #inspect)"
+				end
+			rescue SignalException
+				raise
+			rescue SyntaxError => e
+				result_str = "SyntaxError:\n#{e}"
+			rescue Exception => e
+				end_of_trace = nil
+				e.backtrace.each_with_index do |trace, i|
+					if trace =~ /^\(passenger-irb\)/
+						end_of_trace = i
+						break
+					end
+				end
+				if end_of_trace
+					e.set_backtrace(e.backtrace[0 .. end_of_trace])
+				end
+				result_str = e.backtrace_string("passenger-irb")
+			end
+			channel.write('end', [result_str].pack('m'))
+		end
+	end
+	
+	def start_async_irb_server
+		@async_irb_worker_threads = []
+		@async_irb_thread = Thread.new do
+			begin
+				while true
+					ios = select([@async_irb_socket, @graceful_termination_pipe[0]]).first
+					if ios.include?(@async_irb_socket)
+						socket = @async_irb_socket.accept
+						@async_irb_mutex.synchronize do
+							@async_irb_worker_threads << Thread.new do
+								async_irb_worker_main(socket)
+							end
+						end
+					else
+						break
+					end
+				end
+			rescue Exception => e
+				print_exception("passenger-irb", e)
+			end
+		end
+	end
+	
+	def async_irb_worker_main(socket)
+		start_irb_session(socket)
+	rescue Exception => e
+		print_exception("passenger-irb", e)
+	ensure
+		@async_irb_mutex.synchronize do
+			@async_irb_worker_threads.delete(Thread.current)
+		end
+	end
+	
+	def stop_async_irb_server
+		@async_irb_thread.join
+		threads = @async_irb_worker_threads
+		@async_irb_mutex.synchronize do
+			@async_irb_worker_threads = []
+		end
+		threads.each do |thread|
+			thread.terminate
+			thread.join
+		end
 	end
 	
 	def log_analytics_exception(env, exception)

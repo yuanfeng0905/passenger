@@ -262,6 +262,55 @@ describe "Phusion Passenger for Nginx" do
 		end
 	end
 	
+	describe "enterprise features" do
+		before :all do
+			@foobar = RailsStub.new('2.3/foobar')
+			@nginx.add_server do |server|
+				server[:server_name] = "1.passenger.test"
+				server[:root]        = @foobar.full_app_root + "/public"
+				server << %q{
+					passenger_memory_limit 75;
+					passenger_max_request_time 3;
+				}
+			end
+			@nginx.start
+		end
+		
+		after :all do
+			@foobar.destroy
+		end
+		
+		before :each do
+			@foobar.reset
+		end
+		
+		specify "if the application's memory usage exceeds passenger_memory_limit, then it will be restarted after it's done with the current request" do
+			@server = "http://1.passenger.test:#{@nginx.port}"
+			pid = get('/foo/pid')
+			get('/foo/allocate_memory').should == 'ok'
+			
+			# Application should eventually be restarted.
+			eventually(3) do
+				get('/foo/pid') != pid
+			end
+		end
+		
+		specify "passenger_max_request_time works" do
+			@server = "http://1.passenger.test:#{@nginx.port}"
+			
+			pid = get('/foo/pid')
+			
+			start_time = Time.now
+			get('/foo/sleep_until_exists?name=nonexistant.txt')
+			time_taken = Time.now - start_time
+			
+			new_pid = get('/foo/pid')
+			
+			time_taken.should be_between(3, 5)
+			new_pid.should_not == pid
+		end
+	end
+	
 	
 	##### Helper methods #####
 	

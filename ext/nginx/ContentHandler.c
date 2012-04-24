@@ -365,6 +365,10 @@ create_request(ngx_http_request_t *r)
         ngx_http_ssl_srv_conf_t   *ssl_conf;
     #endif
     
+    u_char max_instances_string[12];
+    u_char max_request_time_string[12];
+    u_char memory_limit_string[12];
+    
     cscf = ngx_http_get_module_srv_conf(r, ngx_http_core_module);
     slcf = ngx_http_get_module_loc_conf(r, ngx_http_passenger_module);
     context = ngx_http_get_module_ctx(r, ngx_http_passenger_module);
@@ -520,6 +524,13 @@ create_request(ngx_http_request_t *r)
 
 
     /***********************/
+
+    PREPARE_INT_CONFIG_DATA("PASSENGER_MAX_INSTANCES", slcf, max_instances);
+    PREPARE_INT_CONFIG_DATA("PASSENGER_MAX_REQUEST_TIME", slcf, max_request_time);
+    PREPARE_INT_CONFIG_DATA("PASSENGER_MEMORY_LIMIT", slcf, memory_limit);
+    ANALYZE_BOOLEAN_CONFIG_LENGTH("PASSENGER_ROLLING_RESTARTS",
+                                  slcf, rolling_restarts);
+
     /***********************/
 
     /* Lengths of various CGI variables. */
@@ -741,6 +752,16 @@ create_request(ngx_http_request_t *r)
     }
 
     /***********************/
+
+    SERIALIZE_INT_CONFIG_DATA("PASSENGER_MAX_INSTANCES",
+                              slcf, max_instances);
+    SERIALIZE_INT_CONFIG_DATA("PASSENGER_MAX_REQUEST_TIME",
+                              slcf, max_request_time);
+    SERIALIZE_INT_CONFIG_DATA("PASSENGER_MEMORY_LIMIT",
+                              slcf, memory_limit);
+    SERIALIZE_BOOLEAN_CONFIG_DATA("PASSENGER_ROLLING_RESTARTS",
+                                  slcf, rolling_restarts);
+
     /***********************/
 
     if (slcf->vars_len) {
