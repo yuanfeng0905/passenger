@@ -27,7 +27,7 @@ module App
 	def self.handshake_and_read_startup_request
 		STDOUT.sync = true
 		STDERR.sync = true
-		puts "I have control 1.0"
+		puts "!> I have control 1.0"
 		abort "Invalid initialization header" if STDIN.readline != "You have control 1.0\n"
 		
 		@@options = {}
@@ -46,15 +46,14 @@ module App
 		require 'phusion_passenger/utils/tmpdir'
 		require 'phusion_passenger/preloader_shared_helpers'
 		require 'phusion_passenger/loader_shared_helpers'
-		require 'phusion_passenger/classic_rails/request_handler'
 		LoaderSharedHelpers.init
 		@@options = LoaderSharedHelpers.sanitize_spawn_options(@@options)
 		Utils.passenger_tmpdir = options["generation_dir"]
 		NativeSupport.disable_stdio_buffering
 	rescue Exception => e
 		LoaderSharedHelpers.about_to_abort(e) if defined?(LoaderSharedHelpers)
-		puts "Error"
-		puts
+		puts "!> Error"
+		puts "!> "
 		puts format_exception(e)
 		exit exit_code_for_exception(e)
 	end
@@ -67,8 +66,8 @@ module App
 		require 'rails/version' if !defined?(Rails::VERSION)
 		if Rails::VERSION::MAJOR >= 3
 			LoaderSharedHelpers.about_to_abort
-			puts "Error"
-			puts
+			puts "!> Error"
+			puts "!> "
 			puts "This application is a Rails #{Rails::VERSION::MAJOR} " +
 				"application, but it was wrongly detected as a Rails " +
 				"1 or Rails 2 application. This is probably a bug in " +
@@ -98,8 +97,8 @@ module App
 		
 	rescue Exception => e
 		LoaderSharedHelpers.about_to_abort(e)
-		puts "Error"
-		puts
+		puts "!> Error"
+		puts "!> "
 		puts format_exception(e)
 		exit exit_code_for_exception(e)
 	end
@@ -109,19 +108,26 @@ module App
 	end
 	
 	def self.negotiate_spawn_command
-		puts "I have control 1.0"
+		puts "!> I have control 1.0"
 		abort "Invalid initialization header" if STDIN.readline != "You have control 1.0\n"
 		
 		while (line = STDIN.readline) != "\n"
 			name, value = line.strip.split(/: */, 2)
 			options[name] = value
 		end
+		@@options = LoaderSharedHelpers.sanitize_spawn_options(@@options)
 		
-		handler = ClassicRails::RequestHandler.new(STDIN, options)
+		if Rails::VERSION::STRING >= '2.3.0'
+			require 'phusion_passenger/rack/request_handler'
+			handler = Rack::RequestHandler.new(STDIN, ActionController::Dispatcher.new, options)
+		else
+			require 'phusion_passenger/classic_rails/request_handler'
+			handler = ClassicRails::RequestHandler.new(STDIN, options)
+		end
 		LoaderSharedHelpers.before_handling_requests(true, options)
-		puts "Ready"
+		puts "!> Ready"
 		LoaderSharedHelpers.advertise_sockets(STDOUT, handler)
-		puts
+		puts "!> "
 		return handler
 	end
 	

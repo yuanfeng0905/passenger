@@ -123,7 +123,11 @@ TEST_CXX_OBJECTS = {
 		ext/common/agents/HelperAgent/FileBackedPipe.h
 		ext/common/agents/HelperAgent/ScgiRequestParser.h
 		ext/common/agents/HelperAgent/AgentOptions.h
-		ext/common/ApplicationPool2/Pool.h),
+		ext/common/ApplicationPool2/Pool.h
+		ext/common/ApplicationPool2/SuperGroup.h
+		ext/common/ApplicationPool2/Group.h
+		ext/common/ApplicationPool2/Process.h
+		ext/common/ApplicationPool2/Spawner.h),
 	'test/cxx/FileBackedPipeTest.o' => %w(
 		test/cxx/FileBackedPipeTest.cpp
 		ext/common/agents/HelperAgent/FileBackedPipe.h),
@@ -215,11 +219,12 @@ deps = [
 	'ext/common/Utils/SystemTime.h'
 ]
 file 'test/cxx/TestSupport.h.gch' => deps do
-	compile_cxx 'test/cxx/TestSupport.h', "-o test/cxx/TestSupport.h.gch #{TEST_CXX_CFLAGS}"
+	compile_cxx 'test/cxx/TestSupport.h', "-x c++-header -o test/cxx/TestSupport.h.gch #{TEST_CXX_CFLAGS}"
 end
 
 TEST_CXX_OBJECTS.each_pair do |target, sources|
 	file(target => sources + ['test/cxx/TestSupport.h', 'test/cxx/TestSupport.h.gch']) do
-		compile_cxx sources[0], "-o #{target} #{TEST_CXX_CFLAGS}"
+		# To use precompiled headers in Clang, we must -include them on them command line.
+		compile_cxx sources[0], "-o #{target} -include test/cxx/TestSupport.h #{TEST_CXX_CFLAGS}"
 	end
 end

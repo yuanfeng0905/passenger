@@ -1,6 +1,6 @@
 /*
  *  Phusion Passenger - http://www.modrails.com/
- *  Copyright (c) 2010 Phusion
+ *  Copyright (c) 2010, 2011, 2012 Phusion
  *
  *  "Phusion Passenger" is a trademark of Hongli Lai & Ninh Bui.
  *
@@ -20,7 +20,10 @@ using namespace boost;
 
 
 /**
- * Locates various Phusion Passenger resources on the filesystem.
+ * Locates various Phusion Passenger resources on the filesystem. All Phusion Passenger
+ * files are located through this class. There's similar code in lib/phusion_passenger.rb.
+ * See doc/Packaging.txt.md for an introduction about where Phusion Passenger expects its
+ * files to be located.
  */
 class ResourceLocator {
 private:

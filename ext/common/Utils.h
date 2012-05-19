@@ -371,6 +371,18 @@ string getSignalName(int sig);
 void resetSignalHandlersAndMask();
 
 /**
+ * Disables malloc() debugging facilities on OS X.
+ */
+void disableMallocDebugging();
+
+/**
+ * Like system(), but properly resets the signal handler mask,
+ * disables malloc debugging and closes file descriptors > 2.
+ * _command_ must be null-terminated.
+ */
+int runShellCommand(const StaticString &command);
+
+/**
  * Close all file descriptors that are higher than <em>lastToKeepOpen</em>.
  * This function is async-signal safe. But make sure there are no other
  * threads running that might open file descriptors!

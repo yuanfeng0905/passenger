@@ -83,6 +83,16 @@ copyException(const tracable_exception &e) {
 	
 	TRY_COPY_EXCEPTION(SyntaxError);
 	
+	TRY_COPY_EXCEPTION(boost::lock_error);
+	TRY_COPY_EXCEPTION(boost::thread_resource_error);
+	TRY_COPY_EXCEPTION(boost::unsupported_thread_option);
+	TRY_COPY_EXCEPTION(boost::invalid_thread_argument);
+	TRY_COPY_EXCEPTION(boost::thread_permission_error);
+
+	TRY_COPY_EXCEPTION(boost::thread_interrupted);
+	TRY_COPY_EXCEPTION(boost::thread_exception);
+	TRY_COPY_EXCEPTION(boost::condition_error);
+
 	return make_shared<tracable_exception>(e);
 }
 
@@ -119,6 +129,16 @@ rethrowException(const ExceptionPtr &e) {
 	TRY_RETHROW_EXCEPTION(SecurityException);
 	
 	TRY_RETHROW_EXCEPTION(SyntaxError);
+
+	TRY_RETHROW_EXCEPTION(boost::lock_error);
+	TRY_RETHROW_EXCEPTION(boost::thread_resource_error);
+	TRY_RETHROW_EXCEPTION(boost::unsupported_thread_option);
+	TRY_RETHROW_EXCEPTION(boost::invalid_thread_argument);
+	TRY_RETHROW_EXCEPTION(boost::thread_permission_error);
+
+	TRY_RETHROW_EXCEPTION(boost::thread_interrupted);
+	TRY_RETHROW_EXCEPTION(boost::thread_exception);
+	TRY_RETHROW_EXCEPTION(boost::condition_error);
 	
 	throw tracable_exception(*e);
 }
@@ -162,15 +182,16 @@ SuperGroup::createNonInterruptableThread(const function<void ()> &func, const st
 
 Group::Group(const SuperGroupPtr &_superGroup, const Options &options, const ComponentInfo &info)
 	: superGroup(_superGroup),
+	  name(_superGroup->name + "#" + info.name),
+	  secret(generateSecret(_superGroup)),
 	  componentInfo(info)
 {
-	name           = _superGroup->name + "#" + info.name;
-	secret         = generateSecret();
 	count          = 0;
 	disablingCount = 0;
 	disabledCount  = 0;
 	spawner        = getPool()->spawnerFactory->create(options);
 	m_spawning     = false;
+	m_restarting   = false;
 	if (options.restartDir.empty()) {
 		restartFile = options.appRoot + "/tmp/restart.txt";
 		alwaysRestartFile = options.appRoot + "/always_restart.txt";
@@ -333,6 +354,11 @@ Group::spawnThreadRealMain(const SpawnerPtr &spawner, const Options &options) {
 		if (pool == NULL) {
 			return;
 		}
+		{
+			LockGuard l(pool->debugSyncher);
+			pool->spawnLoopIteration++;
+			P_TRACE(2, "Entering spawn loop iteration " << pool->spawnLoopIteration);
+		}
 		unique_lock<boost::mutex> lock(pool->syncher);
 		pool = getPool();
 		if (pool == NULL) {
@@ -340,6 +366,7 @@ Group::spawnThreadRealMain(const SpawnerPtr &spawner, const Options &options) {
 		}
 		
 		verifyInvariants();
+		P_ASSERT(m_spawning || m_restarting);
 		
 		UPDATE_TRACE_POINT();
 		vector<Callback> actions;
@@ -371,10 +398,15 @@ Group::spawnThreadRealMain(const SpawnerPtr &spawner, const Options &options) {
 		
 		done = done
 			|| ((unsigned long) count >= options.minProcesses && getWaitlist.empty())
-			|| pool->atFullCapacity(false);
+			|| pool->atFullCapacity(false)
+			|| m_restarting;
 		m_spawning = !done;
 		if (done) {
-			P_DEBUG("Spawn loop done");
+			if (m_restarting) {
+				P_DEBUG("Spawn loop aborted because the group is being restarted");
+			} else {
+				P_DEBUG("Spawn loop done");
+			}
 		} else {
 			P_DEBUG("Continue spawning");
 		}
@@ -396,27 +428,69 @@ Group::shouldSpawn() const {
 void
 Group::restart(const Options &options) {
 	vector<Callback> actions;
-	
+
+	assert(!m_restarting);
 	P_DEBUG("Restarting group " << name);
-	secret = generateSecret();
-	resetOptions(options);
-	spawner = getPool()->spawnerFactory->create(options);
-	while (!processes.empty()) {
-		ProcessPtr process = processes.front();
-		detach(process, actions);
+	m_spawning = false;
+	m_restarting = true;
+	detachAll(actions);
+	getPool()->nonInterruptableThreads.create_thread(
+		boost::bind(&Group::finalizeRestart, this, shared_from_this(), options.copyAndPersist(),
+			getPool()->spawnerFactory, actions),
+		"Group restarter: " + name,
+		POOL_HELPER_THREAD_STACK_SIZE
+	);
+}
+
+// The 'self' parameter is for keeping the current Group object alive while this thread is running.
+void
+Group::finalizeRestart(GroupPtr self, Options options, SpawnerFactoryPtr spawnerFactory,
+	vector<Callback> postLockActions)
+{
+	TRACE_POINT();
+
+	Pool::runAllActions(postLockActions);
+	postLockActions.clear();
+
+	// Create a new spawner.
+	SpawnerPtr newSpawner = spawnerFactory->create(options);
+	SpawnerPtr oldSpawner;
+
+	// Standard resource management boilerplate stuff...
+	UPDATE_TRACE_POINT();
+	PoolPtr pool = getPool();
+	if (OXT_UNLIKELY(pool == NULL)) {
+		return;
 	}
+	LockGuard l(pool->syncher);
+	pool = getPool();
+	if (OXT_UNLIKELY(pool == NULL)) {
+		return;
+	}
+
+	// Run some sanity checks.
+	verifyInvariants();
+	assert(m_restarting);
+	UPDATE_TRACE_POINT();
 	
-	if (!actions.empty()) {
-		getPool()->nonInterruptableThreads.create_thread(
-			boost::bind(Pool::runAllActionsWithCopy, actions),
-			"Post lock actions runner: " + name,
-			POOL_HELPER_THREAD_STACK_SIZE);
+	// Atomically swap the new spawner with the old one.
+	resetOptions(options);
+	oldSpawner = spawner;
+	spawner    = newSpawner;
+
+	m_restarting = false;
+	if (!getWaitlist.empty()) {
+		spawn();
 	}
+	P_DEBUG("Restart of group " << name << " done");
+	verifyInvariants();
+	Pool::runAllActions(postLockActions);
+	// oldSpawner will now be destroyed, outside the lock.
 }
 
 string
-Group::generateSecret() const {
-	return getPool()->randomGenerator->generateAsciiString(43);
+Group::generateSecret(const SuperGroupPtr &superGroup) {
+	return superGroup->getPool()->randomGenerator->generateAsciiString(43);
 }
 
 
@@ -448,6 +522,43 @@ Session::getPid() const {
 const string &
 Session::getGupid() const {
 	return process->gupid;
+}
+
+
+SmartSpawner::PipeWatcher::PipeWatcher(
+	const SafeLibevPtr &_libev,
+	const FileDescriptor &_fd,
+	bool _forward)
+	: libev(_libev),
+	  fd(_fd),
+	  forward(_forward)
+{
+	watcher.set(fd, ev::READ);
+	watcher.set<PipeWatcher, &PipeWatcher::onReadable>(this);
+	libev->start(watcher);
+}
+
+SmartSpawner::PipeWatcher::~PipeWatcher() {
+	libev->stop(watcher);
+}
+
+void
+SmartSpawner::PipeWatcher::start() {
+	selfPointer = shared_from_this();
+}
+
+void
+SmartSpawner::PipeWatcher::onReadable(ev::io &io, int revents) {
+	char buf[1024 * 8];
+	ssize_t ret;
+	
+	ret = syscalls::read(fd, buf, sizeof(buf));
+	if (ret <= 0) {
+		libev->stop(watcher);
+		selfPointer.reset();
+	} else if (forward) {
+		write(STDERR_FILENO, buf, ret);
+	}
 }
 
 

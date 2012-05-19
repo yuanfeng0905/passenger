@@ -126,6 +126,18 @@ namespace tut {
 			handler->inspect(stream);
 			*result = stream.str();
 		}
+
+		static void writeBody(FileDescriptor conn, string body) {
+			try {
+				writeExact(conn, body);
+			} catch (const SystemException &e) {
+				if (e.code() == EPIPE) {
+					// Ignore.
+				} else {
+					throw;
+				}
+			}
+		}
 	};
 
 	DEFINE_TEST_GROUP(RequestHandlerTest);
@@ -463,6 +475,46 @@ namespace tut {
 		ensure_equals(stripHeaders(readAll(connection)), "ok");
 	}
 
+	TEST_METHOD(22) {
+		set_test_name("Test buffering of large request bodies that fit in neither the socket "
+		              "buffer nor the FileBackedPipe memory buffer, and that the application "
+		              "cannot read quickly enough.");
+
+		DeleteFileEventually d1("/tmp/wait.txt");
+		DeleteFileEventually d2("/tmp/output.txt");
+
+		// 2.6 MB of request body. Guaranteed not to fit in any socket buffer.
+		string requestBody;
+		for (int i = 0; i < 204800; i++) {
+			requestBody.append("hello world!\n");
+		}
+
+		init();
+		connect();
+		sendHeaders(defaultHeaders,
+			"PASSENGER_APP_ROOT", wsgiAppPath.c_str(),
+			"PATH_INFO", "/upload",
+			"PASSENGER_BUFFERING", "true",
+			"HTTP_X_WAIT_FOR_FILE", "/tmp/wait.txt",
+			"HTTP_X_OUTPUT", "/tmp/output.txt",
+			NULL);
+		
+		// Should not block.
+		writeExact(connection, requestBody);
+		shutdown(connection, SHUT_WR);
+		
+		EVENTUALLY(5,
+			result = containsSubstring(inspect(), "session initiated           = true");
+		);
+		touchFile("/tmp/wait.txt");
+
+		string result = stripHeaders(readAll(connection));
+		ensure_equals(result, "ok");
+		struct stat buf;
+		ensure(stat("/tmp/output.txt", &buf) == 0);
+		ensure_equals(buf.st_size, (off_t) requestBody.size());
+	}
+
 	TEST_METHOD(30) {
 		// It replaces HTTP_CONTENT_LENGTH with CONTENT_LENGTH.
 		init();
@@ -542,7 +594,7 @@ namespace tut {
 	}
 
 	TEST_METHOD(39) {
-		// Test handling of slow clients that can't receive response data fast enough.
+		// Test handling of slow clients that can't receive response data fast enough (response buffering).
 		init();
 		connect();
 		sendHeaders(defaultHeaders,
@@ -551,7 +603,7 @@ namespace tut {
 			"HTTP_X_SIZE", "10485760",
 			NULL);
 		EVENTUALLY(10,
-			result = containsSubstring(inspect(), "appInput ended             = true");
+			result = containsSubstring(inspect(), "appInput reachedEnd         = true");
 		);
 		string result = stripHeaders(readAll(connection));
 		ensure_equals(result.size(), 10485760u);
@@ -563,9 +615,163 @@ namespace tut {
 		}
 	}
 
-	// Test application that reads the client body slower than the client sends it.
-	// Test that RequestHandler does not pass any client body data when CONTENT_LENGTH == 0 (when buffering is on).
-	// Test that RequestHandler does not pass any client body data when CONTENT_LENGTH == 0 (when buffering is off).
-	// Test that RequestHandler does not read more than CONTENT_LENGTH bytes from the client body (when buffering is on).
-	// Test that RequestHandler does not read more than CONTENT_LENGTH bytes from the client body (when buffering is off).
+	TEST_METHOD(40) {
+		set_test_name("Test that RequestHandler does not read more than CONTENT_LENGTH bytes "
+		              "from the client body (when buffering is on and request body is large).");
+
+		DeleteFileEventually d("/tmp/output.txt");
+
+		// 2.6 MB of request body. Guaranteed not to fit in any socket buffer.
+		string requestBody;
+		for (int i = 0; i < 204800; i++) {
+			requestBody.append("hello world!\n");
+		}
+
+		init();
+		connect();
+		sendHeaders(defaultHeaders,
+			"PASSENGER_APP_ROOT", wsgiAppPath.c_str(),
+			"PATH_INFO", "/upload",
+			"CONTENT_LENGTH", toString(requestBody.size()).c_str(),
+			"PASSENGER_BUFFERING", "true",
+			"HTTP_X_OUTPUT", "/tmp/output.txt",
+			NULL);
+		writeExact(connection, requestBody);
+
+		string result = stripHeaders(readAll(connection));
+		ensure_equals(result, "ok");
+		struct stat buf;
+		ensure(stat("/tmp/output.txt", &buf) == 0);
+		ensure_equals(buf.st_size, (off_t) requestBody.size());
+	}
+
+	TEST_METHOD(41) {
+		set_test_name("Test that RequestHandler does not read more than CONTENT_LENGTH bytes "
+		              "from the client body (when buffering is on and request body is small).");
+
+		DeleteFileEventually d("/tmp/output.txt");
+		string requestBody = "hello world";
+
+		init();
+		connect();
+		sendHeaders(defaultHeaders,
+			"PASSENGER_APP_ROOT", wsgiAppPath.c_str(),
+			"PATH_INFO", "/upload",
+			"CONTENT_LENGTH", toString(requestBody.size()).c_str(),
+			"PASSENGER_BUFFERING", "true",
+			"HTTP_X_OUTPUT", "/tmp/output.txt",
+			NULL);
+		writeExact(connection, requestBody);
+
+		string result = stripHeaders(readAll(connection));
+		ensure_equals(result, "ok");
+		struct stat buf;
+		ensure(stat("/tmp/output.txt", &buf) == 0);
+		ensure_equals(buf.st_size, (off_t) requestBody.size());
+	}
+
+	TEST_METHOD(42) {
+		set_test_name("Test that RequestHandler does not read more than CONTENT_LENGTH bytes "
+		              "from the client body (when buffering is off and request body is large).");
+
+		DeleteFileEventually d("/tmp/output.txt");
+
+		// 2 MB of request body. Guaranteed not to fit in any socket buffer.
+		string requestBody;
+		for (int i = 0; i < 102400; i++) {
+			char buf[100];
+			snprintf(buf, sizeof(buf), "%06d: hello world!\n", i);
+			requestBody.append(buf);
+		}
+
+		init();
+		connect();
+		sendHeaders(defaultHeaders,
+			"PASSENGER_APP_ROOT", wsgiAppPath.c_str(),
+			"PATH_INFO", "/upload",
+			"CONTENT_LENGTH", toString(requestBody.size()).c_str(),
+			"HTTP_X_OUTPUT", "/tmp/output.txt",
+			NULL);
+
+		TempThread thr(boost::bind(RequestHandlerTest::writeBody, connection, requestBody));
+
+		string result = stripHeaders(readAll(connection));
+		ensure_equals(result, "ok");
+		struct stat buf;
+		ensure(stat("/tmp/output.txt", &buf) == 0);
+		ensure_equals(buf.st_size, (off_t) requestBody.size());
+	}
+
+	TEST_METHOD(43) {
+		set_test_name("Test that RequestHandler does not read more than CONTENT_LENGTH bytes "
+		              "from the client body (when buffering is off and request body is small).");
+
+		DeleteFileEventually d("/tmp/output.txt");
+		string requestBody = "hello world";
+
+		init();
+		connect();
+		sendHeaders(defaultHeaders,
+			"PASSENGER_APP_ROOT", wsgiAppPath.c_str(),
+			"PATH_INFO", "/upload",
+			"CONTENT_LENGTH", toString(requestBody.size()).c_str(),
+			"HTTP_X_OUTPUT", "/tmp/output.txt",
+			NULL);
+
+		TempThread thr(boost::bind(RequestHandlerTest::writeBody, connection, requestBody));
+
+		string result = stripHeaders(readAll(connection));
+		ensure_equals(result, "ok");
+		struct stat buf;
+		ensure(stat("/tmp/output.txt", &buf) == 0);
+		ensure_equals(buf.st_size, (off_t) requestBody.size());
+	}
+
+	TEST_METHOD(44) {
+		set_test_name("Test that RequestHandler does not pass any client body data when CONTENT_LENGTH == 0 (when buffering is on).");
+
+		DeleteFileEventually d("/tmp/output.txt");
+
+		init();
+		connect();
+		sendHeaders(defaultHeaders,
+			"PASSENGER_APP_ROOT", wsgiAppPath.c_str(),
+			"PATH_INFO", "/upload",
+			"CONTENT_LENGTH", "0",
+			"PASSENGER_BUFFERING", "true",
+			"HTTP_X_OUTPUT", "/tmp/output.txt",
+			NULL);
+		writeExact(connection, "hello world");
+
+		string result = stripHeaders(readAll(connection));
+		ensure_equals(result, "ok");
+		struct stat buf;
+		ensure(stat("/tmp/output.txt", &buf) == 0);
+		ensure_equals(buf.st_size, (off_t) 0);
+	}
+
+	TEST_METHOD(45) {
+		set_test_name("Test that RequestHandler does not pass any client body data when CONTENT_LENGTH == 0 (when buffering is off).");
+
+		DeleteFileEventually d("/tmp/output.txt");
+
+		init();
+		connect();
+		sendHeaders(defaultHeaders,
+			"PASSENGER_APP_ROOT", wsgiAppPath.c_str(),
+			"PATH_INFO", "/upload",
+			"CONTENT_LENGTH", "0",
+			"HTTP_X_OUTPUT", "/tmp/output.txt",
+			NULL);
+		writeExact(connection, "hello world");
+
+		string result = stripHeaders(readAll(connection));
+		ensure_equals(result, "ok");
+		struct stat buf;
+		ensure(stat("/tmp/output.txt", &buf) == 0);
+		ensure_equals(buf.st_size, (off_t) 0);
+	}
+
+	// Test small response buffering.
+	// Test large response buffering.
 }

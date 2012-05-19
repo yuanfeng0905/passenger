@@ -18,12 +18,12 @@
 #include <oxt/tracable_exception.hpp>
 
 #include "../tut/tut.h"
-#include "ResourceLocator.h"
-#include "ServerInstanceDir.h"
-#include "BackgroundEventLoop.h"
-#include "Exceptions.h"
-#include "Utils.h"
-#include "Utils/SystemTime.h"
+#include <ResourceLocator.h>
+#include <ServerInstanceDir.h>
+#include <BackgroundEventLoop.h>
+#include <Exceptions.h>
+#include <Utils.h>
+#include <Utils/SystemTime.h>
 #include <Utils/json-forwards.h>
 
 extern "C" {
@@ -52,20 +52,22 @@ using namespace oxt;
 		}                                                     \
 	} while (0)
 
-#define EVENTUALLY(deadline, code)					\
-	do {								\
-		time_t deadlineTime = time(NULL) + deadline;		\
-		bool result = false;					\
-		while (!result && time(NULL) < deadlineTime) {		\
-			code						\
-			if (!result) {					\
-				usleep(10000);				\
-			}						\
-		}							\
-		if (!result) {						\
-			fail("EVENTUALLY(" #code ") failed");		\
-		}							\
+#define EVENTUALLY2(deadlineMsec, sleepTimeMsec, code)					\
+	do {										\
+		unsigned long long deadlineTime = SystemTime::getMsec(true) + deadlineMsec;	\
+		bool result = false;							\
+		while (!result && SystemTime::getMsec(true) < deadlineTime) {		\
+			code								\
+			if (!result) {							\
+				usleep(sleepTimeMsec * 1000);				\
+			}								\
+		}									\
+		if (!result) {								\
+			fail("EVENTUALLY(" #code ") failed");				\
+		}									\
 	} while (0)
+
+#define EVENTUALLY(deadlineSec, code) EVENTUALLY2(deadlineSec * 1000, 10, code)
 
 #define SHOULD_NEVER_HAPPEN(deadline, code)						\
 	do {										\
@@ -189,7 +191,19 @@ public:
 		char command[1024];
 		snprintf(command, sizeof(command), "cp -pR \"%s\" \"%s\"",
 			source.c_str(), dest.c_str());
-		system(command);
+		pid_t pid = fork();
+		if (pid == 0) {
+			resetSignalHandlersAndMask();
+			disableMallocDebugging();
+			closeAllFileDescriptors(2);
+			execlp("/bin/sh", "/bin/sh", "-c", command, (char * const) 0);
+			_exit(1);
+		} else if (pid == -1) {
+			int e = errno;
+			throw SystemException("Cannot fork()", e);
+		} else {
+			waitpid(pid, NULL, 0);
+		}
 	}
 	
 	~TempDirCopy() {
@@ -205,8 +219,11 @@ class DeleteFileEventually {
 private:
 	string filename;
 public:
-	DeleteFileEventually(const string &filename) {
+	DeleteFileEventually(const string &filename, bool deleteNow = true) {
 		this->filename = filename;
+		if (deleteNow) {
+			unlink(filename.c_str());
+		}
 	}
 	
 	~DeleteFileEventually() {
@@ -224,7 +241,7 @@ public:
 	oxt::thread thread;
 	
 	TempThread(boost::function<void ()> func)
-		: thread(func)
+		: thread(boost::bind(runAndPrintExceptions, func, true))
 		{ }
 	
 	~TempThread() {
