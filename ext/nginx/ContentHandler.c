@@ -390,8 +390,8 @@ create_request(ngx_http_request_t *r)
         app_type_string_len = sizeof("wsgi");
         break;
     default:
-        app_type_string = (const u_char *) "classic-rails";
-        app_type_string_len = sizeof("classic-rails");
+        app_type_string = (const u_char *) "rack";
+        app_type_string_len = sizeof("rack");
         break;
     }
     
@@ -906,7 +906,7 @@ process_status_line(ngx_http_request_t *r)
     context = ngx_http_get_module_ctx(r, ngx_http_passenger_module);
 
     if (context == NULL) {
-        return NGX_HTTP_INTERNAL_SERVER_ERROR;
+        return NGX_ERROR;
     }
 
     rc = parse_status_line(r, context);
@@ -927,7 +927,6 @@ process_status_line(ngx_http_request_t *r)
         }
 #endif
 
-        r->http_version = NGX_HTTP_VERSION_9;
         u->headers_in.status_n = NGX_HTTP_OK;
         u->state->status = NGX_HTTP_OK;
 
@@ -941,7 +940,7 @@ process_status_line(ngx_http_request_t *r)
     u->headers_in.status_line.data = ngx_palloc(r->pool,
                                                 u->headers_in.status_line.len);
     if (u->headers_in.status_line.data == NULL) {
-        return NGX_HTTP_INTERNAL_SERVER_ERROR;
+        return NGX_ERROR;
     }
 
     ngx_memcpy(u->headers_in.status_line.data, context->status_start,
