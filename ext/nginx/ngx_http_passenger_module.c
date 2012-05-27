@@ -43,6 +43,8 @@
 #include "ngx_http_passenger_module.h"
 #include "Configuration.h"
 #include "ContentHandler.h"
+#include "../common/Utils/License.c"
+#include "../common/Utils/MD5.cpp" /* File is C compatible. */
 
 
 #define HELPER_SERVER_MAX_SHUTDOWN_TIME 5
@@ -426,6 +428,16 @@ pre_config_init(ngx_conf_t *cf)
  */
 static ngx_int_t
 init_module(ngx_cycle_t *cycle) {
+    char *error_message;
+
+    error_message = passenger_enterprise_license_check();
+    if (error_message != NULL) {
+        ngx_errno = 0;
+        ngx_log_error(NGX_LOG_CRIT, cycle->log, ngx_errno, "%s", error_message);
+        free(error_message);
+        return NGX_ERROR;
+    }
+
     if (passenger_main_conf.root_dir.len != 0) {
         if (first_start) {
             /* Ignore SIGPIPE now so that, if the helper server fails to start,
