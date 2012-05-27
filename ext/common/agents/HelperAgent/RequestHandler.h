@@ -1420,6 +1420,7 @@ private:
 		fillPoolOption(client, options.raiseInternalError, "PASSENGER_RAISE_INTERNAL_ERROR");
 
 		fillPoolOption(client, options.rollingRestart, "PASSENGER_ROLLING_RESTARTS");
+		fillPoolOption(client, options.ignoreSpawnErrors, "PASSENGER_IGNORE_SPAWN_ERRORS");
 		
 		for (it = client->scgiParser.begin(); it != end; it++) {
 			if (!startsWith(it->first, "PASSENGER_")

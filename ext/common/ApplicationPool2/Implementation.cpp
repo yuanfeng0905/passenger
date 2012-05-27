@@ -359,6 +359,9 @@ Group::spawnThreadRealMain(const SpawnerPtr &spawner, const Options &options) {
 		{
 			LockGuard l(pool->debugSyncher);
 			pool->spawnLoopIteration++;
+			if (process == NULL) {
+				pool->spawnErrors++;
+			}
 			P_TRACE(2, "Entering spawn loop iteration " << pool->spawnLoopIteration);
 		}
 		unique_lock<boost::mutex> lock(pool->syncher);
@@ -388,8 +391,13 @@ Group::spawnThreadRealMain(const SpawnerPtr &spawner, const Options &options) {
 			// processes currently alive we should just use them.
 			P_DEBUG("Could not spawn process appRoot=" << name <<
 				": " << exception->what());
-			assignExceptionToGetWaiters(exception, actions);
-			pool->assignSessionsToGetWaiters(actions);
+			if (!options.ignoreSpawnErrors) {
+				assignExceptionToGetWaiters(exception, actions);
+				pool->assignSessionsToGetWaiters(actions);
+			} else {
+				P_DEBUG("Ignoring spawn error");
+				hasSpawnError = true;
+			}
 			done = true;
 		}
 		
@@ -424,7 +432,8 @@ bool
 Group::shouldSpawn() const {
 	return !spawning()
 		&& (count == 0 || pqueue.top()->atFullCapacity())
-		&& !getPool()->atFullCapacity(false);
+		&& !getPool()->atFullCapacity(false)
+		&& !hasSpawnError;
 }
 
 void

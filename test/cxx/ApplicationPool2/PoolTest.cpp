@@ -41,9 +41,13 @@ namespace tut {
 			// Explicitly destroy these here because they can run
 			// additional code that depend on other fields in this
 			// class.
+			TRACE_POINT();
 			setLogLevel(0);
+			UPDATE_TRACE_POINT();
 			pool->destroy();
+			UPDATE_TRACE_POINT();
 			pool.reset();
+			UPDATE_TRACE_POINT();
 			lock_guard<boost::mutex> l(syncher);
 			currentSession.reset();
 			sessions.clear();
@@ -1207,6 +1211,126 @@ namespace tut {
 		ensure_equals(pool->getProcessCount(), 1u);
 	}
 
+	TEST_METHOD(82) {
+		// Test ignoreSpawnErrors and get().
+		TempDirCopy c1("stub/wsgi", "tmp.wsgi");
+		Options options = createOptions();
+		options.appRoot = "tmp.wsgi";
+		options.appType = "wsgi";
+		options.spawnMethod = "direct";
+		options.ignoreSpawnErrors = true;
+		spawnerFactory->forwardStderr = false;
+		
+		// Spawn a process.
+		Ticket ticket;
+		SessionPtr session1 = pool->get(options, &ticket);
+		pid_t session1Pid = session1->getPid();
+		
+		// Now fubar the app.
+		writeFile("tmp.wsgi/passenger_wsgi.py",
+			"import sys\n"
+			"sys.stderr.write('an error\\n')\n"
+			"sys.exit(1)\n");
+		
+		// The next asyncGet() will trigger the spawning of another process.
+		pool->asyncGet(options, callback);
+		
+		// The pool will eventually notice that spawning has failed...
+		EVENTUALLY(4,
+			LockGuard l(pool->debugSyncher);
+			result = pool->spawnErrors == 1;
+		);
+		// Now the asyncGet() is just waiting until the first process becomes available...
+		ensure_equals("(1)", (int) number, 0);
+
+		// ...and the corresponding Group should then be flagged as 'hasSpawnError'
+		// so that another get() won't cause it to spawn a new process even
+		// when all processes are busy. Instead the pool should continue to
+		// reuse existing processes.
+		writeFile("tmp.wsgi/passenger_wsgi.py",
+			"def application(env, start_response):\n"
+			"	start_response(200, [('Content-Type', 'text/html')])\n"
+			"	return ['hello world']\n");
+		pool->asyncGet(options, callback);
+		SHOULD_NEVER_HAPPEN(500,
+			LockGuard l(pool->debugSyncher);
+			result = pool->spawnLoopIteration != 2;
+		);
+		ensure_equals("(2)", (int) number, 0);
+
+		session1.reset();
+		currentSession.reset();
+		ensure_equals((int) number, 2);
+		
+		// Until the user explicitly restarts the app.
+		touchFile("tmp.wsgi/tmp/restart.txt");
+		SessionPtr session2 = pool->get(options, &ticket);
+		ensure("(3)", session2->getPid() != session1Pid);
+		ensure_equals("(4)", pool->getProcessCount(), 1u);
+	}
+
+	TEST_METHOD(83) {
+		// Test ignoreSpawnErrors and rolling restarts.
+		TempDirCopy c1("stub/wsgi", "tmp.wsgi");
+		Options options = createOptions();
+		options.appRoot = "tmp.wsgi";
+		options.appType = "wsgi";
+		options.spawnMethod = "direct";
+		options.rollingRestart = true;
+		options.ignoreSpawnErrors = true;
+		spawnerFactory->forwardStderr = false;
+		
+		// Spawn 3 processes.
+		Ticket ticket;
+		SessionPtr session1 = pool->get(options, &ticket);
+		SessionPtr session2 = pool->get(options, &ticket);
+		SessionPtr session3 = pool->get(options, &ticket);
+		ensure_equals(pool->getProcessCount(), 3u);
+		
+		pid_t orig_pid1 = session1->getPid();
+		pid_t orig_pid2 = session2->getPid();
+		pid_t orig_pid3 = session3->getPid();
+		session1.reset();
+		session2.reset();
+		session3.reset();
+		
+		// Now fubar the app and flag restart.
+		writeFile("tmp.wsgi/passenger_wsgi.py",
+			"import sys\n"
+			"sys.stderr.write('an error\\n')\n"
+			"sys.exit(1)\n");
+		touchFile("tmp.wsgi/tmp/restart.txt");
+		
+		// Let the pool attempt restart in the background.
+		// It will eventually fail.
+		setLogLevel(-2);
+		pool->asyncGet(options, callback);
+		EVENTUALLY(4,
+			LockGuard l(pool->debugSyncher);
+			result = pool->spawnErrors == 1;
+		);
+		EVENTUALLY(2,
+			result = number == 1;
+		);
+		currentSession.reset();
+		usleep(20000); // Give it some time to print the error message.
+		setLogLevel(0);
+
+		// It should leave all the existing processes alone.
+		ensure_equals(pool->getProcessCount(), 3u);
+		session1 = pool->get(options, &ticket);
+		session2 = pool->get(options, &ticket);
+		session3 = pool->get(options, &ticket);
+		pid_t pid1 = session1->getPid();
+		pid_t pid2 = session2->getPid();
+		pid_t pid3 = session3->getPid();
+		ensure(pid1 != pid2);
+		ensure(pid2 != pid3);
+		ensure(pid1 == orig_pid1 || pid1 == orig_pid2 || pid1 == orig_pid3);
+		ensure(pid2 == orig_pid1 || pid2 == orig_pid2 || pid2 == orig_pid3);
+		ensure(pid3 == orig_pid1 || pid3 == orig_pid2 || pid3 == orig_pid3);
+	}
+
 	#if 0
 	TEST_METHOD(40) {
 		// The maxInstances pool option is respected.
@@ -1229,109 +1353,6 @@ namespace tut {
 		ApplicationPool::Ptr pool3(newPoolConnection());
 		SessionPtr session3 = spawnWsgiApp(pool3, "stub/wsgi");
 		ensure_equals(pool->getCount(), 2u);
-	}
-	
-	TEST_METHOD(42) {
-		// Test ignoreSpawnErrors and get().
-		TempDirCopy c1("stub/rack", "rackapp1.tmp");
-		PoolOptions options;
-		options.appRoot = "rackapp1.tmp";
-		options.appType = "rack";
-		options.spawnMethod = "conservative";
-		
-		ApplicationPool::Ptr pool3 = newPoolConnection();
-		
-		// Spawn a process.
-		SessionPtr session1 = pool->get(options);
-		
-		// Now fubar the app.
-		writeFile("rackapp1.tmp/config.ru", "raise 'an error'");
-		
-		// The next get() will return a connection to the existing
-		// process while another process is being spawned in the
-		// background.
-		options.ignoreSpawnErrors = true;
-		options.printExceptions = false;
-		SessionPtr session2 = pool2->get(options);
-		ensure_equals("(1)", session2->getPid(), session1->getPid());
-		session2.reset();
-		
-		// The pool will eventually notice that spawning has failed...
-		EVENTUALLY(4,
-			result = pool->getActive() == 1u && pool->getCount() == 1u;
-		);
-		
-		// ...and its group should then be flagged as 'bad' so that
-		// another get() won't cause it to spawn a new process even
-		// when all processes are active. Instead the pool should
-		// continue to reuse existing processes.
-		writeFile("rackapp1.tmp/config.ru", "run lambda { |env| [200, {}, ['']] }");
-		session2 = pool2->get(options);
-		ensure_equals("(4)", session2->getPid(), session1->getPid());
-		
-		EVENTUALLY(4,
-			result = pool->getActive() == 1u && pool->getCount() == 1u;
-		);
-		
-		// Until the user explicitly restarts the app.
-		touchFile("rackapp1.tmp/tmp/restart.txt");
-		SessionPtr session3 = pool3->get(options);
-		ensure("(7)", session3->getPid() != session1->getPid());
-	}
-	
-	TEST_METHOD(43) {
-		// Test ignoreSpawnErrors and rolling restarts.
-		TempDirCopy c1("stub/rack", "rackapp1.tmp");
-		PoolOptions options;
-		options.appRoot = "rackapp1.tmp";
-		options.appType = "rack";
-		options.rollingRestart = true;
-		options.minProcesses = 3;
-		
-		// Spawn 3 processes.
-		ApplicationPool::Ptr pool3 = newPoolConnection();
-		SessionPtr session1 = pool->get(options);
-		EVENTUALLY(5,
-			result = pool->getCount() == 3;
-		);
-		SessionPtr session2 = pool2->get(options);
-		SessionPtr session3 = pool3->get(options);
-		ensure_equals("(1)", pool->getActive(), 3u);
-		
-		pid_t orig_pid1 = session1->getPid();
-		pid_t orig_pid2 = session2->getPid();
-		pid_t orig_pid3 = session3->getPid();
-		session1.reset();
-		session2.reset();
-		session3.reset();
-		EVENTUALLY(5,
-			result = pool->getActive() == 0u;
-		);
-		
-		// Now fubar the app and flag restart.
-		writeFile("rackapp1.tmp/config.ru", "raise 'an error'");
-		touchFile("rackapp1.tmp/tmp/restart.txt");
-		
-		// Let the pool attempt restart in the background.
-		options.ignoreSpawnErrors = true;
-		options.printExceptions = false;
-		pool->get(options);
-		// Wait some time until it has detected the spawn error.
-		sleep(1);
-		
-		// It should leave all the existing processes alone.
-		ensure_equals(pool->getCount(), 3u);
-		session1 = pool->get(options);
-		session2 = pool2->get(options);
-		session3 = pool3->get(options);
-		pid_t pid1 = session1->getPid();
-		pid_t pid2 = session2->getPid();
-		pid_t pid3 = session3->getPid();
-		ensure(pid1 != pid2);
-		ensure(pid2 != pid3);
-		ensure(pid1 == orig_pid1 || pid1 == orig_pid2 || pid1 == orig_pid3);
-		ensure(pid2 == orig_pid1 || pid2 == orig_pid2 || pid2 == orig_pid3);
-		ensure(pid3 == orig_pid1 || pid3 == orig_pid2 || pid3 == orig_pid3);
 	}
 	
 	TEST_METHOD(44) {

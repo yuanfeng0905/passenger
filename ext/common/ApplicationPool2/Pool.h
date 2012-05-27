@@ -135,7 +135,8 @@ public:
 	vector<GetWaiter> getWaitlist;
 
 	mutable boost::mutex debugSyncher;
-	unsigned int spawnLoopIteration;
+	unsigned short spawnLoopIteration;
+	unsigned short spawnErrors;
 	
 	bool restarterThreadActive;
 	string restarterThreadStatus;
@@ -466,6 +467,12 @@ public:
 				return;
 			} catch (const tracable_exception &e) {
 				UPDATE_TRACE_POINT();
+
+				{
+					LockGuard l(debugSyncher);
+					spawnErrors++;
+				}
+
 				l.lock();
 				if (!oldProcess->detached()) {
 					// Don't try to rolling restart this group next time.
@@ -474,7 +481,7 @@ public:
 				}
 				
 				exception = copyException(e);
-				P_ERROR("Could spawn process for group " << group->name <<
+				P_ERROR("Could not spawn process for group " << group->name <<
 					": " << exception->what());
 				
 				continue;
@@ -824,6 +831,7 @@ public:
 		libev->start(analyticsCollectionTimer);
 
 		spawnLoopIteration = 0;
+		spawnErrors = false;
 	}
 	
 	~Pool() {
