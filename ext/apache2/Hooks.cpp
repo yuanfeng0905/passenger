@@ -36,6 +36,7 @@
 #include "Utils.h"
 #include "Utils/IOUtils.h"
 #include "Utils/Timer.h"
+#include <Utils/License.c>
 #include "Logging.h"
 #include "AgentsStarter.hpp"
 #include "DirectoryMapper.h"
@@ -1506,6 +1507,14 @@ destroy_hooks(void *arg) {
 
 static int
 init_module(apr_pool_t *pconf, apr_pool_t *plog, apr_pool_t *ptemp, server_rec *s) {
+	char *errorMessage = passenger_enterprise_license_check();
+	if (errorMessage != NULL) {
+		ap_log_error(APLOG_MARK, APLOG_ERR, 0, s,
+			"%s",
+			errorMessage);
+		return DECLINED;
+	}
+
 	/*
 	 * HISTORICAL NOTE:
 	 *
