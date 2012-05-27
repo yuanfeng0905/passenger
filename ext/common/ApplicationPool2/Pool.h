@@ -137,6 +137,9 @@ public:
 	mutable boost::mutex debugSyncher;
 	unsigned int spawnLoopIteration;
 	
+	bool restarterThreadActive;
+	string restarterThreadStatus;
+
 	static void runAllActions(const vector<Callback> &actions) {
 		vector<Callback>::const_iterator it, end = actions.end();
 		for (it = actions.begin(); it != end; it++) {
@@ -345,6 +348,204 @@ public:
 	
 	SuperGroup *findMatchingSuperGroup(const Options &options) {
 		return superGroups.get(options.getAppGroupName()).get();
+	}
+
+	/*
+	 * The restarter thread takes care of rolling restarting processes.
+	 * It works by going over all processes in the pool, and replacing
+	 * processes for which holds 'spawnerCreationTime < group.spawner.creationTime'.
+	 */
+	void startRestarterThread() {
+		if (!restarterThreadActive) {
+			P_DEBUG("Starting rolling restarter thread");
+			restarterThreadActive = true;
+			restarterThreadStatus = "Looking for process for rolling restart...";
+			interruptableThreads.create_thread(
+				boost::bind(&Pool::restarterThreadMain, this),
+				"Restarter thread",
+				POOL_HELPER_THREAD_STACK_SIZE);
+		}
+	}
+
+	/**
+	 * Returns a random process within the entire pool that should be rolling restarted,
+	 * or null if there is no such process.
+	 */
+	ProcessPtr findProcessNeedingRollingRestart() const {
+		SuperGroupMap::const_iterator sg_it, sg_end = superGroups.end();
+		for (sg_it = superGroups.begin(); sg_it != sg_end; sg_it++) {
+			SuperGroupPtr superGroup = sg_it->second;
+			vector<GroupPtr>::const_iterator g_it, g_end = superGroup->groups.end();
+			for (g_it = superGroup->groups.begin(); g_it != g_end; g_it++) {
+				const GroupPtr group = *g_it;
+				ProcessPtr process = findProcessNeedingRollingRestart(group);
+				if (process != NULL) {
+					return process;
+				}
+			}
+		}
+		return ProcessPtr();
+	}
+
+	/**
+	 * Returns a random process within a specific group that should be rolling
+	 * restarted, or null if there is no such process.
+	 */
+	ProcessPtr findProcessNeedingRollingRestart(const GroupPtr &group) const {
+		if (group->hasSpawnError) {
+			return ProcessPtr();
+		}
+
+		ProcessList::const_iterator p_it;
+		for (p_it = group->processes.begin(); p_it != group->processes.end(); p_it++) {
+			ProcessPtr process = *p_it;
+			if (process->spawnerCreationTime < group->spawner->creationTime) {
+				return process;
+			}
+		}
+		for (p_it = group->disabledProcesses.begin(); p_it != group->disabledProcesses.end(); p_it++) {
+			ProcessPtr process = *p_it;
+			if (process->spawnerCreationTime < group->spawner->creationTime) {
+				return process;
+			}
+		}
+		return ProcessPtr();
+	}
+
+	void setRestarterThreadInactive() {
+		ScopedLock l(syncher);
+		restarterThreadActive = false;
+		restarterThreadStatus.clear();
+		P_DEBUG("Rolling restarter thread done");
+	}
+
+	void restarterThreadMain() {
+		try {
+			restarterThreadRealMain();
+		} catch (const thread_interrupted &) {
+			// Return.
+		}
+	}
+
+	void restarterThreadRealMain() {
+		TRACE_POINT();
+		this_thread::disable_interruption di;
+		this_thread::disable_syscall_interruption dsi;
+		ScopeGuard guard(boost::bind(&Pool::setRestarterThreadInactive, this));
+		ScopedLock l(syncher);
+
+		// Restaring the spawner is already taken care of by Group::finalizeRestart().
+		while (true) {
+			UPDATE_TRACE_POINT();
+			ProcessPtr oldProcess = findProcessNeedingRollingRestart();
+			if (oldProcess == NULL) {
+				break;
+			}
+
+			UPDATE_TRACE_POINT();
+			string oldProcessId = oldProcess->inspect();
+			GroupPtr group = oldProcess->getGroup();
+			SpawnerPtr spawner = group->spawner;
+			Options options = group->options.copyAndPersist();
+			ProcessPtr newProcess;
+			ExceptionPtr exception;
+
+			restarterThreadStatus = "Restarting process " + oldProcessId +
+				" in group " + group->name + "...";
+			P_DEBUG("Rolling restarting process " << oldProcessId <<
+				" in group " << group->name);
+			
+			l.unlock();
+			UPDATE_TRACE_POINT();
+			try {
+				UPDATE_TRACE_POINT();
+				this_thread::restore_interruption ri(di);
+				this_thread::restore_syscall_interruption rsi(dsi);
+				newProcess = spawner->spawn(options);
+			} catch (const thread_interrupted &) {
+				return;
+			} catch (const tracable_exception &e) {
+				UPDATE_TRACE_POINT();
+				l.lock();
+				if (!oldProcess->detached()) {
+					// Don't try to rolling restart this group next time.
+					// We know we won't succeed.
+					group->hasSpawnError = true;
+				}
+				
+				exception = copyException(e);
+				P_ERROR("Could spawn process for group " << group->name <<
+					": " << exception->what());
+				
+				continue;
+				
+				// Let other (unexpected) exceptions crash the program so
+				// gdb can generate a backtrace.
+			}
+			l.lock();
+
+			UPDATE_TRACE_POINT();
+			if (group->detached()) {
+				P_DEBUG("Group " << group->name << " was detached after process " <<
+					oldProcessId << " has been rolling restarted; " <<
+					"discarding newly spawned process " << newProcess->inspect());
+				continue;
+			}
+
+			UPDATE_TRACE_POINT();
+			if (oldProcess->detached()) {
+				/* Apparently the old process has gone away during the
+				 * time we spent on spawning a new one. But we can
+				 * replace another old process, if any.
+				 */
+				oldProcess = findProcessNeedingRollingRestart(group);
+			}
+			P_ASSERT(!oldProcess->detached());
+
+			vector<Callback> actions;
+			// TODO: respect maxInstances and maxPoolSize
+			if (oldProcess == NULL) {
+				UPDATE_TRACE_POINT();
+				/* The old process has gone away, and there's no process that
+				 * needs to be rolling restarted. If we have capacity in the
+				 * pool, add it to the group. Otherwise, discard the process.
+				 */
+				if (atFullCapacity(false)) {
+					P_DEBUG("Process " << oldProcessId << " was detached and the resource " <<
+						"limits do not allow spawning a new process, so discarding new " <<
+						"rolling restarted process " << newProcess->inspect());
+				} else {
+					group->attach(newProcess, actions);
+				}
+			} else {
+				UPDATE_TRACE_POINT();
+				group->detach(oldProcess, actions);
+				group->attach(newProcess, actions);
+			}
+
+			UPDATE_TRACE_POINT();
+			if (group->getWaitlist.empty()) {
+				group->assignSessionsToGetWaiters(actions);
+			} else {
+				assignSessionsToGetWaiters(actions);
+			}
+
+			UPDATE_TRACE_POINT();
+			group->verifyInvariants();
+			verifyInvariants();
+			verifyExpensiveInvariants();
+
+			if (!actions.empty()) {
+				l.unlock();
+				runAllActions(actions);
+				l.lock();
+				group->verifyInvariants();
+			}
+		}
+
+		UPDATE_TRACE_POINT();
+		verifyInvariants();
+		verifyExpensiveInvariants();
 	}
 
 	void garbageCollect(ev::timer &timer, int revents) {
@@ -612,6 +813,8 @@ public:
 		
 		max         = 6;
 		maxIdleTime = 60 * 1000000;
+
+		restarterThreadActive = false;
 		
 		garbageCollectionTimer.set<Pool, &Pool::garbageCollect>(this);
 		garbageCollectionTimer.set(maxIdleTime / 1000000.0, 0.0);

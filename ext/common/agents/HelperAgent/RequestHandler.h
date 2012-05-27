@@ -1418,6 +1418,8 @@ private:
 		fillPoolOption(client, options.loadShellEnvvars, "PASSENGER_LOAD_SHELL_ENVVARS");
 		fillPoolOption(client, options.debugger, "PASSENGER_DEBUGGER");
 		fillPoolOption(client, options.raiseInternalError, "PASSENGER_RAISE_INTERNAL_ERROR");
+
+		fillPoolOption(client, options.rollingRestart, "PASSENGER_ROLLING_RESTARTS");
 		
 		for (it = client->scgiParser.begin(); it != end; it++) {
 			if (!startsWith(it->first, "PASSENGER_")

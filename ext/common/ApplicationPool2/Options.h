@@ -334,6 +334,33 @@ public:
 	bool allowTrashingNonIdleProcesses;
 
 	/*-----------------*/
+
+	/**
+	 * The maximum number of application instances that may be spawned
+	 * for this app root. This option only has effect if it's lower than
+	 * the application pool's maxPerApp option and lower than its pool size.
+	 *
+	 * A value of 0 (the default) means unspecified, and has no effect.
+	 */
+	unsigned int maxInstances;
+	
+	/**
+	 * The maximum amount of memory (in MB) the spawned application may use.
+	 * A value of 0 (the default) means unlimited.
+	 */
+	unsigned long memoryLimit;
+	
+	/**
+	 * Whether rolling restarting should be used. Defaults to false.
+	 */
+	bool rollingRestart;
+	
+	/**
+	 * Whether to ignore spawn errors when possible by reusing existing
+	 * processes. Defaults to false.
+	 */
+	bool ignoreSpawnErrors;
+
 	/*-----------------*/
 	
 	
@@ -373,6 +400,11 @@ public:
 		allowTrashingNonIdleProcesses = true;
 		
 		/*********************************/
+
+		maxInstances       = 0;
+		memoryLimit        = 0;
+		rollingRestart     = false;
+		ignoreSpawnErrors  = false;
 	}
 	
 	Options copy() const {

@@ -312,6 +312,7 @@ public:
 	 *    if m_restarting: !m_spawning
 	 */
 	bool m_restarting;
+	bool hasSpawnError;
 	
 	Group(const SuperGroupPtr &superGroup, const Options &options, const ComponentInfo &info);
 	

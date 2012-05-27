@@ -200,6 +200,8 @@ Group::Group(const SuperGroupPtr &_superGroup, const Options &options, const Com
 		alwaysRestartFile = options.restartDir + "/always_restart.txt";
 	}
 	resetOptions(options);
+
+	hasSpawnError = false;
 }
 
 PoolPtr
@@ -433,7 +435,10 @@ Group::restart(const Options &options) {
 	P_DEBUG("Restarting group " << name);
 	m_spawning = false;
 	m_restarting = true;
-	detachAll(actions);
+	hasSpawnError = false;
+	if (!options.rollingRestart) {
+		detachAll(actions);
+	}
 	getPool()->nonInterruptableThreads.create_thread(
 		boost::bind(&Group::finalizeRestart, this, shared_from_this(), options.copyAndPersist(),
 			getPool()->spawnerFactory, actions),
@@ -478,8 +483,12 @@ Group::finalizeRestart(GroupPtr self, Options options, SpawnerFactoryPtr spawner
 	oldSpawner = spawner;
 	spawner    = newSpawner;
 
+	if (options.rollingRestart) {
+		pool->startRestarterThread();
+	}
+
 	m_restarting = false;
-	if (!getWaitlist.empty()) {
+	if (processes.empty() && !getWaitlist.empty()) {
 		spawn();
 	}
 	P_DEBUG("Restart of group " << name << " done");
