@@ -54,7 +54,7 @@ passenger_enterprise_license_check() {
 			APPEAL_MESSAGE);
 	}
 
-	while (true) {
+	while (1) {
 		if (fgets(line, sizeof(line), f) == NULL) {
 			if (ferror(f)) {
 				message = strdup(
