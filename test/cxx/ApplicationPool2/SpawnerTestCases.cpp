@@ -81,6 +81,26 @@
 			return str;
 		}
 	}
+
+	struct TemporarilyRedirectStdio {
+		FileDescriptor oldStdout, oldStderr, newStdio;
+
+		TemporarilyRedirectStdio(const string &filename) {
+			oldStdout = FileDescriptor(dup(STDOUT_FILENO));
+			oldStderr = FileDescriptor(dup(STDERR_FILENO));
+			newStdio = FileDescriptor(open(filename.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0600));
+			if (oldStdout == -1  || oldStderr == -1 || newStdio == -1) {
+				throw RuntimeException("Cannot dup or open file descriptor");
+			}
+			dup2(newStdio, STDOUT_FILENO);
+			dup2(newStdio, STDERR_FILENO);
+		}
+
+		~TemporarilyRedirectStdio() {
+			dup2(oldStdout, STDOUT_FILENO);
+			dup2(oldStderr, STDERR_FILENO);
+		}
+	};
 	
 	TEST_METHOD(1) {
 		// Basic spawning test.
@@ -272,6 +292,38 @@
 			runShellCommand("chmod 700 tmp.check/a/b/c/d");
 			spawner->spawn(options); // Should not throw.
 		}
+	}
+
+	TEST_METHOD(10) {
+		// It forwards all stdout and stderr output, even after the corresponding
+		// Process object has been destroyed.
+		DeleteFileEventually d("tmp.output");
+		Options options = createOptions();
+		options.appRoot = "stub/rack";
+		options.appType = "rack";
+		SpawnerPtr spawner = createSpawner(options);
+		ProcessPtr process = spawner->spawn(options);
+		
+		SessionPtr session = process->newSession();
+		session->initiate();
+		
+		const char header[] =
+			"REQUEST_METHOD\0GET\0"
+			"PATH_INFO\0/print_stdout_and_stderr\0";
+		string data(header, sizeof(header) - 1);
+		data.append("PASSENGER_CONNECT_PASSWORD");
+		data.append(1, '\0');
+		data.append(process->connectPassword);
+		data.append(1, '\0');
+
+		{
+			TemporarilyRedirectStdio redirect("tmp.output");
+			writeScalarMessage(session->fd(), data);
+			shutdown(session->fd(), SHUT_WR);
+			readAll(session->fd());
+			usleep(20000); // Give the I/O event loop some time to handle the data.
+		}
+		ensure_equals(readAll("tmp.output"), "hello stdout!\nhello stderr!\n");
 	}
 	
 	// It raises an exception if getStartupCommand() is empty.

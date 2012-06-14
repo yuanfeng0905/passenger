@@ -24,6 +24,7 @@ module Rails3Extensions
 class AnalyticsLogging < ActiveSupport::LogSubscriber
 	def self.install!(options)
 		analytics_logger = options["analytics_logger"]
+		app_group_name = options["app_group_name"]
 		return false if !analytics_logger || !options["analytics"]
 		
 		# If the Ruby interpreter supports GC statistics then turn it on
@@ -41,7 +42,7 @@ class AnalyticsLogging < ActiveSupport::LogSubscriber
 		if defined?(ActionDispatch::ShowExceptions)
 			Rails.application.middleware.insert_after(
 				ActionDispatch::ShowExceptions,
-				ExceptionLogger, analytics_logger)
+				ExceptionLogger, analytics_logger, app_group_name)
 		end
 		
 		if defined?(ActionController::Base)
@@ -97,9 +98,10 @@ class AnalyticsLogging < ActiveSupport::LogSubscriber
 	end
 	
 	class ExceptionLogger
-		def initialize(app, analytics_logger)
+		def initialize(app, analytics_logger, app_group_name)
 			@app = app
 			@analytics_logger = analytics_logger
+			@app_group_name = app_group_name
 		end
 		
 		def call(env)
@@ -112,7 +114,7 @@ class AnalyticsLogging < ActiveSupport::LogSubscriber
 	private
 		def log_analytics_exception(env, exception)
 			log = @analytics_logger.new_transaction(
-				env[PASSENGER_GROUP_NAME],
+				@app_group_name,
 				:exceptions,
 				env[PASSENGER_UNION_STATION_KEY])
 			begin

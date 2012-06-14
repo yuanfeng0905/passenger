@@ -76,6 +76,7 @@
 #include <dirent.h>
 #include <ApplicationPool2/Process.h>
 #include <ApplicationPool2/Options.h>
+#include <ApplicationPool2/PipeWatcher.h>
 #include <FileDescriptor.h>
 #include <SafeLibev.h>
 #include <Exceptions.h>
@@ -301,7 +302,7 @@ protected:
 	 */
 	struct NegotiationDetails {
 		// Arguments.
-		SafeLibev *libev;
+		SafeLibevPtr libev;
 		BackgroundIOCapturerPtr stderrCapturer;
 		pid_t pid;
 		FileDescriptor adminSocket;
@@ -318,7 +319,6 @@ protected:
 		unsigned long long timeout;
 		
 		NegotiationDetails() {
-			libev = (SafeLibev *) NULL;
 			pid = 0;
 			options = NULL;
 			forwardStderr = false;
@@ -370,16 +370,14 @@ private:
 
 	void sendSpawnRequest(NegotiationDetails &details) {
 		try {
-			writeExact(details.adminSocket,
-				"You have control 1.0\n"
+			string data = "You have control 1.0\n"
 				"passenger_root: " + resourceLocator.getRoot() + "\n"
 				"passenger_version: " PASSENGER_VERSION "\n"
 				"ruby_libdir: " + resourceLocator.getRubyLibDir() + "\n"
 				"generation_dir: " + generation->getPath() + "\n"
 				"gupid: " + details.gupid + "\n"
-				"connect_password: " + details.connectPassword + "\n",
-				&details.timeout);
-			
+				"connect_password: " + details.connectPassword + "\n";
+
 			vector<string> args;
 			vector<string>::const_iterator it, end;
 			details.options->toVector(args, resourceLocator);
@@ -387,10 +385,11 @@ private:
 				const string &key = *it;
 				it++;
 				const string &value = *it;
-				writeExact(details.adminSocket,
-					key + ": " + value + "\n",
-					&details.timeout);
+				data.append(key + ": " + value + "\n");
 			}
+
+			writeExact(details.adminSocket, data, &details.timeout);
+			P_TRACE(2, "Spawn request for " << details.options->appRoot << ":\n" << data);
 			writeExact(details.adminSocket, "\n", &details.timeout);
 		} catch (const SystemException &e) {
 			if (e.code() == EPIPE) {
@@ -1119,27 +1118,6 @@ private:
 		BufferedIO io;
 	};
 
-	/**
-	 * Handles forwarding any data on the given pipe to our stderr,
-	 * and keeps the pipe alive until it has reached EOF (meaning that all
-	 * processes that refer to the pipe have exited). A PipeWatcher
-	 * destroys itself upon encountering EOF.
-	 */
-	struct PipeWatcher: public enable_shared_from_this<PipeWatcher> {
-		SafeLibevPtr libev;
-		FileDescriptor fd;
-		ev::io watcher;
-		shared_ptr<PipeWatcher> selfPointer;
-		bool forward;
-
-		PipeWatcher(const SafeLibevPtr &_libev,
-			const FileDescriptor &_fd,
-			bool _forward);
-		~PipeWatcher();
-		void start();
-		void onReadable(ev::io &io, int revents);
-	};
-	
 	/** The event loop that created Process objects should use, and that I/O forwarding
 	 * functions should use. For example data on the error pipe is forwarded using this event loop.
 	 */
@@ -1352,7 +1330,7 @@ private:
 			preloaderOutputWatcher.set(adminSocket.second, ev::READ);
 			libev->start(preloaderOutputWatcher);
 			preloaderErrorWatcher = make_shared<PipeWatcher>(libev,
-				errorPipe.first, forwardStderr);
+				errorPipe.first, forwardStderr ? STDERR_FILENO : -1);
 			preloaderErrorWatcher->start();
 			preloaderAnnotations = debugDir->readAll();
 			guard.clear();
@@ -1731,44 +1709,6 @@ private:
 		guard.clear();
 		return result;
 	}
-
-
-	void realSpawn(const Options *_options, ProcessPtr *processResult, ExceptionPtr *exceptionResult) {
-		try {
-			const Options &options = *_options;
-			{
-				lock_guard<boost::mutex> l(simpleFieldSyncher);
-				m_lastUsed = SystemTime::getUsec();
-			}
-			if (!preloaderStarted()) {
-				startPreloader();
-			}
-			
-			SpawnResult result;
-			try {
-				result = sendSpawnCommand(options);
-			} catch (const SystemException &e) {
-				result = sendSpawnCommandAgain(e, options);
-			} catch (const IOException &e) {
-				result = sendSpawnCommandAgain(e, options);
-			} catch (const SpawnException &e) {
-				result = sendSpawnCommandAgain(e, options);
-			}
-			
-			NegotiationDetails details;
-			details.libev = libev.get();
-			details.pid = result.pid;
-			details.adminSocket = result.adminSocket;
-			details.io = result.io;
-			details.options = &options;
-			ProcessPtr process = negotiateSpawn(details);
-			P_DEBUG("Process spawning done: appRoot=" << options.appRoot <<
-				", pid=" << process->pid);
-			*processResult = process;
-		} catch (const tracable_exception &e) {
-			*exceptionResult = copyException(e);
-		}
-	}
 	
 protected:
 	virtual void annotateAppSpawnException(SpawnException &e, NegotiationDetails &details) {
@@ -1846,11 +1786,12 @@ public:
 		}
 		
 		NegotiationDetails details;
-		details.libev = libev.get();
+		details.libev = libev;
 		details.pid = result.pid;
 		details.adminSocket = result.adminSocket;
 		details.io = result.io;
 		details.options = &options;
+		details.forwardStderr = forwardStderr;
 		ProcessPtr process = negotiateSpawn(details);
 		P_DEBUG("Process spawning done: appRoot=" << options.appRoot <<
 			", pid=" << process->pid);
@@ -2062,7 +2003,7 @@ public:
 			errorPipe.second.close();
 			
 			NegotiationDetails details;
-			details.libev = libev.get();
+			details.libev = libev;
 			details.stderrCapturer =
 				make_shared<BackgroundIOCapturer>(
 					errorPipe.first,
@@ -2117,7 +2058,7 @@ public:
 		
 		lock_guard<boost::mutex> l(lock);
 		count++;
-		return make_shared<Process>((SafeLibev *) NULL,
+		return make_shared<Process>(SafeLibevPtr(),
 			(pid_t) count, "gupid-" + toString(count),
 			toString(count),
 			adminSocket.second, FileDescriptor(), sockets,

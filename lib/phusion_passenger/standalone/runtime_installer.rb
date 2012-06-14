@@ -78,6 +78,7 @@ protected
 			Dependencies::Curl_Dev,
 			Dependencies::OpenSSL_Dev,
 			Dependencies::Zlib_Dev,
+			Dependencies::PCRE_Dev,
 			Dependencies::Daemon_Controller,
 		]
 		if Dependencies.fastthread_required?
@@ -512,8 +513,6 @@ private
 			end
 			command << "#{shell} ./configure --prefix=/tmp " <<
 				"--with-cc-opt='-Wno-error' " <<
-				"--without-pcre " <<
-				"--without-http_rewrite_module " <<
 				"--without-http_fastcgi_module " <<
 				"--without-http_scgi_module " <<
 				"--without-http_uwsgi_module " <<

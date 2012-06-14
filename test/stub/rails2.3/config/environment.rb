@@ -18,7 +18,10 @@ Rails::Initializer.run do |config|
 
   # Skip frameworks you're not going to use (only works if using vendor/rails).
   # To use Rails without a database, you must remove the Active Record framework
-  config.frameworks -= [ :active_record, :action_mailer, :active_resource ]
+  config.frameworks -= [ :action_mailer, :active_resource ]
+  if defined?(PhusionPassenger) && !PhusionPassenger::App.options["active_record"]
+    config.frameworks -= [ :active_record ]
+  end
 
   # Only load the plugins named here, in the order given. By default, all plugins 
   # in vendor/plugins are loaded in alphabetical order.
@@ -37,7 +40,7 @@ Rails::Initializer.run do |config|
   # Make sure the secret is at least 30 characters and all random, 
   # no regular words or you'll be exposed to dictionary attacks.
   config.action_controller.session = {
-    :session_key => '_railsapp_session',
+    :key         => '_railsapp_session',
     :secret      => '3b50a6869d4e48696e5d407cab7b390124b3d815b4a8ab3e452a6ae1972ce1dc9615db09977915b6715944170fec0d46847b5b8fbdb1a4634d5d7247e4db32c8'
   }
 
