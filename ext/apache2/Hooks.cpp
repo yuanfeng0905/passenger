@@ -956,6 +956,8 @@ private:
 		/*********************/
 		addHeader(output, "PASSENGER_MEMORY_LIMIT", config->getMemoryLimit());
 		addHeader(output, "PASSENGER_USE_ROLLING_RESTARTS", config->useRollingRestarts() ? "true" : "false");
+		addHeader(output, "PASSENGER_MAX_INSTANCES",
+			apr_psprintf(r->pool, "%ld", config->getMaxInstances()));
 		/*********************/
 		
 		requestData.push_back(output);

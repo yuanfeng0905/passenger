@@ -347,7 +347,7 @@ public:
 	 *
 	 * A value of 0 (the default) means unspecified, and has no effect.
 	 */
-	unsigned int maxInstances;
+	unsigned int maxProcesses;
 	
 	/**
 	 * The maximum amount of memory (in MB) the spawned application may use.
@@ -405,7 +405,7 @@ public:
 		
 		/*********************************/
 
-		maxInstances       = 0;
+		maxProcesses       = 0;
 		memoryLimit        = 0;
 		rollingRestart     = false;
 		ignoreSpawnErrors  = false;

@@ -147,6 +147,7 @@ private:
 		options.minProcesses     = other.minProcesses;
 		options.statThrottleRate = other.statThrottleRate;
 		options.maxPreloaderIdleTime = other.maxPreloaderIdleTime;
+		options.maxProcesses     = other.maxProcesses;
 	}
 	
 	void runAllActions(const vector<Callback> &actions) {

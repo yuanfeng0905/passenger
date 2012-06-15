@@ -410,7 +410,8 @@ Group::spawnThreadRealMain(const SpawnerPtr &spawner, const Options &options) {
 		done = done
 			|| ((unsigned long) count >= options.minProcesses && getWaitlist.empty())
 			|| pool->atFullCapacity(false)
-			|| m_restarting;
+			|| m_restarting
+			|| (options.maxProcesses != 0 && count >= options.maxProcesses);
 		m_spawning = !done;
 		if (done) {
 			if (m_restarting) {
@@ -434,6 +435,7 @@ Group::shouldSpawn() const {
 	return !spawning()
 		&& (count == 0 || pqueue.top()->atFullCapacity())
 		&& !getPool()->atFullCapacity(false)
+		&& (options.maxProcesses == 0 || count <= (int) options.maxProcesses)
 		&& !hasSpawnError;
 }
 

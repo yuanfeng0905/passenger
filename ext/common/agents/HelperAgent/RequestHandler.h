@@ -1363,6 +1363,13 @@ private:
 		}
 	}
 
+	static void fillPoolOption(const ClientPtr &client, unsigned int &field, const StaticString &name) {
+		ScgiRequestParser::const_iterator it = client->scgiParser.getHeaderIterator(name);
+		if (it != client->scgiParser.end()) {
+			field = stringToUint(it->second);
+		}
+	}
+
 	static void fillPoolOption(const ClientPtr &client, long &field, const StaticString &name) {
 		ScgiRequestParser::const_iterator it = client->scgiParser.getHeaderIterator(name);
 		if (it != client->scgiParser.end()) {
@@ -1424,6 +1431,7 @@ private:
 
 		fillPoolOption(client, options.rollingRestart, "PASSENGER_ROLLING_RESTARTS");
 		fillPoolOption(client, options.ignoreSpawnErrors, "PASSENGER_IGNORE_SPAWN_ERRORS");
+		fillPoolOption(client, options.maxProcesses, "PASSENGER_MAX_INSTANCES");
 		
 		for (it = client->scgiParser.begin(); it != end; it++) {
 			if (!startsWith(it->first, "PASSENGER_")

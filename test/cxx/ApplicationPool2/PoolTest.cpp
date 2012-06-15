@@ -1410,30 +1410,33 @@ namespace tut {
 		ensure(pid3 == orig_pid1 || pid3 == orig_pid2 || pid3 == orig_pid3);
 	}
 
-	#if 0
-	TEST_METHOD(40) {
-		// The maxInstances pool option is respected.
+	TEST_METHOD(84) {
+		// Test that the maxProcesses option causes no more than the specified number
+		// of processes to be spawned per group.
+		Options options = createOptions();
+		options.maxProcesses = 1;
 		pool->setMax(3);
+
+		retainSessions = true;
+		pool->asyncGet(options, callback);
+		pool->asyncGet(options, callback);
+		EVENTUALLY(5,
+			result = number == 1;
+		);
+		SHOULD_NEVER_HAPPEN(200,
+			result = number == 2;
+		);
+		ensure_equals(pool->getProcessCount(), 1u);
 		
-		PoolOptions options;
-		options.appRoot = "stub/rack";
-		options.appType = "rack";
-		options.maxInstances = 1;
-		
-		// We connect to stub/rack while it already has an instance with
-		// 1 request in its queue. Assert that the pool doesn't spawn
-		// another instance.
-		SessionPtr session1 = pool->get(options);
-		SessionPtr session2 = pool2->get(options);
-		ensure_equals(pool->getCount(), 1u);
-		
-		// We connect to stub/wsgi. Assert that the pool spawns a new
-		// instance for this app.
-		ApplicationPool::Ptr pool3(newPoolConnection());
-		SessionPtr session3 = spawnWsgiApp(pool3, "stub/wsgi");
-		ensure_equals(pool->getCount(), 2u);
+		options.appRoot = "stub/wsgi";
+		pool->asyncGet(options, callback);
+		EVENTUALLY(5,
+			result = number == 2;
+		);
+		ensure_equals(pool->getProcessCount(), 2u);
 	}
 	
+	#if 0
 	TEST_METHOD(44) {
 		// Test sticky sessions.
 		TempDirCopy c1("stub/rack", "rackapp1.tmp");
