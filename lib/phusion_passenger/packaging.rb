@@ -22,9 +22,7 @@ module Packaging
 		'passenger-install-apache2-module',
 		'passenger-install-nginx-module',
 		'passenger-config',
-		'passenger-find-frozen-apps',
-		'passenger-show-backtrace',
-		'passenger-archive-server'
+		'passenger-show-backtrace'
 	]
 	
 	SUPER_USER_EXECUTABLES = [
