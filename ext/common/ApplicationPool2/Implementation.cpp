@@ -411,7 +411,7 @@ Group::spawnThreadRealMain(const SpawnerPtr &spawner, const Options &options) {
 			|| ((unsigned long) count >= options.minProcesses && getWaitlist.empty())
 			|| pool->atFullCapacity(false)
 			|| m_restarting
-			|| (options.maxProcesses != 0 && count >= options.maxProcesses);
+			|| (options.maxProcesses != 0 && (unsigned int) count >= options.maxProcesses);
 		m_spawning = !done;
 		if (done) {
 			if (m_restarting) {
