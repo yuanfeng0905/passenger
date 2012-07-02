@@ -266,7 +266,7 @@ Group::onSessionClose(const ProcessPtr &process, Session *session) {
 	
 	/* Update statistics. */
 	process->sessionClosed(session);
-	pqueue.decrease(process->pqHandle, process->usage());
+	pqueue.decrease(process->pqHandle, process->utilization());
 
 	bool maxRequestsReached = options.maxRequests > 0
 		&& process->processed >= options.maxRequests;
@@ -403,7 +403,7 @@ Group::spawnThreadRealMain(const SpawnerPtr &spawner, const Options &options) {
 		}
 		
 		// Temporarily mark this Group as 'not spawning' so
-		// that pool->usage() doesn't take this thread's spawning
+		// that pool->utilization() doesn't take this thread's spawning
 		// state into account.
 		m_spawning = false;
 		

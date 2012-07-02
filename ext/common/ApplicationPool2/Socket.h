@@ -181,13 +181,13 @@ public:
 		return sessions == 0;
 	}
 	
-	int usage() const {
+	int utilization() const {
 		/* Different sockets within a Process may have different
 		 * 'concurrency' values. We want:
 		 * - Process.sessionSockets to sort the sockets from least used to most used.
 		 * - to give sockets with concurrency == 0 more priority over sockets
 		 *   with concurrency > 0.
-		 * Therefore, we describe our usage as a percentage of 'concurrency', with
+		 * Therefore, we describe our utilization as a percentage of 'concurrency', with
 		 * the percentage value in [0..INT_MAX] instead of [0..1].
 		 */
 		if (concurrency == 0) {
@@ -212,6 +212,16 @@ class SocketList: public vector<Socket> {
 public:
 	void add(const string &name, const string &address, const string &protocol, int concurrency) {
 		push_back(Socket(name, address, protocol, concurrency));
+	}
+
+	const Socket *findSocketWithName(const StaticString &name) const {
+		const_iterator it, end = this->end();
+		for (it = begin(); it != end; it++) {
+			if (it->name == name) {
+				return &(*it);
+			}
+		}
+		return NULL;
 	}
 };
 
