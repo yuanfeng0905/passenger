@@ -15,9 +15,12 @@
 
 namespace Passenger {
 
+typedef void (*DiagnosticsDumper)(void *userData);
+
 bool feedbackFdAvailable();
 VariantMap initializeAgent(int argc, char *argv[], const char *processName);
 void installAbortHandler();
+void installDiagnosticsDumper(DiagnosticsDumper func, void *userData);
 
 }
 
