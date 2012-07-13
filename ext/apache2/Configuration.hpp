@@ -218,6 +218,9 @@ struct DirConfig {
 
 	/** Whether deployment error resiatnce should be enabled. */
 	Threeway resistDeploymentErrors;
+
+	/** Whether debugger support should be enabled. */
+	Threeway debugger;
 	
 	/*************************************/
 	
@@ -407,6 +410,10 @@ struct DirConfig {
 
 	bool shouldResistDeploymentErrors() const {
 		return resistDeploymentErrors == ENABLED;
+	}
+
+	bool useDebugger() const {
+		return debugger == ENABLED;
 	}
 };
 

@@ -203,6 +203,7 @@ passenger_config_create_dir(apr_pool_t *p, char *dirspec) {
 	config->memoryLimitSpecified = false;
 	config->rollingRestarts = DirConfig::UNSET;
 	config->resistDeploymentErrors = DirConfig::UNSET;
+	config->debugger = DirConfig::UNSET;
 	return config;
 }
 
@@ -262,6 +263,7 @@ passenger_config_merge_dir(apr_pool_t *p, void *basev, void *addv) {
 	config->memoryLimitSpecified = base->memoryLimitSpecified || add->memoryLimitSpecified;
 	MERGE_THREEWAY_CONFIG(rollingRestarts);
 	MERGE_THREEWAY_CONFIG(resistDeploymentErrors);
+	MERGE_THREEWAY_CONFIG(debugger);
 	return config;
 }
 
@@ -299,6 +301,7 @@ cmd_passenger_pre_start(cmd_parms *cmd, void *pcfg, const char *arg) {
 
 DEFINE_DIR_THREEWAY_CONFIG_SETTER(cmd_passenger_rolling_restarts, rollingRestarts)
 DEFINE_DIR_THREEWAY_CONFIG_SETTER(cmd_passenger_resist_deployment_errors, resistDeploymentErrors)
+DEFINE_DIR_THREEWAY_CONFIG_SETTER(cmd_passenger_debugger, debugger)
 DEFINE_DIR_INT_CONFIG_SETTER(cmd_passenger_max_request_time, maxRequestTime, unsigned long, 0)
 DEFINE_DIR_INT_CONFIG_SETTER(cmd_passenger_max_instances, maxInstances, unsigned long, 0)
 DEFINE_DIR_INT_CONFIG_SETTER(cmd_passenger_memory_limit, memoryLimit, unsigned long, 0)
@@ -702,6 +705,11 @@ const command_rec passenger_commands[] = {
 		NULL,
 		OR_OPTIONS | ACCESS_CONF | RSRC_CONF,
 		"Whether to turn on deployment error resistance"),
+	AP_INIT_FLAG("PassengerDebugger",
+		(FlagFunc) cmd_passenger_debugger,
+		NULL,
+		OR_OPTIONS | ACCESS_CONF | RSRC_CONF,
+		"Whether to turn on debugger support"),
 
 	// Rails-specific settings.
 	AP_INIT_TAKE1("RailsBaseURI",

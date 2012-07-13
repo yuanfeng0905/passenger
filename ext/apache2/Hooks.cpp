@@ -643,7 +643,7 @@ private:
 					config->getStatThrottleRate(),
 					config->getRestartDir(),
 					DEFAULT_BACKEND_ACCOUNT_RIGHTS,
-					false,
+					config->useDebugger(),
 					config->useUnionStation(),
 					log->isNull() ? AnalyticsLogPtr() : log,
 					config->getMaxInstances(),
