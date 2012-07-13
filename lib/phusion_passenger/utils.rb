@@ -325,6 +325,20 @@ protected
 		# point must be specified in the Gemfile. Like ruby-debug if debugging is on...
 		
 		PhusionPassenger._spawn_options = options
+
+		if options["debugger"]
+			if RUBY_VERSION < "1.9.0"
+				debug_libname = 'ruby-debug'
+			else
+				debug_libname = 'debugger'
+			end
+			require(debug_libname)
+			if !Debugger.respond_to?(:ctrl_port)
+				raise "Your version of the '#{debug_libname}' gem is too old. Please upgrade to the latest version."
+			end
+			Debugger.start_remote('127.0.0.1', [0, 0])
+			Debugger.start
+		end
 	end
 	
 	# This method is to be called after loading the application code but
