@@ -830,7 +830,7 @@ private:
 			options.memoryLimit    = atol(parser.getHeader("PASSENGER_MEMORY_LIMIT"));
 			options.maxInstances   = atol(parser.getHeader("PASSENGER_MAX_INSTANCES"));
 			options.rollingRestart = parser.getHeader("PASSENGER_ROLLING_RESTARTS") == "true";
-			options.ignoreSpawnErrors = parser.getHeader("PASSENGER_FRIENDLY_ERROR_PAGES") == "false";
+			options.ignoreSpawnErrors = parser.getHeader("PASSENGER_RESIST_DEPLOYMENT_ERRORS") == "true";
 			/************************/
 			
 			try {

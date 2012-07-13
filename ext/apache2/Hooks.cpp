@@ -649,7 +649,7 @@ private:
 					config->getMaxInstances(),
 					config->getMemoryLimit(),
 					config->useRollingRestarts(),
-					!config->showFriendlyErrorPages()
+					config->shouldResistDeploymentErrors()
 				);
 				options.environmentVariables = ptr(new EnvironmentVariablesStringListCreator(r));
 				
