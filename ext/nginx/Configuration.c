@@ -311,6 +311,7 @@ passenger_create_loc_conf(ngx_conf_t *cf)
     conf->max_request_time = NGX_CONF_UNSET;
     conf->memory_limit     = NGX_CONF_UNSET;
     conf->rolling_restarts = NGX_CONF_UNSET;
+    conf->resist_deployment_errors = NGX_CONF_UNSET;
     /******************************/
 
     conf->upstream_config.pass_headers = ngx_array_create(cf->pool, 1, sizeof(ngx_keyval_t));
@@ -455,6 +456,7 @@ passenger_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child)
     ngx_conf_merge_value(conf->max_request_time, prev->max_request_time, 0);
     ngx_conf_merge_value(conf->memory_limit, prev->memory_limit, 0);
     ngx_conf_merge_value(conf->rolling_restarts, prev->rolling_restarts, 0);
+    ngx_conf_merge_value(conf->resist_deployment_errors, prev->resist_deployment_errors, 0);
 
     /******************************/
 
@@ -1410,10 +1412,17 @@ const ngx_command_t passenger_commands[] = {
       NULL },
 
     { ngx_string("passenger_rolling_restarts"),
-      NGX_HTTP_MAIN_CONF | NGX_HTTP_SRV_CONF | NGX_HTTP_LOC_CONF | NGX_HTTP_LIF_CONF | NGX_CONF_TAKE1,
+      NGX_HTTP_MAIN_CONF | NGX_HTTP_SRV_CONF | NGX_HTTP_LOC_CONF | NGX_HTTP_LIF_CONF | NGX_CONF_FLAG,
       ngx_conf_set_flag_slot,
       NGX_HTTP_LOC_CONF_OFFSET,
       offsetof(passenger_loc_conf_t, rolling_restarts),
+      NULL },
+
+    { ngx_string("passenger_resist_deployment_errors"),
+      NGX_HTTP_MAIN_CONF | NGX_HTTP_SRV_CONF | NGX_HTTP_LOC_CONF | NGX_HTTP_LIF_CONF | NGX_CONF_FLAG,
+      ngx_conf_set_flag_slot,
+      NGX_HTTP_LOC_CONF_OFFSET,
+      offsetof(passenger_loc_conf_t, resist_deployment_errors),
       NULL },
 
     /************************************/

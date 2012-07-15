@@ -541,6 +541,8 @@ create_request(ngx_http_request_t *r)
     PREPARE_INT_CONFIG_DATA("PASSENGER_MEMORY_LIMIT", slcf, memory_limit);
     ANALYZE_BOOLEAN_CONFIG_LENGTH("PASSENGER_ROLLING_RESTARTS",
                                   slcf, rolling_restarts);
+    ANALYZE_BOOLEAN_CONFIG_LENGTH("PASSENGER_RESIST_DEPLOYMENT_ERRORS",
+                                  slcf, resist_deployment_errors);
 
     /***********************/
 
@@ -772,6 +774,8 @@ create_request(ngx_http_request_t *r)
                               slcf, memory_limit);
     SERIALIZE_BOOLEAN_CONFIG_DATA("PASSENGER_ROLLING_RESTARTS",
                                   slcf, rolling_restarts);
+    SERIALIZE_BOOLEAN_CONFIG_DATA("PASSENGER_RESIST_DEPLOYMENT_ERRORS",
+                                  slcf, resist_deployment_errors);
 
     /***********************/
 

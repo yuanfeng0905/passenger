@@ -958,6 +958,10 @@ private:
 		addHeader(output, "PASSENGER_USE_ROLLING_RESTARTS", config->useRollingRestarts() ? "true" : "false");
 		addHeader(output, "PASSENGER_MAX_INSTANCES",
 			apr_psprintf(r->pool, "%ld", config->getMaxInstances()));
+		addHeader(output, "PASSENGER_DEBUGGER",
+			config->useDebugger() ? "true" : "false");
+		addHeader(output, "PASSENGER_RESIST_DEPLOYMENT_ERRORS",
+			config->shouldResistDeploymentErrors() ? "true" : "false");
 		/*********************/
 		
 		requestData.push_back(output);

@@ -1434,6 +1434,7 @@ private:
 		fillPoolOption(client, options.rollingRestart, "PASSENGER_ROLLING_RESTARTS");
 		fillPoolOption(client, options.ignoreSpawnErrors, "PASSENGER_IGNORE_SPAWN_ERRORS");
 		fillPoolOption(client, options.maxProcesses, "PASSENGER_MAX_INSTANCES");
+		fillPoolOption(client, options.ignoreSpawnErrors, "PASSENGER_RESIST_DEPLOYMENT_ERRORS");
 		
 		for (it = client->scgiParser.begin(); it != end; it++) {
 			if (!startsWith(it->first, "PASSENGER_")

@@ -209,6 +209,12 @@ struct DirConfig {
 	
 	/** Whether rolling restarts should be used. */
 	Threeway rollingRestarts;
+
+	/** Whether deployment error resiatnce should be enabled. */
+	Threeway resistDeploymentErrors;
+
+	/** Whether debugger support should be enabled. */
+	Threeway debugger;
 	
 	/*************************************/
 	
@@ -376,6 +382,14 @@ struct DirConfig {
 	
 	bool useRollingRestarts() const {
 		return rollingRestarts == ENABLED;
+	}
+
+	bool shouldResistDeploymentErrors() const {
+		return resistDeploymentErrors == ENABLED;
+	}
+
+	bool useDebugger() const {
+		return debugger == ENABLED;
 	}
 };
 
