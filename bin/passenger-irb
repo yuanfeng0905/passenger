@@ -110,8 +110,8 @@ end
 
 def attach_debugger(process)
 	if process.server_sockets[:ruby_debug_cmd]
-		cmd_host, cmd_port   = process.server_sockets[:ruby_debug_cmd].address.split(/:/, 2)
-		ctrl_host, ctrl_port = process.server_sockets[:ruby_debug_ctrl].address.split(/:/, 2)
+		cmd_host, cmd_port   = process.server_sockets[:ruby_debug_cmd].address.sub(/^tcp:\/\//, '').split(/:/, 2)
+		ctrl_host, ctrl_port = process.server_sockets[:ruby_debug_ctrl].address.sub(/^tcp:\/\//, '').split(/:/, 2)
 		rdebug = PlatformInfo.locate_ruby_tool('rdebug')
 		puts "*** Attaching debugger to process #{process.pid}."
 		puts "*** Attaching will succeed as soon as process #{process.pid} reaches a 'debugger' call."

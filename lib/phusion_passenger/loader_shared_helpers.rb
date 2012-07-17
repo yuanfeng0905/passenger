@@ -226,8 +226,6 @@ module LoaderSharedHelpers
 			if !Debugger.respond_to?(:ctrl_port)
 				raise "Your version of the '#{debug_libname}' gem is too old. Please upgrade to the latest version."
 			end
-			Debugger.start_remote('127.0.0.1', [0, 0])
-			Debugger.start
 		end
 	end
 	
@@ -314,6 +312,11 @@ module LoaderSharedHelpers
 			      ActiveRecord::Base.connected?
 				ActiveRecord::Base.establish_connection
 			end
+		end
+
+		if options["debugger"]
+			Debugger.start_remote('127.0.0.1', [0, 0])
+			Debugger.start
 		end
 		
 		# Fire off events.
