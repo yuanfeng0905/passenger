@@ -556,7 +556,6 @@ PipeWatcher::PipeWatcher(
 {
 	watcher.set(fd, ev::READ);
 	watcher.set<PipeWatcher, &PipeWatcher::onReadable>(this);
-	libev->start(watcher);
 }
 
 PipeWatcher::~PipeWatcher() {
@@ -566,6 +565,7 @@ PipeWatcher::~PipeWatcher() {
 void
 PipeWatcher::start() {
 	selfPointer = shared_from_this();
+	libev->start(watcher);
 }
 
 void

@@ -296,6 +296,8 @@ private:
 		Server *self = (Server *) userData;
 		self->requestHandler->inspect(cout);
 		cout.flush();
+		cout << self->pool->inspect();
+		cout.flush();
 	}
 	
 public:
