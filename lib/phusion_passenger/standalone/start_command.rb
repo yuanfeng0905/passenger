@@ -409,6 +409,10 @@ private
 		end
 		puts "==============================================================================="
 	end
+
+	def listening_on_unix_domain_socket?
+		return !!@options[:socket_file]
+	end
 	
 	def daemonize
 		pid = fork
