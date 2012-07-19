@@ -142,19 +142,31 @@
 
 5.12.1. PassengerMaxPoolSize <integer>	=>	passengermaxpoolsize-integer--am64q8
 
+5.12.10. PassengerPreStart <url>	=>	passengerprestart-url--6vs87z
+
+5.12.11. PassengerHighPerformance <on|off>	=>	passengerhighperformance-on-off--8r6qrf
+
 5.12.2. PassengerMinInstances <integer>	=>	passengermininstances-integer--wegq6b
 
-5.12.3. PassengerMaxInstancesPerApp <integer>	=>	passengermaxinstancesperapp-integer--1pteawn
+# fuzzy
+5.12.3. PassengerMaxInstances <integer>	=>	passengermaxinstancesperapp-integer--1pteawn
 
-5.12.4. PassengerPoolIdleTime <integer>	=>	passengerpoolidletime-integer--a3gunq
+# fuzzy
+5.12.4. PassengerMaxInstancesPerApp <integer>	=>	passengermaxrequests-integer--ietgd0
 
-5.12.5. PassengerMaxRequests <integer>	=>	passengermaxrequests-integer--ietgd0
+# fuzzy
+5.12.5. PassengerPoolIdleTime <integer>	=>	passengerpoolidletime-integer--a3gunq
 
-5.12.6. PassengerStatThrottleRate <integer>	=>	passengerstatthrottlerate-integer--13zx4xo
+# fuzzy
+5.12.6. PassengerMaxRequests <integer>	=>	passengerstatthrottlerate-integer--13zx4xo
 
-5.12.7. PassengerPreStart <url>	=>	passengerprestart-url--1v76tcz
+# fuzzy
+5.12.7. PassengerMaxRequestTime <seconds>	=>	passengerprestart-url--1v76tcz
 
-5.12.8. PassengerHighPerformance <on|off>	=>	passengerhighperformance-on-off--36mw1l
+# fuzzy
+5.12.8. PassengerMemoryLimit <integer>	=>	passengerhighperformance-on-off--36mw1l
+
+5.12.9. PassengerStatThrottleRate <integer>	=>	passengerstatthrottlerate-integer--10ll85x
 
 5.13. Compatibility options	=>	compatibility-options-8jve5a
 
