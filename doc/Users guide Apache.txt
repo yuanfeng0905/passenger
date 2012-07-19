@@ -1283,10 +1283,12 @@ measure to avoid memory leaks.
 
 [[PassengerMaxRequestTime]]
 ==== PassengerMaxRequestTime <seconds> ====
-The maximum amount of time, in seconds, that an application instance may take
+**Available in Phusion Passenger Enterprise since version 3.0.0.**
+
+The maximum amount of time, in seconds, that an application process may take
 to process a request. If the request takes longer than this amount of time,
-then the application instance will be forcefully shut down, and restarted upon
-the next request. A value of 0 means that there is no time limit.
+then the application process will be forcefully shut down, and possibly
+restarted upon the next request. A value of 0 means that there is no time limit.
 
 This option is useful for preventing your application from freezing for an
 indefinite period of time.
@@ -1319,7 +1321,7 @@ to 10 seconds. You can then configure Phusion Passenger as follows:
 
 If a request to '/expensive_computation' takes more than 10 seconds,
 or if a request to any other URI takes more than 2 seconds,
-then the corresponding application instance will be forced to shutdown.
+then the corresponding application process will be forced to shutdown.
 
 [CAUTION]
 =====================================================
@@ -1331,8 +1333,10 @@ measure to avoid freezing applications.
 
 [[PassengerMemoryLimit]]
 ==== PassengerMemoryLimit <integer> ====
-The maximum amount of memory that an application instance may use, in megabytes.
-Once an application instance has surpassed its memory limit, it will process
+**Available in Phusion Passenger Enterprise since version 3.0.0.**
+
+The maximum amount of memory that an application process may use, in megabytes.
+Once an application process has surpassed its memory limit, it will process
 all the requests currently present in its queue and then shut down.
 A value of 0 means that there is no maximum: the application's memory usage
 will not be checked.
@@ -1784,6 +1788,24 @@ web server error log. This option allows one to specify the file that debugging 
 error messages should be written to instead.
 
 This option may only occur once, in the global server configuration.
+
+==== PassengerDebugger <on|off> ====
+**Available in Phusion Passenger Enterprise since version 3.0.0.**
+
+Turns support for application debugging on or off. In case of Ruby applications,
+turning this option on will cause them to load the `ruby-debug` gem (when on Ruby 1.8)
+or the `debugger` gem (when on Ruby 1.9).
+
+Once debugging is turned on, you can use the command `passenger-irb --debug <PID>` to attach an rdebug console to the application process with the given PID. Attaching will succeed once the application process executes a `debugger` command.
+
+This option may occur in the following places:
+
+ * In the global server configuration.
+ * In a virtual host configuration block.
+ * In a `<Directory>` or `<Location>` block.
+ * In '.htaccess', if `AllowOverride Options` is on.
+
+In each place, it may be specified at most once. The default value is 'off'.
 
 
 === Classic Ruby on Rails (<= 2.x)-specific options ===
