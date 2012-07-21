@@ -637,7 +637,6 @@ feedbackFdAvailable() {
 
 VariantMap
 initializeAgent(int argc, char *argv[], const char *processName) {
-	TRACE_POINT();
 	VariantMap options;
 	
 	ignoreSigpipe();
@@ -650,6 +649,7 @@ initializeAgent(int argc, char *argv[], const char *processName) {
 	setvbuf(stdout, NULL, _IONBF, 0);
 	setvbuf(stderr, NULL, _IONBF, 0);
 	
+	TRACE_POINT();
 	try {
 		if (argc == 1) {
 			int ret = fcntl(FEEDBACK_FD, F_GETFL);
