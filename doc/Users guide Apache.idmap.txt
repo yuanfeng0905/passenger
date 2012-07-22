@@ -200,6 +200,8 @@
 # fuzzy
 5.13.2. PassengerDebugLogFile <filename>	=>	passengerdebuglogfile-filename--pgj55c
 
+5.13.3. PassengerDebugger <on|off>	=>	passengerdebugger-on-off--irhrcn
+
 5.14. Classic Ruby on Rails (⇐ 2.x)-specific options	=>	classic-ruby-on-rails-2-x-specific-options-17qipvb
 
 # fuzzy
@@ -315,6 +317,8 @@
 7.3. Debugging frozen applications	=>	debugging-frozen-applications-1qsjqq7
 
 7.4. Accessing individual application processes	=>	accessing-individual-application-processes-1p0j4jb
+
+7.5. Attaching an IRB console to an application process	=>	attaching-an-irb-console-to-an-application-process-28l1ct
 
 8. Tips	=>	tips-19cwwf7
 

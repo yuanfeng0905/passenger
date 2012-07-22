@@ -166,23 +166,30 @@
 
 5.7.1. passenger_max_pool_size <integer>	=>	passenger-max-pool-size-integer--3jzefs
 
+5.7.10. passenger_pre_start <url>	=>	passenger-pre-start-url--1x3rivo
+
 5.7.2. passenger_min_instances <integer>	=>	passenger-min-instances-integer--uclykt
 
-5.7.3. passenger_max_instances_per_app <integer>	=>	passenger-max-instances-per-app-integer--1p7q3cf
-
-5.7.4. passenger_pool_idle_time <integer>	=>	passenger-pool-idle-time-integer--xcw65o
-
-5.7.5. passenger_max_preloader_idle_time <integer>	=>	rails-app-spawner-idle-time-integer--1xjqe4b
-
-5.7.6. passenger_max_requests <integer>	=>	passenger-max-requests-integer--sgzint
+# fuzzy
+5.7.3. passenger_max_instances <integer>	=>	passenger-max-instances-per-app-integer--1p7q3cf
 
 # fuzzy
-5.7.7. passenger_max_request_time <seconds>	=>	passenger-pre-start-url--npldeb
+5.7.4. passenger_max_instances_per_app <integer>	=>	passenger-pool-idle-time-integer--xcw65o
 
 # fuzzy
-5.7.8. passenger_memory_limit <integer>	=>	passenger-log-level-integer--17snhon
+5.7.5. passenger_pool_idle_time <integer>	=>	rails-app-spawner-idle-time-integer--1xjqe4b
 
-5.7.9. passenger_pre_start <url>	=>	passenger-pre-start-url--18uzt95
+# fuzzy
+5.7.6. passenger_max_preloader_idle_time <integer>	=>	passenger-max-requests-integer--sgzint
+
+# fuzzy
+5.7.7. passenger_max_requests <integer>	=>	passenger-pre-start-url--npldeb
+
+# fuzzy
+5.7.8. passenger_max_request_time <seconds>	=>	passenger-log-level-integer--17snhon
+
+# fuzzy
+5.7.9. passenger_memory_limit <integer>	=>	passenger-pre-start-url--18uzt95
 
 5.8. Logging and debugging options	=>	logging-and-debugging-options-14e91ni
 
@@ -190,6 +197,9 @@
 5.8.1. passenger_log_level <integer>	=>	passenger-debug-log-file-filename--21ubaj
 
 5.8.2. passenger_debug_log_file <filename>	=>	passenger-debug-log-file-filename--10gqwqg
+
+# fuzzy
+5.8.3. passenger_debugger <on|off>	=>	passenger-use-global-queue-on-off--14h9n22
 
 5.9. Ruby on Rails-specific options	=>	ruby-on-rails-specific-options-12vfokt
 
@@ -204,6 +214,8 @@
 6.3. Debugging frozen applications	=>	debugging-frozen-applications-qoctl8
 
 6.4. Accessing individual application processes	=>	accessing-individual-application-processes-1qe4fqk
+
+6.5. Attaching an IRB console to an application process	=>	attaching-an-irb-console-to-an-application-process-1nozfk3
 
 7. Tips	=>	tips-n4c22d
 
@@ -230,9 +242,4 @@
 8.2. How Phusion Passenger detects whether a virtual host is a web application	=>	how-phusion-passenger-detects-whether-a-virtual-host-is-a-web-application-13qbmhn
 
 9. Appendix A: About this document	=>	appendix-a-about-this-document-zfvixm
-
-
-### These sections appear to have been removed. Please check.
-
-5.5.1. passenger_use_global_queue <on|off>	=>	passenger-use-global-queue-on-off--14h9n22
 
