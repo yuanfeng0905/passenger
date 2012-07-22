@@ -646,6 +646,72 @@ This option may occur in the following places:
 
 In each place, it may be specified at most once. The default value is 'smart'.
 
+[[PassengerRollingRestarts]]
+=== passenger_rolling_restarts <on|off> ===
+**Available in Phusion Passenger Enterprise since version 3.0.0.**
+
+Enables or disables support for rolling restarts. Normally when you
+restart an application (by touching restart.txt), Phusion Passenger would
+shut down all application processes and spawn a new one. The spawning
+of a new application process could take a while, and any requests that
+come in during this time will be blocked until this first application
+process has spawned.
+
+But when rolling restarts are enabled, Phusion Passenger Enterprise will:
+
+1. Spawn a new process in the background.
+2. When it's done spawning, Phusion Passenger Enterprise will replace one of the old processes with this newly spawned one.
+3. Step 1 and 2 are repeated until all processes have been replaced.
+
+This way, visitors will not experience any delays when you are restarting your application. This allows you to, for example, upgrade your application often without degrading user experience.
+
+Rolling restarts have a few caveat however that you should be aware of:
+
+- Upgrading an application sometimes involves upgrading the database schema.
+  With rolling restarts, there may be a point in time during which processes
+  belonging to the previous version and processes belonging to the new version
+  both exist at the same time. Any database schema upgrades you perform must
+  therefore be backwards-compatible with the old application version.
+- Because there's no telling which process will serve a request, users may
+  not see changes brought about by the new version until all processes have
+  been restarted. It is for this reason that you should not use rolling
+  restarts in development, only in production.
+
+This option may occur in the following places:
+
+ * In the 'http' configuration block.
+ * In a 'server' configuration block.
+ * In a 'location' configuration block.
+ * In an 'if' configuration scope.
+
+In each place, it may be specified at most once. The default value is 'off'.
+
+=== passenger_resist_deployment_errors <on|off> ===
+**Available in Phusion Passenger Enterprise since version 3.0.0.**
+
+Enables or disables resistance against deployment errors.
+
+Suppose you've upgraded your application and you've issues a command to restart it (by touching restart.txt), but the application code contains an error that prevents Phusion Passenger from successfully spawning a process (e.g. a syntax error). Phusion Passenger would normally display an error message in response to this.
+
+By enabling deployment error resistance, Phusion Passenger Enterprise would instead do this:
+
+- It passes the request to one of the existing application processes (that belong to the previous version of the application). The visitor will not see a Phusion Passenger process spawning error message.
+- It logs the error to the global web server error log file.
+- It sets an internal flag so that no processes for this application will be spawned (even when the current traffic would normally result in more processes being spawned) and no processes will be idle cleaned. Processes *could* still be shutdown because of other events, e.g. because their <<PassengerMemoryLimit,memory limit>> have been reached.
+
+This way, visitors will suffer minimally from deployment errors. Phusion Passenger will attempt to restart the application again next time restart.txt is touched.
+
+Enabling deployment error resistance only works if <<PassengerRollingRestarts,rolling restart>> is also enabled.
+
+This option may occur in the following places:
+
+ * In the 'http' configuration block.
+ * In a 'server' configuration block.
+ * In a 'location' configuration block.
+ * In an 'if' configuration scope.
+
+In each place, it may be specified at most once. The default value is 'off'.
+
 === Important deployment options ===
 ==== passenger_enabled <on|off> ====
 This option may be specified in the 'http' configuration block, a
@@ -842,7 +908,7 @@ This option may occur in the following places:
 
 In each place, it may be specified at most once.
 
-==== passenger_user <group name> ====
+==== passenger_group <group name> ====
 If <<user_switching,user switching support>> is enabled, then Phusion Passenger will
 by default run the web application as the primary group of the owner of the file
 'config/environment.rb' (for Rails apps) or 'config.ru' (for Rack apps). This option
