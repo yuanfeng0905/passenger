@@ -101,6 +101,10 @@ public:
 	Socket *getSocket() const {
 		return socket;
 	}
+
+	const string &getProtocol() const {
+		return socket->protocol;
+	}
 	
 	void initiate() {
 		assert(!closed);
