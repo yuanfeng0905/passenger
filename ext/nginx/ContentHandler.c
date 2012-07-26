@@ -85,6 +85,11 @@ file_exists(const u_char *filename, unsigned int throttle_rate) {
     return get_file_type(filename, throttle_rate) == FT_FILE;
 }
 
+static int
+directory_exists(const u_char *filename, unsigned int throttle_rate) {
+    return get_file_type(filename, throttle_rate) == FT_DIRECTORY;
+}
+
 static passenger_app_type_t
 detect_application_type(const ngx_str_t *public_dir) {
     u_char filename[NGX_MAX_PATH];
@@ -115,6 +120,13 @@ detect_application_type(const ngx_str_t *public_dir) {
                  public_dir->data, "../passenger_node.js");
     if (file_exists(filename, 1)) {
         return AP_NODE;
+    }
+
+    ngx_memzero(filename, sizeof(filename));
+    ngx_snprintf(filename, sizeof(filename), "%s/%s",
+                 public_dir->data, "../.meteor");
+    if (directory_exists(filename, 1)) {
+        return AP_METEOR;
     }
     
     return AP_NONE;
@@ -399,6 +411,10 @@ create_request(ngx_http_request_t *r)
     case AP_NODE:
         app_type_string = (const u_char *) "node";
         app_type_string_len = sizeof("node");
+        break;
+    case AP_METEOR:
+        app_type_string = (const u_char *) "meteor";
+        app_type_string_len = sizeof("meteor");
         break;
     default:
         app_type_string = (const u_char *) "rack";

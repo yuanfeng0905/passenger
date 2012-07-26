@@ -543,6 +543,8 @@ public:
 			return "python\1" + resourceLocator.getHelperScriptsDir() + "/wsgi-loader.py";
 		} else if (appType == "node") {
 			return "node\1" + resourceLocator.getHelperScriptsDir() + "/node-loader.js";
+		} else if (appType == "meteor") {
+			return ruby + "\1" + resourceLocator.getHelperScriptsDir() + "/meteor-loader.rb";
 		} else {
 			return startCommand;
 		}
@@ -557,6 +559,8 @@ public:
 			return "passenger_wsgi.py";
 		} else if (appType == "node") {
 			return "passenger_node.js";
+		} else if (appType == "meteor") {
+			return ".meteor";
 		} else {
 			return startupFile;
 		}
@@ -571,6 +575,8 @@ public:
 			return "Passenger WsgiApp";
 		} else if (appType == "node") {
 			return "Passenger NodeJsApp";
+		} else if (appType == "meteor") {
+			return "Passenger MeteorApp";
 		} else {
 			return processTitle;
 		}
