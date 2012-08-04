@@ -159,7 +159,9 @@ class RequestHandler
 		
 		#############
 
-		@concurrency  = options.fetch("concurrency", 1).to_i
+		if options["concurrency_model"] == "thread"
+			@concurrency = options.fetch("thread_count", 1).to_i
+		end
 		@memory_limit = options["memory_limit"].to_i
 
 		@async_irb_socket_address, @async_irb_socket = create_unix_socket_on_filesystem

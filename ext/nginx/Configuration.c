@@ -310,6 +310,9 @@ passenger_create_loc_conf(ngx_conf_t *cf)
     conf->max_instances    = NGX_CONF_UNSET;
     conf->max_request_time = NGX_CONF_UNSET;
     conf->memory_limit     = NGX_CONF_UNSET;
+    conf->concurrency_model.data = NULL;
+    conf->concurrency_model.len = 0;
+    conf->thread_count     = NGX_CONF_UNSET;
     conf->rolling_restarts = NGX_CONF_UNSET;
     conf->resist_deployment_errors = NGX_CONF_UNSET;
     /******************************/
@@ -455,6 +458,8 @@ passenger_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child)
     ngx_conf_merge_value(conf->max_instances, prev->max_instances, 0);
     ngx_conf_merge_value(conf->max_request_time, prev->max_request_time, 0);
     ngx_conf_merge_value(conf->memory_limit, prev->memory_limit, 0);
+    ngx_conf_merge_str_value(conf->concurrency_model, prev->concurrency_model, "process");
+    ngx_conf_merge_value(conf->thread_count, prev->thread_count, 1);
     ngx_conf_merge_value(conf->rolling_restarts, prev->rolling_restarts, 0);
     ngx_conf_merge_value(conf->resist_deployment_errors, prev->resist_deployment_errors, 0);
 
@@ -1409,6 +1414,20 @@ const ngx_command_t passenger_commands[] = {
       ngx_conf_set_num_slot,
       NGX_HTTP_LOC_CONF_OFFSET,
       offsetof(passenger_loc_conf_t, memory_limit),
+      NULL },
+
+    { ngx_string("passenger_concurrency_model"),
+      NGX_HTTP_MAIN_CONF | NGX_HTTP_SRV_CONF | NGX_HTTP_LOC_CONF | NGX_HTTP_LIF_CONF | NGX_CONF_TAKE1,
+      ngx_conf_set_str_slot,
+      NGX_HTTP_LOC_CONF_OFFSET,
+      offsetof(passenger_loc_conf_t, concurrency_model),
+      NULL },
+
+    { ngx_string("passenger_thread_count"),
+      NGX_HTTP_MAIN_CONF | NGX_HTTP_SRV_CONF | NGX_HTTP_LOC_CONF | NGX_HTTP_LIF_CONF | NGX_CONF_TAKE1,
+      ngx_conf_set_num_slot,
+      NGX_HTTP_LOC_CONF_OFFSET,
+      offsetof(passenger_loc_conf_t, thread_count),
       NULL },
 
     { ngx_string("passenger_rolling_restarts"),

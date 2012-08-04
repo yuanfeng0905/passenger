@@ -67,6 +67,8 @@ typedef struct {
     ngx_int_t    max_instances;
     ngx_int_t    max_request_time;
     ngx_int_t    memory_limit;
+    ngx_str_t    concurrency_model;
+    ngx_int_t    thread_count;
     ngx_flag_t   rolling_restarts;
     ngx_flag_t   resist_deployment_errors;
 } passenger_loc_conf_t;

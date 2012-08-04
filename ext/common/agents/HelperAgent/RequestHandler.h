@@ -1495,9 +1495,11 @@ private:
 		fillPoolOption(client, options.raiseInternalError, "PASSENGER_RAISE_INTERNAL_ERROR");
 
 		fillPoolOption(client, options.rollingRestart, "PASSENGER_ROLLING_RESTARTS");
-		fillPoolOption(client, options.ignoreSpawnErrors, "PASSENGER_IGNORE_SPAWN_ERRORS");
 		fillPoolOption(client, options.maxProcesses, "PASSENGER_MAX_INSTANCES");
 		fillPoolOption(client, options.ignoreSpawnErrors, "PASSENGER_RESIST_DEPLOYMENT_ERRORS");
+		fillPoolOption(client, options.memoryLimit, "PASSENGER_MEMORY_LIMIT");
+		fillPoolOption(client, options.concurrencyModel, "PASSENGER_CONCURRENCY_MODEL");
+		fillPoolOption(client, options.threadCount, "PASSENGER_THREAD_COUNT");
 		
 		for (it = client->scgiParser.begin(); it != end; it++) {
 			if (!startsWith(it->first, "PASSENGER_")

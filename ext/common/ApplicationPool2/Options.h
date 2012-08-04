@@ -90,6 +90,8 @@ private:
 		result.push_back(&uri);
 		result.push_back(&unionStationKey);
 		
+		result.push_back(&concurrencyModel);
+
 		return result;
 	}
 	
@@ -260,6 +262,9 @@ public:
 	 * during unit tests.
 	 */
 	bool raiseInternalError;
+
+	StaticString concurrencyModel;
+	unsigned int threadCount;
 	
 	
 	/*********** Per-group pool options that should be set manually ***********/
@@ -391,6 +396,8 @@ public:
 
 		maxProcesses       = 0;
 		memoryLimit        = 0;
+		concurrencyModel   = "process";
+		threadCount        = 1;
 		rollingRestart     = false;
 		ignoreSpawnErrors  = false;
 	}
@@ -520,6 +527,9 @@ public:
 		appendKeyValue (vec, "group_secret",       groupSecret);
 		
 		/*********************************/
+
+		appendKeyValue (vec, "concurrency_model",  concurrencyModel);
+		appendKeyValue3(vec, "thread_count",       threadCount);
 	}
 	
 	/**
