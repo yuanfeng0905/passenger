@@ -30,7 +30,6 @@
 
 12. Appendix C: Spawning methods explained	=>	appendix-c-spawning-methods-explained-owghi9
 
-# fuzzy
 12.1. The most straightforward and traditional way: direct spawning	=>	the-most-straightforward-and-traditional-way-conservative-spawning-1ybbli2
 
 12.2. The smart spawning method	=>	the-smart-spawning-method-1cvu9dd
@@ -123,125 +122,107 @@
 
 5.1. PassengerRoot <directory>	=>	passengerroot-directory--sere8l
 
-# fuzzy
-5.10. Security options	=>	security-options-1pb75ho
+5.10. PassengerRollingRestarts <on|off>	=>	passengerrollingrestarts
+
+5.11. PassengerResistDeploymentErrors <on|off>	=>	passengerresistdeploymenterrors
+
+5.12. Security options	=>	security-options-1pb75ho
+
+5.12.1. PassengerUserSwitching <on|off>	=>	passengeruserswitching
+
+5.12.2. PassengerUser <username>	=>	passengeruser
+
+5.12.3. PassengerGroup <group name>	=>	passengergroup
+
+5.12.4. PassengerDefaultUser <username>	=>	passengerdefaultuser
+
+5.12.5. PassengerDefaultGroup <group name>	=>	passengerdefaultgroup
+
+5.12.6. PassengerFriendlyErrorPages <on|off>	=>	passengerfriendlyerrorpages
+
+5.13. Resource control and optimization options	=>	resource-control-and-optimization-options-zu2f7u
+
+5.13.1. PassengerMaxPoolSize <integer>	=>	passengermaxpoolsize-integer--am64q8
+
+5.13.10. PassengerStatThrottleRate <integer>	=>	passengerstatthrottlerate
+
+5.13.11. PassengerPreStart <url>	=>	passengerprestart-url--1dvgku9
+
+5.13.12. PassengerHighPerformance <on|off>	=>	passengerhighperformance-on-off--zgc547
+
+5.13.2. PassengerMinInstances <integer>	=>	passengermininstances-integer--wegq6b
+
+5.13.3. PassengerMaxInstances <integer>	=>	passengermaxinstances
+
+5.13.4. PassengerMaxInstancesPerApp <integer>	=>	passengermaxinstancesperapp
+
+5.13.5. PassengerPoolIdleTime <integer>	=>	passengerpoolidletime-integer--a3gunq
+
+5.13.6. PassengerMaxPreloaderIdleTime <integer>	=>	railsappspawneridletime-integer--1awgog1
+
+5.13.7. PassengerMaxRequests <integer>	=>	passengermaxrequests
+
+5.13.8. PassengerMaxRequestTime <seconds>	=>	passengermaxrequesttime-seconds--aj9w45
+
+5.13.9. PassengerMemoryLimit <integer>	=>	passengermemorylimit
+
+5.14. Compatibility options	=>	compatibility-options-8jve5a
 
 # fuzzy
-5.10.1. PassengerUserSwitching <on|off>	=>	passengeruserswitching-on-off--100dc63
+5.14.1. PassengerResolveSymlinksInDocumentRoot <on|off>	=>	passengerresolvesymlinksindocumentroot-on-off--1r0qcp8
 
 # fuzzy
-5.10.2. PassengerUser <username>	=>	passengeruser-username--iw6865
+5.14.2. PassengerAllowEncodedSlashes <on|off>	=>	passengerallowencodedslashes-on-off--1y3s1ww
 
 # fuzzy
-5.10.3. PassengerGroup <group name>	=>	passengergroup-group-name--1ciwtix
+5.15. Logging and debugging options	=>	logging-and-debugging-options-el2cuc
 
 # fuzzy
-5.10.4. PassengerDefaultUser <username>	=>	passengerdefaultuser-username--nbjs8w
+5.15.1. PassengerLogLevel <integer>	=>	passengerloglevel-integer--1v67p8l
 
 # fuzzy
-5.10.5. PassengerDefaultGroup <group name>	=>	passengerdefaultgroup-group-name--1xwd1xj
+5.15.2. PassengerDebugLogFile <filename>	=>	passengerdebuglogfile-filename--1tfy4z9
+
+5.16. Classic Ruby on Rails (⇐ 2.x)-specific options	=>	ruby-on-rails-specific-options-1t10wfu
 
 # fuzzy
-5.10.6. PassengerFriendlyErrorPages <on|off>	=>	passengerfriendlyerrorpages-on-off--rdq45f
+5.16.1. RailsAutoDetect <on|off>	=>	railsautodetect-on-off--tpigsd
 
 # fuzzy
-5.11. Resource control and optimization options	=>	resource-control-and-optimization-options-zu2f7u
+5.16.2. RailsBaseURI <uri>	=>	railsbaseuri-uri--1txrw3k
 
 # fuzzy
-5.11.1. PassengerMaxPoolSize <integer>	=>	passengermaxpoolsize-integer--am64q8
+5.16.3. RailsEnv <string>	=>	railsenv-string--1b0xxvu
 
 # fuzzy
-5.11.10. PassengerStatThrottleRate <integer>	=>	passengerstatthrottlerate-integer--10ll85x
+5.17. Rack-specific options	=>	rack-specific-options-wk9qzt
 
 # fuzzy
-5.11.11. PassengerPreStart <url>	=>	passengerprestart-url--6vs87z
+5.17.1. RackAutoDetect <on|off>	=>	rackautodetect-on-off--vl1lxy
 
 # fuzzy
-5.11.12. PassengerHighPerformance <on|off>	=>	passengerhighperformance-on-off--8r6qrf
+5.17.2. RackBaseURI <uri>	=>	rackbaseuri-uri--1to24pj
 
 # fuzzy
-5.11.2. PassengerMinInstances <integer>	=>	passengermininstances-integer--wegq6b
+5.17.3. RackEnv <string>	=>	rackenv-string--vve9py
 
 # fuzzy
-5.11.3. PassengerMaxInstances <integer>	=>	passengermaxinstancesperapp-integer--1pteawn
+5.18. Deprecated options	=>	deprecated-options-pm9m57
 
 # fuzzy
-5.11.4. PassengerMaxInstancesPerApp <integer>	=>	passengermaxrequests-integer--ietgd0
+5.18.1. RailsRuby	=>	railsruby-ht09ei
 
 # fuzzy
-5.11.5. PassengerPoolIdleTime <integer>	=>	passengerpoolidletime-integer--a3gunq
+5.18.2. RailsUserSwitching	=>	railsuserswitching-1npx8y4
 
 # fuzzy
-5.11.6. PassengerMaxPreloaderIdleTime <integer>	=>	passengerstatthrottlerate-integer--13zx4xo
+5.18.3. RailsDefaultUser	=>	railsdefaultuser-19j7n3m
 
 # fuzzy
-5.11.7. PassengerMaxRequests <integer>	=>	passengerprestart-url--1v76tcz
-
-5.11.8. PassengerMaxRequestTime <seconds>	=>	passengermaxrequesttime-seconds--1q9rgaj
+5.18.4. RailsAllowModRewrite	=>	railsallowmodrewrite-1vkziro
 
 # fuzzy
-5.11.9. PassengerMemoryLimit <integer>	=>	passengerhighperformance-on-off--36mw1l
-
-# fuzzy
-5.12. Compatibility options	=>	compatibility-options-8jve5a
-
-# fuzzy
-5.12.1. PassengerResolveSymlinksInDocumentRoot <on|off>	=>	passengerresolvesymlinksindocumentroot-on-off--vblz7e
-
-# fuzzy
-5.12.2. PassengerAllowEncodedSlashes <on|off>	=>	passengerallowencodedslashes-on-off--1ud9a92
-
-# fuzzy
-5.13. Logging and debugging options	=>	logging-and-debugging-options-el2cuc
-
-# fuzzy
-5.13.1. PassengerLogLevel <integer>	=>	passengerloglevel-integer--1lt2yhq
-
-# fuzzy
-5.13.2. PassengerDebugLogFile <filename>	=>	passengerdebuglogfile-filename--pgj55c
-
-5.13.3. PassengerDebugger <on|off>	=>	passengerdebugger-on-off--irhrcn
-
-5.14. Classic Ruby on Rails (⇐ 2.x)-specific options	=>	classic-ruby-on-rails-2-x-specific-options-17qipvb
-
-# fuzzy
-5.14.1. RailsAutoDetect <on|off>	=>	railsautodetect-on-off--tpigsd
-
-# fuzzy
-5.14.2. RailsBaseURI <uri>	=>	railsbaseuri-uri--1txrw3k
-
-# fuzzy
-5.14.3. RailsEnv <string>	=>	railsenv-string--1b0xxvu
-
-# fuzzy
-5.15. Rack-specific options	=>	rack-specific-options-wk9qzt
-
-# fuzzy
-5.15.1. RackAutoDetect <on|off>	=>	rackautodetect-on-off--vl1lxy
-
-# fuzzy
-5.15.2. RackBaseURI <uri>	=>	rackbaseuri-uri--1to24pj
-
-# fuzzy
-5.15.3. RackEnv <string>	=>	rackenv-string--vve9py
-
-# fuzzy
-5.16. Deprecated options	=>	deprecated-options-pm9m57
-
-# fuzzy
-5.16.1. RailsRuby	=>	railsruby-ht09ei
-
-# fuzzy
-5.16.2. RailsUserSwitching	=>	railsuserswitching-1npx8y4
-
-# fuzzy
-5.16.3. RailsDefaultUser	=>	railsdefaultuser-19j7n3m
-
-# fuzzy
-5.16.4. RailsAllowModRewrite	=>	railsallowmodrewrite-1vkziro
-
-# fuzzy
-5.16.5. RailsSpawnMethod	=>	railsspawnmethod-1aljgpa
+5.18.5. RailsSpawnMethod	=>	railsspawnmethod-1aljgpa
 
 5.2. PassengerRuby <filename>	=>	passengerruby-filename--1r3fv73
 
@@ -318,7 +299,7 @@
 
 7.4. Accessing individual application processes	=>	accessing-individual-application-processes-1p0j4jb
 
-7.5. Attaching an IRB console to an application process	=>	attaching-an-irb-console-to-an-application-process-28l1ct
+7.5. Attaching an IRB console to an application process	=>	attaching-an-irb-console-to-an-application-process-1cma32j
 
 8. Tips	=>	tips-19cwwf7
 
@@ -349,15 +330,3 @@
 9.2. Page caching support	=>	page-caching-support-kwq9b9
 
 9.3. How Phusion Passenger detects whether a virtual host is a web application	=>	how-phusion-passenger-detects-whether-a-virtual-host-is-a-web-application-179mp8m
-
-
-### These sections appear to have been removed. Please check.
-
-5.15. Ruby on Rails-specific options	=>	ruby-on-rails-specific-options-1t10wfu
-
-5.15.4. RailsFrameworkSpawnerIdleTime <integer>	=>	railsframeworkspawneridletime-integer--1ai8dgq
-
-5.15.5. RailsAppSpawnerIdleTime <integer>	=>	railsappspawneridletime-integer--1awgog1
-
-5.5. PassengerUseGlobalQueue <on|off>	=>	passengeruseglobalqueue-on-off--1ki369
-
