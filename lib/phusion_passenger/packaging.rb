@@ -28,7 +28,6 @@ module Packaging
 	SUPER_USER_EXECUTABLES = [
 		'passenger-status',
 		'passenger-memory-stats',
-		'passenger-make-enterprisey',
 		'passenger-irb'
 	]
 	
