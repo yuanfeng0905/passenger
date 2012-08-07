@@ -1,3 +1,4 @@
+# encoding: binary
 #  Phusion Passenger - http://www.modrails.com/
 #  Copyright (c) 2008, 2009 Phusion
 #
@@ -82,7 +83,10 @@ private
 	# queried.
 	def measure_with_proc_smaps(pid)
 		total = 0
-		File.read("/proc/#{pid}/smaps").split("\n").each do |line|
+		data = File.open("/proc/#{pid}/smaps", "rb") do |f|
+			f.read
+		end
+		data.split("\n").each do |line|
 			line =~ /^(Private)_Dirty: +(\d+)/
 			if $2
 				total += $2.to_i
@@ -112,7 +116,10 @@ private
 	#
 	# Returns the RSS in MB, or nil if the information could not be queried.
 	def measure_with_proc_status(pid)
-		File.read("/proc/#{pid}/status") =~ /^VmRSS: *(.*) kB$/
+		data = File.open("/proc/#{pid}/status", "rb") do |f|
+			f.read
+		end
+		data =~ /^VmRSS: *(.*) kB$/
 		if $1
 			# $1 is in KB.
 			return $1.to_i / 1024.0
