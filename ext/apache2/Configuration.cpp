@@ -323,6 +323,15 @@ DEFINE_DIR_THREEWAY_CONFIG_SETTER(cmd_passenger_friendly_error_pages, friendlyEr
 DEFINE_DIR_THREEWAY_CONFIG_SETTER(cmd_union_station_support, unionStationSupport)
 DEFINE_DIR_THREEWAY_CONFIG_SETTER(cmd_passenger_buffer_response, bufferResponse)
 
+#ifndef PASSENGER_IS_ENTERPRISE
+static const char *
+cmd_passenger_enterprise_only(cmd_parms *cmd, void *pcfg, const char *arg) {
+	return "this feature is only available in Phusion Passenger Enterprise. "
+		"You are currently running the open source Phusion Passenger Enterprise. "
+		"Please learn more about and/or buy Phusion Passenger Enterprise at https://www.phusionpassenger.com/enterprise";
+}
+#endif
+
 static const char *
 cmd_passenger_spawn_method(cmd_parms *cmd, void *pcfg, const char *arg) {
 	DirConfig *config = (DirConfig *) pcfg;

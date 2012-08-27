@@ -916,6 +916,15 @@ peers:
     return NGX_CONF_OK;
 }
 
+#ifndef PASSENGER_IS_ENTERPRISE
+static char *
+passenger_enterprise_only(ngx_conf_t *cf, ngx_command_t *cmd, void *conf) {
+    return ": this feature is only available in Phusion Passenger Enterprise. "
+        "You are currently running the open source Phusion Passenger Enterprise. "
+        "Please learn more about and/or buy Phusion Passenger Enterprise at https://www.phusionpassenger.com/enterprise ;";
+}
+#endif
+
 static char *
 passenger_enabled(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 {
