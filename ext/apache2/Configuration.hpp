@@ -174,6 +174,10 @@ struct DirConfig {
 	 * Whether response buffering support is enabled.
 	 */
 	Threeway bufferResponse;
+
+	const char *concurrencyModel;
+	unsigned int threadCount;
+	bool threadCountSpecified;
 	
 	/*************************************/
 	
@@ -335,6 +339,22 @@ struct DirConfig {
 
 	bool getBufferResponse() const {
 		return bufferResponse != DISABLED;
+	}
+
+	const char *getConcurrencyModel() const {
+		if (concurrencyModel != NULL) {
+			return concurrencyModel;
+		} else {
+			return "process";
+		}
+	}
+
+	unsigned int getThreadCount() const {
+		if (threadCountSpecified) {
+			return threadCount;
+		} else {
+			return 1;
+		}
 	}
 	
 	string getUnionStationFilterString() const {

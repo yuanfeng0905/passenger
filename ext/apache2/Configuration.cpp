@@ -194,6 +194,9 @@ passenger_config_create_dir(apr_pool_t *p, char *dirspec) {
 	config->friendlyErrorPages = DirConfig::UNSET;
 	config->unionStationSupport = DirConfig::UNSET;
 	config->bufferResponse = DirConfig::UNSET;
+	config->concurrencyModel = NULL;
+	config->threadCount = 0;
+	config->threadCountSpecified = false;
 	/*************************************/
 	config->maxInstances = 0;
 	config->maxInstancesSpecified = false;
@@ -303,6 +306,8 @@ DEFINE_DIR_THREEWAY_CONFIG_SETTER(cmd_passenger_debugger, debugger)
 DEFINE_DIR_INT_CONFIG_SETTER(cmd_passenger_max_request_time, maxRequestTime, unsigned long, 0)
 DEFINE_DIR_INT_CONFIG_SETTER(cmd_passenger_max_instances, maxInstances, unsigned long, 0)
 DEFINE_DIR_INT_CONFIG_SETTER(cmd_passenger_memory_limit, memoryLimit, unsigned long, 0)
+DEFINE_DIR_STR_CONFIG_SETTER(cmd_passenger_concurrency_model, concurrencyModel)
+DEFINE_DIR_INT_CONFIG_SETTER(cmd_passenger_thread_count, threadCount, unsigned int, 0)
 
 DEFINE_DIR_INT_CONFIG_SETTER(cmd_passenger_min_instances, minInstances, unsigned long, 0)
 DEFINE_DIR_INT_CONFIG_SETTER(cmd_passenger_max_requests, maxRequests, unsigned long, 0)
@@ -718,12 +723,12 @@ const command_rec passenger_commands[] = {
 		OR_OPTIONS | ACCESS_CONF | RSRC_CONF,
 		"Whether to turn on debugger support"),
 	AP_INIT_TAKE1("PassengerConcurrencyModel",
-		(Take1Func) cmd_passenger_enterprise_only,
+		(Take1Func) cmd_passenger_concurrency_model,
 		NULL,
 		OR_ALL,
 		"The concurrency model that should be used for applications."),
 	AP_INIT_TAKE1("PassengerThreadCount",
-		(Take1Func) cmd_passenger_enterprise_only,
+		(Take1Func) cmd_passenger_thread_count,
 		NULL,
 		OR_ALL,
 		"The number of threads that Phusion Passenger should spawn per application."),

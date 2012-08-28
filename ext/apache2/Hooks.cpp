@@ -913,13 +913,6 @@ private:
 			addHeader(output, "PATH_INFO", escapedUri + strlen(baseURI));
 		}
 		
-		// Phusion Passenger-specific variables.
-		if (config->getMaxRequestTime() > 0) {
-			addHeader(headers, "PASSENGER_MAX_REQUEST_TIME",
-				apr_psprintf(r->pool, "%lu", config->getMaxRequestTime())
-			);
-		}
-		
 		// Set HTTP headers.
 		const apr_array_header_t *hdrs_arr;
 		apr_table_entry_t *hdrs;
@@ -966,6 +959,9 @@ private:
 		addHeader(output, "PASSENGER_RESTART_DIR", config->getRestartDir());
 		addHeader(output, "PASSENGER_FRIENDLY_ERROR_PAGES",
 			config->showFriendlyErrorPages() ? "true" : "false");
+		addHeader(output, "PASSENGER_CONCURRENCY_MODEL", config->getConcurrencyModel());
+		addHeader(output, "PASSENGER_THREAD_COUNT",
+			apr_psprintf(r->pool, "%u", config->getThreadCount()));
 		if (config->useUnionStation() && !config->unionStationKey.empty()) {
 			addHeader(output, "UNION_STATION_SUPPORT", "true");
 			addHeader(output, "UNION_STATION_KEY", config->unionStationKey);
@@ -976,7 +972,13 @@ private:
 		}
 		
 		/*********************/
-		addHeader(output, "PASSENGER_MEMORY_LIMIT", config->getMemoryLimit());
+		if (config->getMaxRequestTime() > 0) {
+			addHeader(output, "PASSENGER_MAX_REQUEST_TIME",
+				apr_psprintf(r->pool, "%lu", config->getMaxRequestTime())
+			);
+		}
+		addHeader(output, "PASSENGER_MEMORY_LIMIT",
+			apr_psprintf(r->pool, "%lu", config->getMemoryLimit()));
 		addHeader(output, "PASSENGER_USE_ROLLING_RESTARTS", config->useRollingRestarts() ? "true" : "false");
 		addHeader(output, "PASSENGER_MAX_INSTANCES",
 			apr_psprintf(r->pool, "%ld", config->getMaxInstances()));
