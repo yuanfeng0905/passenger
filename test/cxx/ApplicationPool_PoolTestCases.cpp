@@ -1083,7 +1083,7 @@
 		// The new app won't finish spawning until we create continue.txt.
 		// In the mean time, all get() commands should immediately return
 		// the old process without blocking.
-		Timer timer;
+		Passenger::Timer timer;
 		while (timer.elapsed() < 500) {
 			session = pool->get(options);
 			ensure_equals(session->getPid(), originalPid);
