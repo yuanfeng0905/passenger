@@ -744,7 +744,7 @@ private:
 					}
 				} else {
 					xtime xt;
-					xtime_get(&xt, TIME_UTC);
+					xtime_get(&xt, TIME_UTC_);
 					xt.sec += maxIdleTime + 1;
 					if (cleanerThreadSleeper.timed_wait(l, xt)) {
 						// Condition was woken up.

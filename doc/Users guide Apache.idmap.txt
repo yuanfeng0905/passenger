@@ -124,132 +124,92 @@
 
 5.10. PassengerBufferResponse <on|off>	=>	passengerbufferresponse-on-off--1y7ilka
 
-# fuzzy
-5.11. PassengerRollingRestarts <on|off>	=>	passengerfriendlyerrorpages-on-off--rdq45f
+5.11. PassengerRollingRestarts <on|off>	=>	passengerrollingrestarts
 
-# fuzzy
-5.12. PassengerResistDeploymentErrors <on|off>	=>	passengerhighperformance-on-off--8r6qrf
+5.12. PassengerResistDeploymentErrors <on|off>	=>	passengerresistdeploymenterrors
 
-# fuzzy
 5.13. Security options	=>	security-options-1pb75ho
 
-# fuzzy
-5.13.1. PassengerUserSwitching <on|off>	=>	passengeruserswitching-on-off--100dc63
+5.13.1. PassengerUserSwitching <on|off>	=>	passengeruserswitching
 
-# fuzzy
-5.13.2. PassengerUser <username>	=>	passengeruser-username--iw6865
+5.13.2. PassengerUser <username>	=>	passengeruser
 
-# fuzzy
-5.13.3. PassengerGroup <group name>	=>	passengergroup-group-name--1ciwtix
+5.13.3. PassengerGroup <group name>	=>	passengergroup
 
-# fuzzy
-5.13.4. PassengerDefaultUser <username>	=>	passengerdefaultuser-username--nbjs8w
+5.13.4. PassengerDefaultUser <username>	=>	passengerdefaultuser
 
-# fuzzy
-5.13.5. PassengerDefaultGroup <group name>	=>	passengerdefaultgroup-group-name--1xwd1xj
+5.13.5. PassengerDefaultGroup <group name>	=>	passengerdefaultgroup
 
-# fuzzy
-5.13.6. PassengerFriendlyErrorPages <on|off>	=>	passengerallowencodedslashes-on-off--1ud9a92
+5.13.6. PassengerFriendlyErrorPages <on|off>	=>	passengerfriendlyerrorpages
 
-# fuzzy
 5.14. Resource control and optimization options	=>	resource-control-and-optimization-options-zu2f7u
 
-# fuzzy
 5.14.1. PassengerMaxPoolSize <integer>	=>	passengermaxpoolsize-integer--am64q8
 
-# fuzzy
-5.14.10. PassengerPreStart <url>	=>	passengerprestart-url--6vs87z
+5.14.10. PassengerPreStart <url>	=>	passengerprestart-url--1dvgku9
 
-# fuzzy
-5.14.11. PassengerHighPerformance <on|off>	=>	passengerdebuglogfile-filename--pgj55c
+5.14.11. PassengerHighPerformance <on|off>	=>	passengerhighperformance-on-off--zgc547
 
-# fuzzy
 5.14.2. PassengerMinInstances <integer>	=>	passengermininstances-integer--wegq6b
 
-# fuzzy
-5.14.3. PassengerMaxInstances <integer>	=>	passengermaxinstancesperapp-integer--1pteawn
+5.14.3. PassengerMaxInstances <integer>	=>	passengermaxinstances
 
-# fuzzy
-5.14.4. PassengerMaxInstancesPerApp <integer>	=>	passengermaxrequests-integer--ietgd0
+5.14.4. PassengerMaxInstancesPerApp <integer>	=>	passengermaxinstancesperapp
 
-# fuzzy
 5.14.5. PassengerPoolIdleTime <integer>	=>	passengerpoolidletime-integer--a3gunq
 
-# fuzzy
-5.14.6. PassengerMaxRequests <integer>	=>	passengerstatthrottlerate-integer--13zx4xo
+5.14.6. PassengerMaxRequests <integer>	=>	passengermaxrequests
 
-# fuzzy
-5.14.7. PassengerMaxRequestTime <seconds>	=>	passengerprestart-url--1v76tcz
+5.14.7. PassengerMaxRequestTime <seconds>	=>	passengermaxrequesttime-seconds--7qnz3x
 
-# fuzzy
-5.14.8. PassengerMemoryLimit <integer>	=>	passengerhighperformance-on-off--36mw1l
+5.14.8. PassengerMemoryLimit <integer>	=>	passengermemorylimit
 
-# fuzzy
-5.14.9. PassengerStatThrottleRate <integer>	=>	passengerstatthrottlerate-integer--10ll85x
+5.14.9. PassengerStatThrottleRate <integer>	=>	passengerstatthrottlerate
 
-# fuzzy
 5.15. Compatibility options	=>	compatibility-options-8jve5a
 
-# fuzzy
-5.15.1. PassengerResolveSymlinksInDocumentRoot <on|off>	=>	passengerresolvesymlinksindocumentroot-on-off--vblz7e
+5.15.1. PassengerResolveSymlinksInDocumentRoot <on|off>	=>	passengerresolvesymlinksindocumentroot-on-off--1r0qcp8
 
-# fuzzy
-5.15.2. PassengerAllowEncodedSlashes <on|off>	=>	passengerdebuglogfile-filename--1kcnuch
+5.15.2. PassengerAllowEncodedSlashes <on|off>	=>	passengerallowencodedslashes-on-off--1y3s1ww
 
-# fuzzy
 5.16. Logging and debugging options	=>	logging-and-debugging-options-el2cuc
 
-# fuzzy
-5.16.1. PassengerLogLevel <integer>	=>	passengerloglevel-integer--1lt2yhq
+5.16.1. PassengerLogLevel <integer>	=>	passengerloglevel-integer--1v67p8l
 
-5.16.2. PassengerDebugLogFile <filename>	=>	passengerdebuglogfile-filename--czb92p
+5.16.2. PassengerDebugLogFile <filename>	=>	passengerdebuglogfile-filename--1tfy4z9
 
-# fuzzy
+5.16.3. PassengerDebugger <on|off>	=>	passengerdebugger-on-off--1lgdk7g
+
 5.17. Ruby on Rails-specific options	=>	ruby-on-rails-specific-options-1t10wfu
 
-# fuzzy
 5.17.1. RailsAutoDetect <on|off>	=>	railsautodetect-on-off--tpigsd
 
-# fuzzy
 5.17.2. RailsBaseURI <uri>	=>	railsbaseuri-uri--1txrw3k
 
-# fuzzy
 5.17.3. RailsEnv <string>	=>	railsenv-string--1b0xxvu
 
-# fuzzy
 5.17.4. RailsFrameworkSpawnerIdleTime <integer>	=>	railsframeworkspawneridletime-integer--1ai8dgq
 
-# fuzzy
 5.17.5. RailsAppSpawnerIdleTime <integer>	=>	railsappspawneridletime-integer--1awgog1
 
-# fuzzy
-5.18. Rack-specific options	=>	rack-specific-options-wk9qzt
+5.18. Rack and Rails >= 3 specific options	=>	rack-specific-options-wk9qzt
 
-# fuzzy
 5.18.1. RackAutoDetect <on|off>	=>	rackautodetect-on-off--vl1lxy
 
-# fuzzy
 5.18.2. RackBaseURI <uri>	=>	rackbaseuri-uri--1to24pj
 
-# fuzzy
 5.18.3. RackEnv <string>	=>	rackenv-string--vve9py
 
-# fuzzy
 5.19. Deprecated options	=>	deprecated-options-pm9m57
 
-# fuzzy
 5.19.1. RailsRuby	=>	railsruby-ht09ei
 
-# fuzzy
 5.19.2. RailsUserSwitching	=>	railsuserswitching-1npx8y4
 
-# fuzzy
 5.19.3. RailsDefaultUser	=>	railsdefaultuser-19j7n3m
 
-# fuzzy
 5.19.4. RailsAllowModRewrite	=>	railsallowmodrewrite-1vkziro
 
-# fuzzy
 5.19.5. RailsSpawnMethod	=>	railsspawnmethod-1aljgpa
 
 5.2. PassengerRuby <filename>	=>	passengerruby-filename--1r3fv73
@@ -322,7 +282,7 @@
 
 7.4. Accessing individual application processes	=>	accessing-individual-application-processes-1p0j4jb
 
-7.5. Attaching an IRB console to an application process	=>	attaching-an-irb-console-to-an-application-process-an3vxn
+7.5. Attaching an IRB console to an application process	=>	attaching-an-irb-console-to-an-application-process-1cma32j
 
 8. Tips	=>	tips-19cwwf7
 
