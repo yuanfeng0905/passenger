@@ -21,6 +21,15 @@
 #  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 #  THE SOFTWARE.
 
+desc "Upload packages to Phusion Passenger Enterprise customer area"
+task 'package:upload_enterprise' => :package do
+	require 'phusion_passenger'
+	version = PhusionPassenger::VERSION_STRING
+	dir = "/u/apps/passenger_website/shared"
+	sh "scp pkg/passenger-enterprise-server-#{version}.{gem,tar.gz} app@shell.phusion.nl:#{dir}/"
+	sh "ssh app@shell.phusion.nl 'mkdir -p #{dir}/assets/#{version} && mv #{dir}/passenger-enterprise-server-#{version}.{gem,tar.gz} #{dir}/assets/#{version}/'"
+end
+
 task 'package:check' do
 	require 'phusion_passenger'
 	
