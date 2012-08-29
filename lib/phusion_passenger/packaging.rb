@@ -38,7 +38,6 @@ module Packaging
 		'Rakefile',
 		'README',
 		'DEVELOPERS.TXT',
-		'PACKAGING.TXT',
 		'LICENSE',
 		'INSTALL',
 		'NEWS',
