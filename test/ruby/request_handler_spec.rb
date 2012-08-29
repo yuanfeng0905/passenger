@@ -1,42 +1,45 @@
 require File.expand_path(File.dirname(__FILE__) + '/spec_helper')
-require 'phusion_passenger/abstract_request_handler'
+require 'phusion_passenger/request_handler'
+require 'phusion_passenger/request_handler/thread_handler'
 require 'phusion_passenger/analytics_logger'
+require 'phusion_passenger/utils'
 
 require 'fileutils'
 
 module PhusionPassenger
 
-describe AbstractRequestHandler do
+describe RequestHandler do
+	class DummyThreadHandler < RequestHandler::ThreadHandler
+		def process_request(*args)
+			# Do nothing.
+		end
+	end
+
 	before :each do
 		preinitialize if respond_to?(:preinitialize)
 		@old_passenger_tmpdir = Utils.passenger_tmpdir
-		Utils.passenger_tmpdir = "abstract_request_handler_spec.tmp"
+		Utils.passenger_tmpdir = "request_handler_spec.tmp"
 		@owner_pipe = IO.pipe
 		@options ||= {}
+		@thread_handler = Class.new(DummyThreadHandler)
 		@options = {
-			"app_group_name" => "foobar"
+			"app_group_name" => "foobar",
+			"thread_handler" => @thread_handler
 		}.merge(@options)
-		@request_handler = AbstractRequestHandler.new(@owner_pipe[1], @options)
-		def @request_handler.process_request(*args)
-			# Do nothing.
-		end
+		@request_handler = RequestHandler.new(@owner_pipe[1], @options)
 	end
 	
 	after :each do
 		@request_handler.cleanup
 		@owner_pipe[0].close rescue nil
 		Utils.passenger_tmpdir = @old_passenger_tmpdir
-		FileUtils.chmod_R(0777, "abstract_request_handler_spec.tmp")
-		FileUtils.rm_rf("abstract_request_handler_spec.tmp")
+		FileUtils.chmod_R(0777, "request_handler_spec.tmp")
+		FileUtils.rm_rf("request_handler_spec.tmp")
 	end
 	
 	def connect(socket_name = :main)
-		if @request_handler.server_sockets[socket_name][1] == "unix"
-			return UNIXSocket.new(@request_handler.server_sockets[socket_name][0])
-		else
-			addr, port = @request_handler.server_sockets[socket_name][0].split(/:/)
-			return TCPSocket.new(addr, port.to_i)
-		end
+		address = @request_handler.server_sockets[socket_name][:address]
+		return Utils.connect_to_server(address)
 	end
 	
 	def send_binary_request(socket, env)
@@ -56,22 +59,11 @@ describe AbstractRequestHandler do
 			!@request_handler.main_loop_running?
 		end
 	end
-	
-	it "ignores new connections that don't send any data" do
-		def @request_handler.accept_connection
-			return nil
-		end
-		@request_handler.start_main_loop_thread
-		eventually do
-			@request_handler.iterations != 0
-		end
-		@request_handler.processed_requests.should == 0
-	end
-	
+
 	it "creates a socket file in the Phusion Passenger temp folder, unless when using TCP sockets" do
 		if @request_handler.server_sockets[:main][1] == "unix"
-			File.chmod(0700, "abstract_request_handler_spec.tmp/backends")
-			Dir["abstract_request_handler_spec.tmp/backends/*"].should_not be_empty
+			File.chmod(0700, "request_handler_spec.tmp/backends")
+			Dir["request_handler_spec.tmp/backends/*"].should_not be_empty
 		end
 	end
 	
@@ -85,7 +77,7 @@ describe AbstractRequestHandler do
 			client.sync = true
 			block = lambda do
 				data = "REQUEST_METHOD\0/"
-				data << "x" * (AbstractRequestHandler::MAX_HEADER_SIZE * 2)
+				data << "x" * (RequestHandler::ThreadHandler::MAX_HEADER_SIZE * 2)
 				data << "\0"
 				MessageChannel.new(client).write_scalar(data)
 			end
@@ -131,8 +123,7 @@ describe AbstractRequestHandler do
 	
 	it "accepts pings on the HTTP server socket" do
 		@request_handler.start_main_loop_thread
-		addr, port = @request_handler.server_sockets[:http][0].split(/:/)
-		client = TCPSocket.new(addr, port.to_i)
+		client = connect(:http)
 		begin
 			client.write("PING / HTTP/1.1\r\n")
 			client.write("Host: foo.com\r\n\r\n")
@@ -153,9 +144,9 @@ describe AbstractRequestHandler do
 			client.sync = true
 			block = lambda do
 				client.write("GET /")
-				client.write("x" * AbstractRequestHandler::MAX_HEADER_SIZE)
+				client.write("x" * RequestHandler::ThreadHandler::MAX_HEADER_SIZE)
 				sleep 0.01 # Context switch
-				client.write("x" * AbstractRequestHandler::MAX_HEADER_SIZE)
+				client.write("x" * RequestHandler::ThreadHandler::MAX_HEADER_SIZE)
 				client.write(" HTTP/1.1\r\n")
 			end
 			block.should raise_error(SystemCallError)
@@ -271,9 +262,7 @@ describe AbstractRequestHandler do
 	describe "HTTP parsing" do
 		before :each do
 			@request_handler.start_main_loop_thread
-			addr, port = @request_handler.server_sockets[:http][0].split(/:/)
-			port = port.to_i
-			@client = TCPSocket.new(addr, port)
+			@client = connect(:http)
 			@client.sync = true
 		end
 		
@@ -372,35 +361,6 @@ describe AbstractRequestHandler do
 			@client.close_write
 			@client.read
 		end
-	end
-	
-	specify "upon receiving a soft shutdown signal, the main loop quits a while after the last connection was accepted" do
-		@request_handler.soft_termination_linger_time = 0.2
-		@request_handler.start_main_loop_thread
-		@request_handler.soft_shutdown
-		
-		# Each time we ping the server it should reset the exit time.
-		deadline = Time.now + 0.6
-		while Time.now < deadline
-			@request_handler.should be_main_loop_running
-			client = connect
-			begin
-				channel = MessageChannel.new(client)
-				channel.write_scalar("REQUEST_METHOD\0PING\0")
-				client.read
-				sleep 0.02
-			ensure
-				client.close
-			end
-		end
-		@request_handler.should be_main_loop_running
-		
-		# After we're done pinging it should quit within a short period of time.
-		deadline = Time.now + 0.6
-		while Time.now < deadline && @request_handler.main_loop_running?
-			sleep 0.01
-		end
-		@request_handler.should_not be_main_loop_running
 	end
 	
 	############################
