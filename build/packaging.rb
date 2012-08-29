@@ -26,8 +26,9 @@ task 'package:upload_enterprise' => :package do
 	require 'phusion_passenger'
 	version = PhusionPassenger::VERSION_STRING
 	dir = "/u/apps/passenger_website/shared"
+	subdir = string_option('NAME', version)
 	sh "scp pkg/passenger-enterprise-server-#{version}.{gem,tar.gz} app@shell.phusion.nl:#{dir}/"
-	sh "ssh app@shell.phusion.nl 'mkdir -p #{dir}/assets/#{version} && mv #{dir}/passenger-enterprise-server-#{version}.{gem,tar.gz} #{dir}/assets/#{version}/'"
+	sh "ssh app@shell.phusion.nl 'mkdir -p \"#{dir}/assets/#{subdir}\" && mv #{dir}/passenger-enterprise-server-#{version}.{gem,tar.gz} \"#{dir}/assets/#{subdir}/\"'"
 end
 
 task 'package:check' do
