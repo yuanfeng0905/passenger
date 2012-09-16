@@ -256,6 +256,8 @@ passenger_config_merge_dir(apr_pool_t *p, void *basev, void *addv) {
 	MERGE_THREEWAY_CONFIG(friendlyErrorPages);
 	MERGE_THREEWAY_CONFIG(unionStationSupport);
 	MERGE_THREEWAY_CONFIG(bufferResponse);
+	MERGE_STR_CONFIG(concurrencyModel);
+	MERGE_INT_CONFIG(threadCount);
 	/*************************************/
 	config->maxInstances = (add->maxInstancesSpecified) ? add->maxInstances : base->maxInstances;
 	config->maxInstancesSpecified = base->maxInstancesSpecified || add->maxInstancesSpecified;
