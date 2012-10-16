@@ -557,7 +557,8 @@ namespace tut {
 		);
 		
 		ensure_equals(pool->getProcessCount(), 2u);
-		ensure(superGroup1->detached());
+		ensure(!superGroup1->detached());
+		ensure_equals(superGroup1->getProcessCount(), 0u);
 	}
 	
 	TEST_METHOD(21) {
@@ -595,7 +596,8 @@ namespace tut {
 		);
 		
 		ensure_equals(pool->getProcessCount(), 2u);
-		ensure(superGroup1->detached());
+		ensure(!superGroup1->detached());
+		ensure_equals(superGroup1->getProcessCount(), 0u);
 	}
 	
 	
@@ -691,9 +693,8 @@ namespace tut {
 	}
 	
 	TEST_METHOD(33) {
-		// If the containing SuperGroup becomes garbage collectable after
-		// detaching the process, then detachProcess() also detaches the
-		// containing SuperGroup.
+		// A SuperGroup does not become garbage collectable
+		// after detaching all its processes.
 		Options options = createOptions();
 		pool->asyncGet(options, callback);
 		EVENTUALLY(5,
@@ -701,9 +702,12 @@ namespace tut {
 		);
 		ProcessPtr process = currentSession->getProcess();
 		currentSession.reset();
+		SuperGroupPtr superGroup = process->getSuperGroup();
 		pool->detachProcess(process);
 		LockGuard l(pool->syncher);
-		ensure(pool->superGroups.empty());
+		ensure_equals(pool->superGroups.size(), 1u);
+		ensure(!superGroup->detached());
+		ensure(!superGroup->garbageCollectable());
 	}
 
 	
@@ -1076,7 +1080,6 @@ namespace tut {
 		// Trigger spawn loop. The spawn loop itself won't take longer than 3*20=60 msec.
 		pool->findOrCreateGroup(options);
 		ScopedLock l(pool->syncher);
-		setLogLevel(3);
 		pool->asyncGet(options, callback, false);
 		// Wait until spawn loop tries to grab the lock.
 		EVENTUALLY(3,

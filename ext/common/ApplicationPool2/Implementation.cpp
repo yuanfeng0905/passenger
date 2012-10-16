@@ -499,6 +499,17 @@ Group::generateSecret(const SuperGroupPtr &superGroup) {
 }
 
 
+// Thread-safe
+SuperGroupPtr
+Process::getSuperGroup() const {
+	GroupPtr group = getGroup();
+	if (group != NULL) {
+		return group->getSuperGroup();
+	} else {
+		return SuperGroupPtr();
+	}
+}
+
 string
 Process::inspect() const {
 	stringstream result;
