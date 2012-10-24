@@ -10,7 +10,7 @@
 #define _PASSENGER_CONSTANTS_H_
 
 /* Don't forget to update lib/phusion_passenger.rb too. */
-#define PASSENGER_VERSION "3.0.17"
+#define PASSENGER_VERSION "3.9.1"
 
 #define FEEDBACK_FD 3
 
@@ -28,6 +28,8 @@
 #define MESSAGE_SERVER_MAX_USERNAME_SIZE 100
 #define MESSAGE_SERVER_MAX_PASSWORD_SIZE 100
 #define DEFAULT_BACKEND_ACCOUNT_RIGHTS Account::DETACH
+
+#define POOL_HELPER_THREAD_STACK_SIZE (1024 * 256)
 
 #define PASSENGER_IS_ENTERPRISE
 

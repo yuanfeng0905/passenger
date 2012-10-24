@@ -1,3 +1,25 @@
+Release 3.9.1
+-------------
+
+This is the first beta of Phusion Passenger 4. The changes are numerous.
+
+ * Support for multiple Ruby versions.
+ * The internals now use evented I/O.
+ * Real-time response buffering.
+ * Improved zero-copy architecture.
+ * Rewritten ApplicationPool and process spawning subsystem.
+ * Multithreading within Ruby apps (Phusion Passenger Enterprise only).
+ * Python WSGI support lifted to "beta" status.
+ * More protection against stuck processes.
+ * Automatically picks up environment variables from your bashrc.
+ * Allows setting environment variables directly in Apache.
+ * Automatic asset pipeline support in Standalone.
+ * Deleting restart.txt no longer triggers a restart.
+ * More stable Union Station support.
+ * Many internal robustness improvements.
+ * Better relocatability without wasting space.
+
+
 Release 3.0.17
 --------------
 

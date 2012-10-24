@@ -28,7 +28,7 @@
 
 11. Appendix C: Spawning methods explained	=>	appendix-c-spawning-methods-explained-tcp8e6
 
-11.1. The most straightforward and traditional way: conservative spawning	=>	the-most-straightforward-and-traditional-way-conservative-spawning-civ29z
+11.1. The most straightforward and traditional way: direct spawning	=>	the-most-straightforward-and-traditional-way-conservative-spawning-civ29z
 
 11.2. The smart spawning method	=>	the-smart-spawning-method-7nhgtj
 
@@ -118,10 +118,6 @@
 
 5.11.1. rails_env <string>	=>	rails-env-string--jlh7v9
 
-5.11.2. rails_framework_spawner_idle_time <integer>	=>	rails-framework-spawner-idle-time-integer--q5ljd5
-
-5.11.3. rails_app_spawner_idle_time <integer>	=>	rails-app-spawner-idle-time-integer--1xjqe4b
-
 5.12. Rack and Rails >= 3 specific options	=>	rack-specific-options-13yvdxs
 
 5.12.1. rack_env <string>	=>	rack-env-string--tqmrt0
@@ -146,21 +142,19 @@
 
 5.7. Connection handling options	=>	connection-handling-options-8jgq90
 
-5.7.1. passenger_use_global_queue <on|off>	=>	passenger-use-global-queue-on-off--14h9n22
+5.7.1. passenger_ignore_client_abort <on|off>	=>	passenger-ignore-client-abort
 
-5.7.2. passenger_ignore_client_abort <on|off>	=>	passenger-ignore-client-abort
+5.7.2. passenger_set_cgi_param <CGI environment name> <value>	=>	passenger-set-cgi-param-cgi-environment-name-value--rx9gc0
 
-5.7.3. passenger_set_cgi_param <CGI environment name> <value>	=>	passenger-set-cgi-param-cgi-environment-name-value--rx9gc0
+5.7.3. passenger_pass_header <header name>	=>	passenger-pass-header-header-name--1cg31je
 
-5.7.4. passenger_pass_header <header name>	=>	passenger-pass-header-header-name--1cg31je
+5.7.4. passenger_buffer_response <on|off>	=>	passenger-buffer-response
 
-5.7.5. passenger_buffer_response <on|off>	=>	passenger-buffer-response
+5.7.5. passenger_buffer_size	=>	passenger-buffer-size-1jfkq87
 
-5.7.6. passenger_buffer_size	=>	passenger-buffer-size-1jfkq87
+5.7.6. passenger_buffers	=>	passenger-busy-buffers
 
-5.7.7. passenger_buffers	=>	passenger-busy-buffers
-
-5.7.8. passenger_busy_buffer_size	=>	passenger-busy-buffer-size-124sj61
+5.7.7. passenger_busy_buffer_size	=>	passenger-busy-buffer-size-124sj61
 
 5.8. Security options	=>	security-options-1bv93g4
 
@@ -180,6 +174,15 @@
 
 5.9.1. passenger_max_pool_size <integer>	=>	passenger-max-pool-size-integer--3jzefs
 
+# fuzzy
+5.9.10. passenger_max_request_time <seconds>	=>	passenger-pre-start-url--1f2phk7
+
+# fuzzy
+5.9.11. passenger_memory_limit <integer>	=>	passenger-memory-limit-integer--1ry7dwx
+
+# fuzzy
+5.9.12. passenger_pre_start <url>	=>	passenger-pre-start-url--npldeb
+
 5.9.2. passenger_min_instances <integer>	=>	passenger-min-instances-integer--uclykt
 
 5.9.3. passenger_max_instances <integer>	=>	passenger-max-instances
@@ -188,13 +191,16 @@
 
 5.9.5. passenger_pool_idle_time <integer>	=>	passenger-pool-idle-time-integer--xcw65o
 
-5.9.6. passenger_max_requests <integer>	=>	passenger-max-requests
+5.9.6. passenger_max_preloader_idle_time <integer>	=>	rails-app-spawner-idle-time-integer--1xjqe4b
 
-5.9.7. passenger_max_request_time <seconds>	=>	passenger-max-request-time-seconds--1qod9kg
+# fuzzy
+5.9.7. passenger_concurrency_model <process|thread>	=>	passenger-max-requests
 
-5.9.8. passenger_memory_limit <integer>	=>	passenger-memory-limit-integer--1ry7dwx
+# fuzzy
+5.9.8. passenger_thread_count <number>	=>	passenger-max-request-time-seconds--1qod9kg
 
-5.9.9. passenger_pre_start <url>	=>	passenger-pre-start-url--1f2phk7
+# fuzzy
+5.9.9. passenger_max_requests <integer>	=>	passenger-max-requests-integer--sgzint
 
 6. Analysis and system maintenance	=>	analysis-and-system-maintenance-1nnlnj8
 

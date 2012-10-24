@@ -1,6 +1,6 @@
 /*
  *  Phusion Passenger - http://www.modrails.com/
- *  Copyright (c) 2010 Phusion
+ *  Copyright (c) 2010, 2011, 2012 Phusion
  *
  *  "Phusion Passenger" is a trademark of Hongli Lai & Ninh Bui.
  *
@@ -45,7 +45,7 @@ using namespace std;
  */
 struct DirConfig {
 	enum Threeway { ENABLED, DISABLED, UNSET };
-	enum SpawnMethod { SM_UNSET, SM_SMART, SM_SMART_LV2, SM_CONSERVATIVE };
+	enum SpawnMethod { SM_UNSET, SM_SMART, SM_DIRECT };
 	
 	Threeway enabled;
 	
@@ -60,6 +60,9 @@ struct DirConfig {
 	
 	/** Whether to autodetect WSGI applications. */
 	Threeway autoDetectWSGI;
+
+	/** The Ruby interpreter to use. */
+	const char *ruby;
 	
 	/** The environment (RAILS_ENV/RACK_ENV/WSGI_ENV) under which
 	 * applications should operate. */
@@ -87,18 +90,12 @@ struct DirConfig {
 	const char *group;
 	
 	/**
-	 * The idle timeout, in seconds, of Rails framework spawners.
-	 * May also be 0 (which indicates that the framework spawner should
-	 * never idle timeout) or -1 (which means that the value is not specified).
-	 */
-	long frameworkSpawnerTimeout;
-	
-	/**
-	 * The idle timeout, in seconds, of Rails application spawners.
+	 * The idle timeout, in seconds, of preloader processes.
 	 * May also be 0 (which indicates that the application spawner should
-	 * never idle timeout) or -1 (which means that the value is not specified).
+	 * never idle timeout) or -1 (which means that the value is not specified,
+	 * and the default value should be used).
 	 */
-	long appSpawnerTimeout;
+	long maxPreloaderIdleTime;
 	
 	/**
 	 * The maximum number of requests that the spawned application may process
@@ -129,9 +126,6 @@ struct DirConfig {
 	
 	/** Whether high performance mode should be turned on. */
 	Threeway highPerformance;
-	
-	/** Whether global queuing should be used. */
-	Threeway useGlobalQueue;
 	
 	/**
 	 * Whether encoded slashes in URLs should be supported. This however conflicts
@@ -180,6 +174,10 @@ struct DirConfig {
 	 * Whether response buffering support is enabled.
 	 */
 	Threeway bufferResponse;
+
+	const char *concurrencyModel;
+	unsigned int threadCount;
+	bool threadCountSpecified;
 	
 	/*************************************/
 	
@@ -228,7 +226,7 @@ struct DirConfig {
 		return enabled != DISABLED;
 	}
 	
-	string getAppRoot(const char *documentRoot) const {
+	string getAppRoot(const StaticString &documentRoot) const {
 		if (appRoot == NULL) {
 			if (resolveSymlinksInDocRoot == DirConfig::ENABLED) {
 				return extractDirName(resolveSymlink(documentRoot));
@@ -240,19 +238,7 @@ struct DirConfig {
 		}
 	}
 	
-	string getAppRoot(const string &documentRoot) const {
-		if (appRoot == NULL) {
-			if (resolveSymlinksInDocRoot == DirConfig::ENABLED) {
-				return extractDirName(resolveSymlink(documentRoot));
-			} else {
-				return extractDirName(documentRoot);
-			}
-		} else {
-			return appRoot;
-		}
-	}
-	
-	const char *getUser() const {
+	StaticString getUser() const {
 		if (user != NULL) {
 			return user;
 		} else {
@@ -260,7 +246,7 @@ struct DirConfig {
 		}
 	}
 	
-	const char *getGroup() const {
+	StaticString getGroup() const {
 		if (group != NULL) {
 			return group;
 		} else {
@@ -268,7 +254,7 @@ struct DirConfig {
 		}
 	}
 	
-	const char *getEnvironment() const {
+	StaticString getEnvironment() const {
 		if (environment != NULL) {
 			return environment;
 		} else {
@@ -276,7 +262,7 @@ struct DirConfig {
 		}
 	}
 	
-	string getAppGroupName(const string &appRoot) const {
+	StaticString getAppGroupName(const StaticString &appRoot) const {
 		if (appGroupName.empty()) {
 			return appRoot;
 		} else {
@@ -284,16 +270,14 @@ struct DirConfig {
 		}
 	}
 	
-	const char *getSpawnMethodString() const {
+	StaticString getSpawnMethodString() const {
 		switch (spawnMethod) {
 		case SM_SMART:
 			return "smart";
-		case SM_SMART_LV2:
-			return "smart-lv2";
-		case SM_CONSERVATIVE:
-			return "conservative";
+		case SM_DIRECT:
+			return "direct";
 		default:
-			return "smart-lv2";
+			return "smart";
 		}
 	}
 	
@@ -317,10 +301,6 @@ struct DirConfig {
 		return highPerformance == ENABLED;
 	}
 	
-	bool usingGlobalQueue() const {
-		return useGlobalQueue != DISABLED;
-	}
-	
 	bool allowsEncodedSlashes() const {
 		return allowEncodedSlashes == ENABLED;
 	}
@@ -333,7 +313,7 @@ struct DirConfig {
 		}
 	}
 	
-	const char *getRestartDir() const {
+	StaticString getRestartDir() const {
 		if (restartDir != NULL) {
 			return restartDir;
 		} else {
@@ -359,6 +339,22 @@ struct DirConfig {
 
 	bool getBufferResponse() const {
 		return bufferResponse != DISABLED;
+	}
+
+	const char *getConcurrencyModel() const {
+		if (concurrencyModel != NULL) {
+			return concurrencyModel;
+		} else {
+			return "process";
+		}
+	}
+
+	unsigned int getThreadCount() const {
+		if (threadCountSpecified) {
+			return threadCount;
+		} else {
+			return 1;
+		}
 	}
 	
 	string getUnionStationFilterString() const {
@@ -425,9 +421,6 @@ struct DirConfig {
  * the default value if the value is not specified.
  */
 struct ServerConfig {
-	/** The filename of the Ruby interpreter to use. */
-	const char *ruby;
-	
 	/** The Passenger root folder. */
 	const char *root;
 	
@@ -475,7 +468,6 @@ struct ServerConfig {
 	set<string> prestartURLs;
 	
 	ServerConfig() {
-		ruby               = "ruby";
 		root               = NULL;
 		logLevel           = DEFAULT_LOG_LEVEL;
 		debugLogFile       = NULL;

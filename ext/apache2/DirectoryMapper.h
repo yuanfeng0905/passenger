@@ -42,7 +42,7 @@ class DirectoryMapper {
 public:
 	enum ApplicationType {
 		NONE,
-		RAILS,
+		CLASSIC_RAILS,
 		RACK,
 		WSGI
 	};
@@ -56,7 +56,7 @@ private:
 	const char *baseURI;
 	ApplicationType appType;
 	
-	inline bool shouldAutoDetectRails() {
+	inline bool shouldAutoDetectClassicRails() {
 		return config->autoDetectRails == DirConfig::ENABLED ||
 			config->autoDetectRails == DirConfig::UNSET;
 	}
@@ -133,7 +133,7 @@ public:
 			) {
 				baseURIKnown = true;
 				baseURI = base.c_str();
-				appType = RAILS;
+				appType = CLASSIC_RAILS;
 				return baseURI;
 			}
 		}
@@ -163,11 +163,11 @@ public:
 		}
 		
 		UPDATE_TRACE_POINT();
-		if (shouldAutoDetectRails()
+		if (shouldAutoDetectClassicRails()
 		 && verifyRailsDir(config->getAppRoot(ap_document_root(r)), cstat, throttleRate)) {
 			baseURIKnown = true;
 			baseURI = "/";
-			appType = RAILS;
+			appType = CLASSIC_RAILS;
 			return baseURI;
 		}
 		
@@ -246,8 +246,8 @@ public:
 			getBaseURI();
 		}
 		switch (appType) {
-		case RAILS:
-			return "rails";
+		case CLASSIC_RAILS:
+			return "classic-rails";
 		case RACK:
 			return "rack";
 		case WSGI:

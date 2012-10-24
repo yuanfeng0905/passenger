@@ -85,6 +85,11 @@ file_exists(const u_char *filename, unsigned int throttle_rate) {
     return get_file_type(filename, throttle_rate) == FT_FILE;
 }
 
+static int
+directory_exists(const u_char *filename, unsigned int throttle_rate) {
+    return get_file_type(filename, throttle_rate) == FT_DIRECTORY;
+}
+
 static passenger_app_type_t
 detect_application_type(const ngx_str_t *public_dir) {
     u_char filename[NGX_MAX_PATH];
@@ -100,7 +105,7 @@ detect_application_type(const ngx_str_t *public_dir) {
     ngx_snprintf(filename, sizeof(filename), "%s/%s",
                  public_dir->data, "../config/environment.rb");
     if (file_exists(filename, 1)) {
-        return AP_RAILS;
+        return AP_CLASSIC_RAILS;
     }
         
     ngx_memzero(filename, sizeof(filename));
@@ -108,6 +113,20 @@ detect_application_type(const ngx_str_t *public_dir) {
                  public_dir->data, "../passenger_wsgi.py");
     if (file_exists(filename, 1)) {
         return AP_WSGI;
+    }
+
+    ngx_memzero(filename, sizeof(filename));
+    ngx_snprintf(filename, sizeof(filename), "%s/%s",
+                 public_dir->data, "../passenger_node.js");
+    if (file_exists(filename, 1)) {
+        return AP_NODE;
+    }
+
+    ngx_memzero(filename, sizeof(filename));
+    ngx_snprintf(filename, sizeof(filename), "%s/%s",
+                 public_dir->data, "../.meteor");
+    if (directory_exists(filename, 1)) {
+        return AP_METEOR;
     }
     
     return AP_NONE;
@@ -347,8 +366,7 @@ create_request(ngx_http_request_t *r)
     ngx_str_t                     *union_station_filters = NULL;
     u_char                         min_instances_string[12];
     u_char                         max_requests_string[12];
-    u_char                         framework_spawner_idle_time_string[12];
-    u_char                         app_spawner_idle_time_string[12];
+    u_char                         max_preloader_idle_time_string[12];
     u_char                        *end;
     void                          *tmp;
     ngx_uint_t                     i, n;
@@ -368,6 +386,7 @@ create_request(ngx_http_request_t *r)
     
     u_char max_instances_string[12];
     u_char max_request_time_string[12];
+    u_char thread_count_string[12];
     u_char memory_limit_string[12];
     
     cscf = ngx_http_get_module_srv_conf(r, ngx_http_core_module);
@@ -378,9 +397,9 @@ create_request(ngx_http_request_t *r)
     }
     
     switch (context->app_type) {
-    case AP_RAILS:
-        app_type_string = (const u_char *) "rails";
-        app_type_string_len = sizeof("rails");
+    case AP_CLASSIC_RAILS:
+        app_type_string = (const u_char *) "classic-rails";
+        app_type_string_len = sizeof("classic-rails");
         break;
     case AP_RACK:
         app_type_string = (const u_char *) "rack";
@@ -389,6 +408,14 @@ create_request(ngx_http_request_t *r)
     case AP_WSGI:
         app_type_string = (const u_char *) "wsgi";
         app_type_string_len = sizeof("wsgi");
+        break;
+    case AP_NODE:
+        app_type_string = (const u_char *) "node";
+        app_type_string_len = sizeof("node");
+        break;
+    case AP_METEOR:
+        app_type_string = (const u_char *) "meteor";
+        app_type_string_len = sizeof("meteor");
         break;
     default:
         app_type_string = (const u_char *) "rack";
@@ -467,8 +494,6 @@ create_request(ngx_http_request_t *r)
     #endif
     
     /* Lengths of Passenger application pool options. */
-    ANALYZE_BOOLEAN_CONFIG_LENGTH("PASSENGER_USE_GLOBAL_QUEUE",
-                                  slcf, use_global_queue);
     ANALYZE_BOOLEAN_CONFIG_LENGTH("PASSENGER_FRIENDLY_ERROR_PAGES",
                                   slcf, friendly_error_pages);
     ANALYZE_BOOLEAN_CONFIG_LENGTH("UNION_STATION_SUPPORT",
@@ -477,14 +502,15 @@ create_request(ngx_http_request_t *r)
                                   slcf, debugger);
     ANALYZE_BOOLEAN_CONFIG_LENGTH("PASSENGER_SHOW_VERSION_IN_HEADER",
                                   slcf, show_version_in_header);
-    len += sizeof("PASSENGER_ENVIRONMENT") + slcf->environment.len + 1;
+    ANALYZE_STR_CONFIG_LENGTH("PASSENGER_RUBY", slcf, ruby);
+    len += sizeof("PASSENGER_ENV") + slcf->environment.len + 1;
     len += sizeof("PASSENGER_SPAWN_METHOD") + slcf->spawn_method.len + 1;
     len += sizeof("PASSENGER_APP_TYPE") + app_type_string_len;
     ANALYZE_STR_CONFIG_LENGTH("PASSENGER_APP_GROUP_NAME", slcf, app_group_name);
     ANALYZE_STR_CONFIG_LENGTH("PASSENGER_APP_RIGHTS", slcf, app_rights);
     ANALYZE_STR_CONFIG_LENGTH("PASSENGER_USER", slcf, user);
     ANALYZE_STR_CONFIG_LENGTH("PASSENGER_GROUP", slcf, group);
-    ANALYZE_STR_CONFIG_LENGTH("PASSENGER_UNION_STATION_KEY", slcf, union_station_key);
+    ANALYZE_STR_CONFIG_LENGTH("UNION_STATION_KEY", slcf, union_station_key);
     
     end = ngx_snprintf(min_instances_string,
                        sizeof(min_instances_string) - 1,
@@ -502,23 +528,14 @@ create_request(ngx_http_request_t *r)
     len += sizeof("PASSENGER_MAX_REQUESTS") +
            ngx_strlen(max_requests_string) + 1;
     
-    end = ngx_snprintf(framework_spawner_idle_time_string,
-                       sizeof(framework_spawner_idle_time_string) - 1,
+    end = ngx_snprintf(max_preloader_idle_time_string,
+                       sizeof(max_preloader_idle_time_string) - 1,
                        "%d",
-                       (slcf->framework_spawner_idle_time == (ngx_int_t) -1) ?
-                           -1 : slcf->framework_spawner_idle_time);
+                       (slcf->max_preloader_idle_time == (ngx_int_t) -1) ?
+                           -1 : slcf->max_preloader_idle_time);
     *end = '\0';
-    len += sizeof("PASSENGER_FRAMEWORK_SPAWNER_IDLE_TIME") +
-           ngx_strlen(framework_spawner_idle_time_string) + 1;
-    
-    end = ngx_snprintf(app_spawner_idle_time_string,
-                       sizeof(app_spawner_idle_time_string) - 1,
-                       "%d",
-                       (slcf->app_spawner_idle_time == (ngx_int_t) -1) ?
-                           -1 : slcf->app_spawner_idle_time);
-    *end = '\0';
-    len += sizeof("PASSENGER_APP_SPAWNER_IDLE_TIME") +
-           ngx_strlen(app_spawner_idle_time_string) + 1;
+    len += sizeof("PASSENGER_MAX_PRELOADER_IDLE_TIME") +
+           ngx_strlen(max_preloader_idle_time_string) + 1;
     
     if (slcf->union_station_filters != NGX_CONF_UNSET_PTR && slcf->union_station_filters->nelts > 0) {
         len += sizeof("UNION_STATION_FILTERS");
@@ -538,6 +555,8 @@ create_request(ngx_http_request_t *r)
 
     PREPARE_INT_CONFIG_DATA("PASSENGER_MAX_INSTANCES", slcf, max_instances);
     PREPARE_INT_CONFIG_DATA("PASSENGER_MAX_REQUEST_TIME", slcf, max_request_time);
+    ANALYZE_STR_CONFIG_LENGTH("PASSENGER_CONCURRENCY_MODEL", slcf, concurrency_model);
+    PREPARE_INT_CONFIG_DATA("PASSENGER_THREAD_COUNT", slcf, thread_count);
     PREPARE_INT_CONFIG_DATA("PASSENGER_MEMORY_LIMIT", slcf, memory_limit);
     ANALYZE_BOOLEAN_CONFIG_LENGTH("PASSENGER_ROLLING_RESTARTS",
                                   slcf, rolling_restarts);
@@ -592,33 +611,6 @@ create_request(ngx_http_request_t *r)
                 + header[i].value.len + 1;
         }
     }
-
-    /* Trailing dummy header.
-     *
-     * If the last header value is an empty string, then the buffer
-     * will end with "\0\0". For example, if 'SSL_CLIENT_CERT'
-     * is the last header and it has an empty value, then the SCGI header
-     * will end with:
-     *
-     *   "SSL_CLIENT_CERT\0\0"
-     *
-     * The data in the buffer will be processed by the AbstractRequestHandler class,
-     * which is implemented in Ruby. But it uses Hash[*data.split("\0")] to
-     * unserialize the data. Unfortunately String#split will not transform
-     * the trailing "\0\0" into an empty string:
-     *
-     *   "SSL_CLIENT_CERT\0\0".split("\0")
-     *   # => desired result: ["SSL_CLIENT_CERT", ""]
-     *   # => actual result:  ["SSL_CLIENT_CERT"]
-     *
-     * When that happens, Hash[..] will raise an ArgumentError because
-     * data.split("\0") does not return an array with a length that is a
-     * multiple of 2.
-     *
-     * So here, we add a dummy header to prevent situations like that from
-     * happening.
-     */
-    len += sizeof("_") + sizeof("_");
 
 
     /**************************************************
@@ -725,8 +717,6 @@ create_request(ngx_http_request_t *r)
     
 
     /* Build Passenger application pool option headers. */
-    SERIALIZE_BOOLEAN_CONFIG_DATA("PASSENGER_USE_GLOBAL_QUEUE",
-                                  slcf, use_global_queue);
     SERIALIZE_BOOLEAN_CONFIG_DATA("PASSENGER_FRIENDLY_ERROR_PAGES",
                                   slcf, friendly_error_pages);
     SERIALIZE_BOOLEAN_CONFIG_DATA("UNION_STATION_SUPPORT",
@@ -736,8 +726,11 @@ create_request(ngx_http_request_t *r)
     SERIALIZE_BOOLEAN_CONFIG_DATA("PASSENGER_SHOW_VERSION_IN_HEADER",
                                   slcf, show_version_in_header);
     
-    b->last = ngx_copy(b->last, "PASSENGER_ENVIRONMENT",
-                       sizeof("PASSENGER_ENVIRONMENT"));
+    SERIALIZE_STR_CONFIG_DATA("PASSENGER_RUBY",
+                              slcf, ruby);
+
+    b->last = ngx_copy(b->last, "PASSENGER_ENV",
+                       sizeof("PASSENGER_ENV"));
     b->last = ngx_copy(b->last, slcf->environment.data,
                        slcf->environment.len + 1);
 
@@ -754,7 +747,7 @@ create_request(ngx_http_request_t *r)
                               slcf, user);
     SERIALIZE_STR_CONFIG_DATA("PASSENGER_GROUP",
                               slcf, group);
-    SERIALIZE_STR_CONFIG_DATA("PASSENGER_UNION_STATION_KEY",
+    SERIALIZE_STR_CONFIG_DATA("UNION_STATION_KEY",
                               slcf, union_station_key);
 
     b->last = ngx_copy(b->last, "PASSENGER_APP_TYPE",
@@ -771,15 +764,10 @@ create_request(ngx_http_request_t *r)
     b->last = ngx_copy(b->last, max_requests_string,
                        ngx_strlen(max_requests_string) + 1);
 
-    b->last = ngx_copy(b->last, "PASSENGER_FRAMEWORK_SPAWNER_IDLE_TIME",
-                       sizeof("PASSENGER_FRAMEWORK_SPAWNER_IDLE_TIME"));
-    b->last = ngx_copy(b->last, framework_spawner_idle_time_string,
-                       ngx_strlen(framework_spawner_idle_time_string) + 1);
-
-    b->last = ngx_copy(b->last, "PASSENGER_APP_SPAWNER_IDLE_TIME",
-                       sizeof("PASSENGER_APP_SPAWNER_IDLE_TIME"));
-    b->last = ngx_copy(b->last, app_spawner_idle_time_string,
-                       ngx_strlen(app_spawner_idle_time_string) + 1);
+    b->last = ngx_copy(b->last, "PASSENGER_MAX_PRELOADER_IDLE_TIME",
+                       sizeof("PASSENGER_MAX_PRELOADER_IDLE_TIME"));
+    b->last = ngx_copy(b->last, max_preloader_idle_time_string,
+                       ngx_strlen(max_preloader_idle_time_string) + 1);
 
     if (slcf->union_station_filters != NGX_CONF_UNSET_PTR && slcf->union_station_filters->nelts > 0) {
         b->last = ngx_copy(b->last, "UNION_STATION_FILTERS",
@@ -801,6 +789,10 @@ create_request(ngx_http_request_t *r)
                               slcf, max_instances);
     SERIALIZE_INT_CONFIG_DATA("PASSENGER_MAX_REQUEST_TIME",
                               slcf, max_request_time);
+    SERIALIZE_STR_CONFIG_DATA("PASSENGER_CONCURRENCY_MODEL",
+                              slcf, concurrency_model);
+    SERIALIZE_INT_CONFIG_DATA("PASSENGER_THREAD_COUNT",
+                              slcf, thread_count);
     SERIALIZE_INT_CONFIG_DATA("PASSENGER_MEMORY_LIMIT",
                               slcf, memory_limit);
     SERIALIZE_BOOLEAN_CONFIG_DATA("PASSENGER_ROLLING_RESTARTS",
@@ -881,10 +873,6 @@ create_request(ngx_http_request_t *r)
          }
     }
     
-    /* Trailing dummy header. See earlier comment for explanation. */
-    b->last = ngx_copy(b->last, "_\0_", sizeof("_\0_"));
-
-
     *b->last++ = (u_char) ',';
 
     if (slcf->upstream_config.pass_request_body) {

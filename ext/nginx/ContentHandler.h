@@ -33,9 +33,11 @@
 
 
 typedef enum {
-    AP_RAILS,
+    AP_CLASSIC_RAILS,
     AP_RACK,
     AP_WSGI,
+    AP_NODE,
+    AP_METEOR,
     AP_NONE
 } passenger_app_type_t;
 
