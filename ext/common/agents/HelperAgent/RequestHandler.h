@@ -532,6 +532,7 @@ private:
 	const ResourceLocator resourceLocator;
 	LoggerFactoryPtr loggerFactory;
 	ev::io requestSocketWatcher;
+	ev::timer resumeSocketWatcherTimer;
 	HashMap<int, ClientPtr> clients;
 	Timer inactivityTimer;
 	bool accept4Available;
@@ -563,7 +564,7 @@ private:
 		stringstream message;
 		message << "client socket write error: ";
 		message << strerror(e);
-		message << " (errno " << e << ")";
+		message << " (errno=" << e << ")";
 		disconnectWithError(client, message.str());
 	}
 
@@ -571,7 +572,7 @@ private:
 		stringstream message;
 		message << "app socket write error: ";
 		message << strerror(e);
-		message << " (errno " << e << ")";
+		message << " (errno=" << e << ")";
 		disconnectWithError(client, message.str());
 	}
 
@@ -666,6 +667,7 @@ private:
 		str << "Status: 500 Internal Server Error\r\n";
 		str << "Content-Length: " << data.size() << "\r\n";
 		str << "Content-Type: text/html; charset=UTF-8\r\n";
+		str << "Cache-Control: no-cache, no-store, must-revalidate\r\n";
 		str << "\r\n";
 
 		const string &header = str.str();
@@ -1057,7 +1059,7 @@ private:
 		stringstream message;
 		message << "client output pipe error: ";
 		message << strerror(errorCode);
-		message << " (errno " << errorCode << ")";
+		message << " (errno=" << errorCode << ")";
 		disconnectWithError(client, message.str());
 	}
 
@@ -1111,6 +1113,12 @@ private:
 	}
 
 
+	void onResumeSocketWatcher(ev::timer &timer, int revents) {
+		P_INFO("Resuming listening on server socket.");
+		resumeSocketWatcherTimer.stop();
+		requestSocketWatcher.start();
+	}
+
 	void onAcceptable(ev::io &io, int revents) {
 		bool endReached = false;
 		unsigned int count = 0;
@@ -1118,11 +1126,16 @@ private:
 		while (!endReached && count < 10) {
 			FileDescriptor fd = acceptNonBlockingSocket(requestSocket);
 			if (fd == -1) {
-				if (errno == EAGAIN) {
+				if (errno == EAGAIN || errno == EWOULDBLOCK) {
 					endReached = true;
 				} else {
 					int e = errno;
-					throw SystemException("Cannot accept client", e);
+					P_ERROR("Cannot accept client: " << strerror(e) <<
+						" (errno=" << e << "). " <<
+						"Pausing listening on server socket for 3 seconds.");
+					requestSocketWatcher.stop();
+					resumeSocketWatcherTimer.start();
+					endReached = true;
 				}
 			} else {
 				ClientPtr client = make_shared<Client>();
@@ -1219,7 +1232,7 @@ private:
 			stringstream message;
 			message << "client socket read error: ";
 			message << strerror(errnoCode);
-			message << " (errno " << errnoCode << ")";
+			message << " (errno=" << errnoCode << ")";
 			disconnectWithError(client, message.str());
 		}
 	}
@@ -1249,7 +1262,7 @@ private:
 		stringstream message;
 		message << "client body buffer error: ";
 		message << strerror(errorCode);
-		message << " (errno " << errorCode << ")";
+		message << " (errno=" << errorCode << ")";
 		disconnectWithError(client, message.str());
 	}
 
@@ -2090,6 +2103,10 @@ public:
 		requestSocketWatcher.set(_libev->getLoop());
 		requestSocketWatcher.set<RequestHandler, &RequestHandler::onAcceptable>(this);
 		requestSocketWatcher.start();
+
+		resumeSocketWatcherTimer.set<RequestHandler, &RequestHandler::onResumeSocketWatcher>(this);
+		resumeSocketWatcherTimer.set(_libev->getLoop());
+		resumeSocketWatcherTimer.set(3, 3);
 	}
 
 	template<typename Stream>

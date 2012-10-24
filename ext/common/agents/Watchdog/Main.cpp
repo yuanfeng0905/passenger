@@ -1005,6 +1005,14 @@ forceAllAgentsShutdown(vector<AgentWatcher *> &watchers) {
 int
 main(int argc, char *argv[]) {
 	/*
+	 * Some Apache installations (like on OS X) redirect stdout to /dev/null,
+	 * so that only stderr is redirected to the log file. We therefore
+	 * forcefully redirect stdout to stderr so that everything ends up in the
+	 * same place.
+	 */
+	dup2(2, 1);
+
+	/*
 	 * Most operating systems overcommit memory. We *know* that this watchdog process
 	 * doesn't use much memory; on OS X it uses about 200 KB of private RSS. If the
 	 * watchdog is killed by the system Out-Of-Memory Killer or then it's all over:
@@ -1030,6 +1038,8 @@ main(int argc, char *argv[]) {
 	maxInstancesPerApp = agentsOptions.getInt("max_instances_per_app");
 	poolIdleTime       = agentsOptions.getInt("pool_idle_time");
 	serializedPrestartURLs  = agentsOptions.get("prestart_urls");
+	
+	P_DEBUG("Starting Watchdog...");
 	
 	try {
 		randomGenerator = new RandomGenerator();
@@ -1100,21 +1110,25 @@ main(int argc, char *argv[]) {
 		}
 		
 		writeArrayMessage(FEEDBACK_FD, "All agents started", NULL);
+		P_DEBUG("All Phusion Passenger agents started!");
 		
 		this_thread::disable_interruption di;
 		this_thread::disable_syscall_interruption dsi;
 		bool exitGracefully = waitForStarterProcessOrWatchers(watchers);
-		AgentWatcher::stopWatching(watchers);
 		if (exitGracefully) {
 			/* Fork a child process which cleans up all the agent processes in
 			 * the background and exit this watchdog process so that we don't block
 			 * the web server.
 			 */
 			P_DEBUG("Web server exited gracefully; gracefully shutting down all agents...");
+		} else {
+			P_DEBUG("Web server did not exit gracefully, forcing shutdown of all agents...");
+		}
+		AgentWatcher::stopWatching(watchers);
+		if (exitGracefully) {
 			cleanupAgentsInBackground(watchers);
 			return 0;
 		} else {
-			P_DEBUG("Web server did not exit gracefully, forcing shutdown of all agents...");
 			forceAllAgentsShutdown(watchers);
 			return 1;
 		}
