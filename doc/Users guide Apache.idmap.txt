@@ -189,13 +189,17 @@
 6.13.1. PassengerMaxPoolSize <integer>	=>	passengermaxpoolsize-integer--am64q8
 
 # fuzzy
-6.13.10. PassengerStatThrottleRate <integer>	=>	passengerstatthrottlerate
+6.13.10. PassengerMaxRequestTime <seconds>	=>	passengerstatthrottlerate
 
 # fuzzy
-6.13.11. PassengerPreStart <url>	=>	passengerprestart-url--1dvgku9
+6.13.11. PassengerMemoryLimit <integer>	=>	passengerprestart-url--1dvgku9
 
 # fuzzy
-6.13.12. PassengerHighPerformance <on|off>	=>	passengerhighperformance-on-off--zgc547
+6.13.12. PassengerStatThrottleRate <integer>	=>	passengerhighperformance-on-off--zgc547
+
+6.13.13. PassengerPreStart <url>	=>	passengerprestart-url--11grkkm
+
+6.13.14. PassengerHighPerformance <on|off>	=>	passengerhighperformance-on-off--n8gyhy
 
 # fuzzy
 6.13.2. PassengerMinInstances <integer>	=>	passengermininstances-integer--wegq6b
@@ -213,13 +217,13 @@
 6.13.6. PassengerMaxPreloaderIdleTime <integer>	=>	railsappspawneridletime-integer--1awgog1
 
 # fuzzy
-6.13.7. PassengerMaxRequests <integer>	=>	passengermaxrequests
+6.13.7. PassengerConcurrencyMOdel <process|thread>	=>	passengermaxrequests
 
 # fuzzy
-6.13.8. PassengerMaxRequestTime <seconds>	=>	passengermaxrequesttime-seconds--aj9w45
+6.13.8. PassengerThreadCount <number>	=>	passengermaxrequesttime-seconds--aj9w45
 
 # fuzzy
-6.13.9. PassengerMemoryLimit <integer>	=>	passengermemorylimit
+6.13.9. PassengerMaxRequests <integer>	=>	passengermemorylimit
 
 # fuzzy
 6.14. Compatibility options	=>	compatibility-options-8jve5a
