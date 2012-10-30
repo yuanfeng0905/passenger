@@ -18,7 +18,7 @@ class Command
 		:env           => ENV['RAILS_ENV'] || ENV['RACK_ENV'] || 'development',
 		:max_pool_size => 6,
 		:min_instances => 1,
-		:spawn_method  => 'smart',
+		:spawn_method  => Kernel.respond_to?(:fork) ? 'smart' : 'direct',
 		:nginx_version => PREFERRED_NGINX_VERSION
 	}.freeze
 	
@@ -45,13 +45,13 @@ private
 				require 'daemon_controller'
 				begin
 					require 'daemon_controller/version'
-					too_old = DaemonController::VERSION_STRING < '1.0.0'
+					too_old = DaemonController::VERSION_STRING < '1.1.0'
 				rescue LoadError
 					too_old = true
 				end
 				if too_old
 					error "Your version of daemon_controller is too old. " <<
-					      "You must install 1.0.0 or later. Please upgrade:\n\n" <<
+					      "You must install 1.1.0 or later. Please upgrade:\n\n" <<
 					      
 					      " sudo gem uninstall FooBarWidget-daemon_controller\n" <<
 					      " sudo gem install daemon_controller"
