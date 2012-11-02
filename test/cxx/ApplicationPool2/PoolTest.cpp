@@ -1528,6 +1528,13 @@ namespace tut {
 			result = number == 2;
 		);
 		ensure_equals(pool->getProcessCount(), 2u);
+
+		// Wait for the second callback to finish so that it doesn't cause
+		// a cause trying to write to invalid memory.
+		clearAllSessions();
+		EVENTUALLY(5,
+			result = number == 3;
+		);
 	}
 	
 	#if 0
