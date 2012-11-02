@@ -31,6 +31,9 @@ namespace Passenger {
 using namespace std;
 using namespace boost;
 
+#define foreach         BOOST_FOREACH
+#define reverse_foreach BOOST_REVERSE_FOREACH
+
 static const uid_t USER_NOT_GIVEN = (uid_t) -1;
 static const gid_t GROUP_NOT_GIVEN = (gid_t) -1;
 
@@ -388,6 +391,11 @@ int runShellCommand(const StaticString &command);
  * threads running that might open file descriptors!
  */
 void closeAllFileDescriptors(int lastToKeepOpen);
+
+/**
+ * A no-op, but usually set as a breakpoint in gdb. See CONTRIBUTING.md.
+ */
+void breakpoint();
 
 
 /**

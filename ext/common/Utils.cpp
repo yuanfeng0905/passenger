@@ -1142,4 +1142,9 @@ closeAllFileDescriptors(int lastToKeepOpen) {
 	}
 }
 
+void
+breakpoint() {
+	// No-op.
+}
+
 } // namespace Passenger

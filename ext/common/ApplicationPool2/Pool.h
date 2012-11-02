@@ -19,6 +19,7 @@
 #include <boost/shared_ptr.hpp>
 #include <boost/make_shared.hpp>
 #include <boost/function.hpp>
+#include <boost/foreach.hpp>
 #include <oxt/dynamic_thread_group.hpp>
 #include <oxt/backtrace.hpp>
 #include <ApplicationPool2/Common.h>
@@ -188,7 +189,7 @@ public:
 			vector<GroupPtr>::const_iterator g_it, g_end = groups.end();
 			for (g_it = groups.begin(); g_it != g_end; g_it++) {
 				const GroupPtr &group = *g_it;
-				const ProcessList &processes = group->processes;
+				const ProcessList &processes = group->enabledProcesses;
 				ProcessList::const_iterator p_it, p_end = processes.end();
 				for (p_it = processes.begin(); p_it != p_end; p_it++) {
 					const ProcessPtr process = *p_it;
@@ -215,7 +216,7 @@ public:
 			vector<GroupPtr>::const_iterator g_it, g_end = groups.end();
 			for (g_it = groups.begin(); g_it != g_end; g_it++) {
 				const GroupPtr &group = *g_it;
-				const ProcessList &processes = group->processes;
+				const ProcessList &processes = group->enabledProcesses;
 				ProcessList::const_iterator p_it, p_end = processes.end();
 				for (p_it = processes.begin(); p_it != p_end; p_it++) {
 					const ProcessPtr process = *p_it;
@@ -324,7 +325,7 @@ public:
 			P_ASSERT(superGroup->getWaitlist.empty());
 			
 			group->detach(process, postLockActions);
-			if (group->processes.empty()
+			if (group->enabledProcesses.empty()
 			 && !group->spawning()
 			 && !group->getWaitlist.empty()) {
 				migrateGroupGetWaitlistToPool(group);
@@ -351,6 +352,56 @@ public:
 		}
 	}
 	
+	void inspectProcessList(const InspectOptions &options, stringstream &result,
+		const ProcessList &processes) const
+	{
+		ProcessList::const_iterator p_it;
+		for (p_it = processes.begin(); p_it != processes.end(); p_it++) {
+			const ProcessPtr &process = *p_it;
+			char buf[128];
+			
+			snprintf(buf, sizeof(buf),
+					"* PID: %-5lu   Sessions: %-2u   Processed: %-5u   Uptime: %s",
+					(unsigned long) process->pid,
+					process->sessions,
+					process->processed,
+					process->uptime().c_str());
+			result << "  " << buf << endl;
+
+			if (process->enabled == Process::DISABLING) {
+				result << "    Disabling..." << endl;
+			} else if (process->enabled == Process::DISABLED) {
+				result << "    DISABLED" << endl;
+			}
+
+			const Socket *socket;
+			if (options.verbose && (socket = process->sockets->findSocketWithName("http")) != NULL) {
+				result << "    URL     : http://" << replaceString(socket->address, "tcp://", "") << endl;
+				result << "    Password: " << process->connectPassword << endl;
+			}
+		}
+	}
+
+	struct DisableWaitTicket {
+		boost::mutex syncher;
+		condition_variable cond;
+		DisableResult result;
+		bool done;
+
+		DisableWaitTicket() {
+			done = false;
+		}
+	};
+
+	static void syncDisableProcessCallback(const ProcessPtr &process, DisableResult result,
+		shared_ptr<DisableWaitTicket> ticket)
+	{
+		ScopedLock l(ticket->syncher);
+		ticket->done = true;
+		ticket->result = result;
+		ticket->cond.notify_one();
+	}
+
 	static void syncGetCallback(Ticket *ticket, const SessionPtr &session, const ExceptionPtr &e) {
 		ScopedLock lock(ticket->syncher);
 		if (OXT_LIKELY(session != NULL)) {
@@ -411,19 +462,22 @@ public:
 			return ProcessPtr();
 		}
 
-		ProcessList::const_iterator p_it;
-		for (p_it = group->processes.begin(); p_it != group->processes.end(); p_it++) {
-			ProcessPtr process = *p_it;
+		foreach (ProcessPtr process, group->enabledProcesses) {
 			if (process->spawnerCreationTime < group->spawner->creationTime) {
 				return process;
 			}
 		}
-		for (p_it = group->disabledProcesses.begin(); p_it != group->disabledProcesses.end(); p_it++) {
-			ProcessPtr process = *p_it;
+		foreach (ProcessPtr process, group->disablingProcesses) {
 			if (process->spawnerCreationTime < group->spawner->creationTime) {
 				return process;
 			}
 		}
+		foreach (ProcessPtr process, group->disabledProcesses) {
+			if (process->spawnerCreationTime < group->spawner->creationTime) {
+				return process;
+			}
+		}
+
 		return ProcessPtr();
 	}
 
@@ -592,7 +646,7 @@ public:
 			
 			for (g_it = groups.begin(); g_it != g_end; g_it++) {
 				GroupPtr group = *g_it;
-				ProcessList &processes = group->processes;
+				ProcessList &processes = group->enabledProcesses;
 				ProcessList::iterator p_it, p_end = processes.end();
 				
 				for (p_it = processes.begin(); p_it != p_end; p_it++) {
@@ -603,7 +657,7 @@ public:
 						process->lastUsed + maxIdleTime;
 					if (process->sessions == 0
 					 && now >= processGcTime
-					 && (unsigned long) group->count > group->options.minProcesses) {
+					 && (unsigned long) group->enabledCount > group->options.minProcesses) {
 						ProcessList::iterator prev = p_it;
 						prev--;
 						P_DEBUG("Garbage collect idle process: " << process->inspect() <<
@@ -707,9 +761,15 @@ public:
 
 				for (g_it = superGroup->groups.begin(); g_it != g_end; g_it++) {
 					const GroupPtr &group = *g_it;
-					ProcessList::const_iterator p_it, p_end = group->processes.end();
+					ProcessList::const_iterator p_it, p_end = group->enabledProcesses.end();
 
-					for (p_it = group->processes.begin(); p_it != p_end; p_it++) {
+					for (p_it = group->enabledProcesses.begin(); p_it != p_end; p_it++) {
+						const ProcessPtr &process = *p_it;
+						pids.push_back(process->pid);
+					}
+
+					p_end = group->disablingProcesses.end();
+					for (p_it = group->disablingProcesses.begin(); p_it != p_end; p_it++) {
 						const ProcessPtr &process = *p_it;
 						pids.push_back(process->pid);
 					}
@@ -747,9 +807,19 @@ public:
 
 				for (g_it = superGroup->groups.begin(); g_it != g_end; g_it++) {
 					const GroupPtr &group = *g_it;
-					ProcessList::iterator p_it, p_end = group->processes.end();
+					ProcessList::iterator p_it, p_end = group->enabledProcesses.end();
 
-					for (p_it = group->processes.begin(); p_it != p_end; p_it++) {
+					for (p_it = group->enabledProcesses.begin(); p_it != p_end; p_it++) {
+						ProcessPtr &process = *p_it;
+						ProcessMetricMap::const_iterator metrics_it =
+							allMetrics.find(process->pid);
+						if (metrics_it != allMetrics.end()) {
+							process->metrics = metrics_it->second;
+						}
+					}
+
+					p_end = group->disablingProcesses.end();
+					for (p_it = group->disablingProcesses.begin(); p_it != p_end; p_it++) {
 						ProcessPtr &process = *p_it;
 						ProcessMetricMap::const_iterator metrics_it =
 							allMetrics.find(process->pid);
@@ -973,7 +1043,7 @@ public:
 					P_ASSERT(group->garbageCollectable());
 					forceDetachSuperGroup(superGroup, actions);
 					P_ASSERT(superGroup->getWaitlist.empty());
-				} else if (group->processes.empty()
+				} else if (group->enabledProcesses.empty()
 				        && !group->spawning()
 				        && !group->getWaitlist.empty())
 				{
@@ -1023,6 +1093,7 @@ public:
 		}
 	}
 	
+	// TODO: 'ticket' should be a shared_ptr for interruption-safety.
 	SessionPtr get(const Options &options, Ticket *ticket) {
 		ticket->session.reset();
 		ticket->exception.reset();
@@ -1122,8 +1193,8 @@ public:
 		return utilization(false) >= max;
 	}
 
-	vector<ProcessPtr> getProcesses() const {
-		LockGuard l(syncher);
+	vector<ProcessPtr> getProcesses(bool lock = true) const {
+		DynamicScopedLock l(syncher, lock);
 		vector<ProcessPtr> result;
 		SuperGroupMap::const_iterator it, end = superGroups.end();
 		for (it = superGroups.begin(); OXT_LIKELY(it != end); it++) {
@@ -1134,7 +1205,10 @@ public:
 				const GroupPtr &group = *g_it;
 				ProcessList::const_iterator p_it;
 
-				for (p_it = group->processes.begin(); p_it != group->processes.end(); p_it++) {
+				for (p_it = group->enabledProcesses.begin(); p_it != group->enabledProcesses.end(); p_it++) {
+					result.push_back(*p_it);
+				}
+				for (p_it = group->disablingProcesses.begin(); p_it != group->disablingProcesses.end(); p_it++) {
 					result.push_back(*p_it);
 				}
 				for (p_it = group->disabledProcesses.begin(); p_it != group->disabledProcesses.end(); p_it++) {
@@ -1169,22 +1243,12 @@ public:
 	}
 	
 	ProcessPtr findProcessByGupid(const string &gupid, bool lock = true) const {
-		DynamicScopedLock l(syncher, lock);
-		SuperGroupMap::const_iterator it, end = superGroups.end();
-		for (it = superGroups.begin(); OXT_LIKELY(it != end); it++) {
-			const SuperGroupPtr &superGroup = it->second;
-			vector<GroupPtr> &groups = superGroup->groups;
-			vector<GroupPtr>::const_iterator g_it, g_end = groups.end();
-			for (g_it = groups.begin(); g_it != g_end; g_it++) {
-				const GroupPtr &group = *g_it;
-				const ProcessList &processes = group->processes;
-				ProcessList::const_iterator p_it, p_end = processes.end();
-				for (p_it = processes.begin(); p_it != p_end; p_it++) {
-					const ProcessPtr &process = *p_it;
-					if (process->gupid == gupid) {
-						return process;
-					}
-				}
+		vector<ProcessPtr> processes = getProcesses(lock);
+		vector<ProcessPtr>::const_iterator it, end = processes.end();
+		for (it = processes.begin(); it != end; it++) {
+			const ProcessPtr &process = *it;
+			if (process->gupid == gupid) {
+				return process;
 			}
 		}
 		return ProcessPtr();
@@ -1239,15 +1303,6 @@ public:
 		}
 	}
 	
-	bool detachProcess(const ProcessPtr &process) {
-		ScopedLock l(syncher);
-		vector<Callback> actions;
-		bool result = detachProcessUnlocked(process, actions);
-		l.unlock();
-		runAllActions(actions);
-		return result;
-	}
-
 	bool detachSuperGroup(const string &superGroupSecret) {
 		LockGuard l(syncher);
 		SuperGroupPtr superGroup = findSuperGroupBySecret(superGroupSecret, false);
@@ -1258,6 +1313,15 @@ public:
 		}
 	}
 	
+	bool detachProcess(const ProcessPtr &process) {
+		ScopedLock l(syncher);
+		vector<Callback> actions;
+		bool result = detachProcessUnlocked(process, actions);
+		l.unlock();
+		runAllActions(actions);
+		return result;
+	}
+
 	bool detachProcess(const string &gupid) {
 		ScopedLock l(syncher);
 		ProcessPtr process = findProcessByGupid(gupid, false);
@@ -1270,6 +1334,44 @@ public:
 		} else {
 			return false;
 		}
+	}
+
+	DisableResult disableProcess(const string &gupid) {
+		ScopedLock l(syncher);
+		ProcessPtr process = findProcessByGupid(gupid, false);
+		GroupPtr group = process->getGroup();
+		// Must be a shared_ptr to be interruption-safe.
+		shared_ptr<DisableWaitTicket> ticket = make_shared<DisableWaitTicket>();
+		DisableResult result = group->disable(process,
+			boost::bind(syncDisableProcessCallback, _1, _2, ticket));
+		group->verifyInvariants();
+		group->verifyExpensiveInvariants();
+		if (result == DR_DEFERRED) {
+			l.unlock();
+			ScopedLock l2(ticket->syncher);
+			while (!ticket->done) {
+				ticket->cond.wait(l2);
+			}
+			return ticket->result;
+		} else {
+			return result;
+		}
+	}
+
+	/**
+	 * Checks whether at least one process is being spawned.
+	 */
+	bool isSpawning(bool lock = true) const {
+		DynamicScopedLock l(syncher, lock);
+		SuperGroupMap::const_iterator it, end = superGroups.end();
+		for (it = superGroups.begin(); it != end; it++) {
+			foreach (GroupPtr group, it->second->groups) {
+				if (group->spawning()) {
+					return true;
+				}
+			}
+		}
+		return false;
 	}
 
 	string inspect(const InspectOptions &options = InspectOptions(), bool lock = true) const {
@@ -1300,23 +1402,9 @@ public:
 					result << "  (spawning new process...)" << endl;
 				}
 				result << "  Requests in queue: " << group->getWaitlist.size() << endl;
-				for (p_it = group->processes.begin(); p_it != group->processes.end(); p_it++) {
-					const ProcessPtr &process = *p_it;
-					char buf[128];
-					
-					snprintf(buf, sizeof(buf),
-							"* PID: %-5lu   Sessions: %-2u   Processed: %-5u   Uptime: %s",
-							(unsigned long) process->pid,
-							process->sessions,
-							process->processed,
-							process->uptime().c_str());
-					result << "  " << buf << endl;
-					const Socket *socket;
-					if (options.verbose && (socket = process->sockets->findSocketWithName("http")) != NULL) {
-						result << "    URL     : http://" << replaceString(socket->address, "tcp://", "") << endl;
-						result << "    Password: " << process->connectPassword << endl;
-					}
-				}
+				inspectProcessList(options, result, group->enabledProcesses);
+				inspectProcessList(options, result, group->disablingProcesses);
+				inspectProcessList(options, result, group->disabledProcesses);
 				result << endl;
 			}
 		}

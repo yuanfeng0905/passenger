@@ -67,16 +67,8 @@ copyException(const tracable_exception &e) {
 	TRY_COPY_EXCEPTION(SecurityException);
 	
 	TRY_COPY_EXCEPTION(SyntaxError);
-	
-	TRY_COPY_EXCEPTION(boost::lock_error);
-	TRY_COPY_EXCEPTION(boost::thread_resource_error);
-	TRY_COPY_EXCEPTION(boost::unsupported_thread_option);
-	TRY_COPY_EXCEPTION(boost::invalid_thread_argument);
-	TRY_COPY_EXCEPTION(boost::thread_permission_error);
 
 	TRY_COPY_EXCEPTION(boost::thread_interrupted);
-	TRY_COPY_EXCEPTION(boost::thread_exception);
-	TRY_COPY_EXCEPTION(boost::condition_error);
 
 	return make_shared<tracable_exception>(e);
 }
@@ -171,7 +163,7 @@ Group::Group(const SuperGroupPtr &_superGroup, const Options &options, const Com
 	  secret(generateSecret(_superGroup)),
 	  componentInfo(info)
 {
-	count          = 0;
+	enabledCount   = 0;
 	disablingCount = 0;
 	disabledCount  = 0;
 	spawner        = getPool()->spawnerFactory->create(options);
@@ -250,22 +242,27 @@ Group::onSessionClose(const ProcessPtr &process, Session *session) {
 	
 	/* Update statistics. */
 	process->sessionClosed(session);
-	pqueue.decrease(process->pqHandle, process->utilization());
+	assert(process->enabled == Process::ENABLED || process->enabled == Process::DISABLING);
+	if (process->enabled == Process::ENABLED) {
+		pqueue.decrease(process->pqHandle, process->utilization());
+	}
 
 	bool maxRequestsReached = options.maxRequests > 0
 		&& process->processed >= options.maxRequests;
 
 	/* This group now has a process that's guaranteed to be not at
-	 * full capacity...
+	 * full utilization...
 	 */
-	assert(!process->atFullCapacity());
+	assert(!process->atFullUtilization());
 	if (!getWaitlist.empty() && !maxRequestsReached) {
 		/* ...so if there are clients waiting for a process to
 		 * become available, call them now.
 		 */
 		UPDATE_TRACE_POINT();
 		assignSessionsToGetWaitersQuickly(lock);
-	} else if (!pool->getWaitlist.empty() || maxRequestsReached) {
+	} else if (process->enabled == Process::ENABLED
+		&& (!pool->getWaitlist.empty() || maxRequestsReached)
+	) {
 		/* Someone might be trying to get() a session for a different
 		 * group that couldn't be spawned because of lack of pool capacity.
 		 * If this group isn't under sufficiently load (as apparent by the
@@ -299,6 +296,23 @@ Group::onSessionClose(const ProcessPtr &process, Session *session) {
 		pool->detachProcessUnlocked(process, actions);
 		pool->verifyInvariants();
 		verifyInvariants();
+		lock.unlock();
+		runAllActions(actions);
+	} else if (process->enabled == Process::DISABLING
+		&& process->utilization() == 0
+		&& enabledCount > 0)
+	{
+		/* This is a disabling process that is now idle, and there
+		 * are enabled processes in the group. Now is a good time
+		 * to disable this process.
+		 */
+		vector<Callback> actions;
+		removeProcessFromList(process, disablingProcesses);
+		addProcessToList(process, enabledProcesses);
+		removeFromDisableWaitlist(process, DR_SUCCESS, actions);
+		pool->verifyInvariants();
+		verifyInvariants();
+		verifyExpensiveInvariants();
 		lock.unlock();
 		runAllActions(actions);
 	}
@@ -367,16 +381,17 @@ Group::spawnThreadRealMain(const SpawnerPtr &spawner, const Options &options) {
 			} else {
 				assignSessionsToGetWaiters(actions);
 			}
-			P_DEBUG("Attached process " << process->inspect() <<
-				" to group " << name <<
-				": new process count = " << count <<
+			P_DEBUG("New process count = " << enabledCount <<
 				", remaining get waiters = " << getWaitlist.size());
 		} else {
 			// TODO: sure this is the best thing? if there are
 			// processes currently alive we should just use them.
-			P_DEBUG("Could not spawn process appRoot=" << name <<
+			P_ERROR("Could not spawn process for group " << name <<
 				": " << exception->what());
 			if (!options.ignoreSpawnErrors) {
+				if (enabledCount == 0) {
+					enableAllDisablingProcesses(actions);
+				}
 				assignExceptionToGetWaiters(exception, actions);
 				pool->assignSessionsToGetWaiters(actions);
 			} else {
@@ -392,10 +407,10 @@ Group::spawnThreadRealMain(const SpawnerPtr &spawner, const Options &options) {
 		m_spawning = false;
 		
 		done = done
-			|| ((unsigned long) count >= options.minProcesses && getWaitlist.empty())
+			|| ((unsigned long) enabledCount >= options.minProcesses && getWaitlist.empty())
 			|| pool->atFullCapacity(false)
 			|| m_restarting
-			|| (options.maxProcesses != 0 && (unsigned int) count >= options.maxProcesses);
+			|| (options.maxProcesses != 0 && (unsigned int) enabledCount >= options.maxProcesses);
 		m_spawning = !done;
 		if (done) {
 			if (m_restarting) {
@@ -409,6 +424,7 @@ Group::spawnThreadRealMain(const SpawnerPtr &spawner, const Options &options) {
 		
 		UPDATE_TRACE_POINT();
 		verifyInvariants();
+		verifyExpensiveInvariants();
 		lock.unlock();
 		runAllActions(actions);
 	}
@@ -417,9 +433,9 @@ Group::spawnThreadRealMain(const SpawnerPtr &spawner, const Options &options) {
 bool
 Group::shouldSpawn() const {
 	return !spawning()
-		&& (count == 0 || pqueue.top()->atFullCapacity())
+		&& (enabledCount == 0 || pqueue.top()->atFullCapacity())
 		&& !getPool()->atFullCapacity(false)
-		&& (options.maxProcesses == 0 || count <= (int) options.maxProcesses)
+		&& (options.maxProcesses == 0 || enabledCount <= (int) options.maxProcesses)
 		&& !hasSpawnError;
 }
 
@@ -471,6 +487,7 @@ Group::finalizeRestart(GroupPtr self, Options options, SpawnerFactoryPtr spawner
 
 	// Run some sanity checks.
 	verifyInvariants();
+	verifyExpensiveInvariants();
 	assert(m_restarting);
 	UPDATE_TRACE_POINT();
 	
@@ -484,7 +501,7 @@ Group::finalizeRestart(GroupPtr self, Options options, SpawnerFactoryPtr spawner
 	}
 
 	m_restarting = false;
-	if (processes.empty() && !getWaitlist.empty()) {
+	if (enabledProcesses.empty() && !getWaitlist.empty()) {
 		spawn();
 	}
 	P_DEBUG("Restart of group " << name << " done");
@@ -575,6 +592,7 @@ PipeWatcher::onReadable(ev::io &io, int revents) {
 			selfPointer.reset();
 		}
 	} else if (fdToForwardTo != -1) {
+		// Don't care about errors.
 		write(fdToForwardTo, buf, ret);
 	}
 }

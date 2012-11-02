@@ -36,10 +36,10 @@ module Packaging
 	GLOB = [
 		'configure',
 		'Rakefile',
-		'README',
-		'DEVELOPERS.TXT',
+		'README.md',
+		'CONTRIBUTING.md',
 		'LICENSE',
-		'INSTALL',
+		'INSTALL.md',
 		'NEWS',
 		'build/*.rb',
 		'lib/*.rb',

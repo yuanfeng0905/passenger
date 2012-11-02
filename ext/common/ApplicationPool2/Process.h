@@ -180,7 +180,7 @@ public:
 	int sessions;
 	/** Number of sessions opened so far. */
 	unsigned int processed;
-	enum {
+	enum EnabledStatus {
 		ENABLED,
 		DISABLING,
 		DISABLED
@@ -293,6 +293,10 @@ public:
 	}
 	
 	bool atFullCapacity() const {
+		return atFullUtilization();
+	}
+
+	bool atFullUtilization() const {
 		return concurrency != 0 && sessions >= concurrency;
 	}
 	
