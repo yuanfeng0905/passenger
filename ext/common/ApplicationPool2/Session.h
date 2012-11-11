@@ -93,6 +93,7 @@ public:
 	const string &getConnectPassword() const;
 	pid_t getPid() const;
 	const string &getGupid() const;
+	const GroupPtr getGroup() const;
 	
 	const ProcessPtr &getProcess() const {
 		return process;
