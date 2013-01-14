@@ -460,10 +460,8 @@ struct ServerConfig {
 	string unionStationProxyType;
 	
 	/** Directory in which analytics logs should be saved. */
-	string analyticsLogDir;
 	string analyticsLogUser;
 	string analyticsLogGroup;
-	string analyticsLogPermissions;
 	
 	set<string> prestartURLs;
 	
@@ -484,7 +482,6 @@ struct ServerConfig {
 		unionStationProxyType      = string();
 		analyticsLogUser   = DEFAULT_ANALYTICS_LOG_USER;
 		analyticsLogGroup  = DEFAULT_ANALYTICS_LOG_GROUP;
-		analyticsLogPermissions = DEFAULT_ANALYTICS_LOG_PERMISSIONS;
 	}
 	
 	/** Called after the configuration files have been loaded, inside
@@ -509,22 +506,6 @@ struct ServerConfig {
 			}
 			
 			defaultGroup = groupEntry->gr_name;
-		}
-		
-		if (analyticsLogDir.empty() && geteuid() == 0) {
-			analyticsLogDir = "/var/log/passenger-analytics";
-		} else if (analyticsLogDir.empty()) {
-			struct passwd *user = getpwuid(geteuid());
-			string username;
-			
-			if (user == NULL) {
-				username = user->pw_name;
-			} else {
-				username = "user-" + toString(geteuid());
-			}
-			analyticsLogDir = string(getSystemTempDir()) +
-				"/passenger-analytics-logs." +
-				username;
 		}
 		
 		if (unionStationProxyType != ""

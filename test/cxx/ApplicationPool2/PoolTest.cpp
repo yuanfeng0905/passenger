@@ -19,8 +19,11 @@ namespace tut {
 		ServerInstanceDirPtr serverInstanceDir;
 		ServerInstanceDir::GenerationPtr generation;
 		BackgroundEventLoop bg;
+		SpawnerConfigPtr spawnerConfig;
 		SpawnerFactoryPtr spawnerFactory;
 		PoolPtr pool;
+		Pool::DebugSupportPtr debug;
+		Ticket ticket;
 		GetCallback callback;
 		SessionPtr currentSession;
 		ExceptionPtr currentException;
@@ -32,7 +35,9 @@ namespace tut {
 		ApplicationPool2_PoolTest() {
 			createServerInstanceDirAndGeneration(serverInstanceDir, generation);
 			retainSessions = false;
-			spawnerFactory = make_shared<SpawnerFactory>(bg.safe, *resourceLocator, generation);
+			spawnerConfig = make_shared<SpawnerConfig>();
+			spawnerFactory = make_shared<SpawnerFactory>(bg.safe, *resourceLocator, generation,
+				RandomGeneratorPtr(), spawnerConfig);
 			pool = make_shared<Pool>(bg.safe.get(), spawnerFactory);
 			bg.start();
 			callback = boost::bind(&ApplicationPool2_PoolTest::_callback, this, _1, _2);
@@ -50,6 +55,11 @@ namespace tut {
 			clearAllSessions();
 			setLogLevel(0);
 			SystemTime::releaseAll();
+		}
+
+		void initPoolDebugging() {
+			pool->initDebugging();
+			debug = pool->debugSupport;
 		}
 		
 		void clearAllSessions() {
@@ -275,28 +285,29 @@ namespace tut {
 		
 		// Here we test the case in which the existing process becomes
 		// available first.
+		initPoolDebugging();
 		
 		// Spawn a regular process and keep its session open.
 		Options options = createOptions();
-		pool->asyncGet(options, callback);
-		EVENTUALLY(5,
-			result = number == 1;
-		);
-		SessionPtr session1 = currentSession;
-		ProcessPtr process1 = currentSession->getProcess();
+		debug->messages->send("Proceed with spawn loop iteration 1");
+		SessionPtr session1 = pool->get(options, &ticket);
+		ProcessPtr process1 = session1->getProcess();
 		currentSession.reset();
 		
 		// Now spawn a process that never finishes.
-		SpawnerPtr spawner = process1->getGroup()->spawner;
-		dynamic_pointer_cast<DummySpawner>(spawner)->spawnTime = 5000000;
 		pool->asyncGet(options, callback);
 		
 		// Release the session on the first process.
 		session1.reset();
 		
-		ensure_equals("The callback should have been called twice now", number, 2);
+		ensure_equals("The callback should have been called now", number, 1);
 		ensure_equals("The first process handled the second asyncGet() request",
 			currentSession->getProcess(), process1);
+
+		debug->messages->send("Proceed with spawn loop iteration 2");
+		EVENTUALLY(5,
+			result = number == 1;
+		);
 	}
 	
 	TEST_METHOD(6) {
@@ -374,7 +385,7 @@ namespace tut {
 		options.minProcesses = 2;
 		pool->setMax(2);
 		GroupPtr group = pool->findOrCreateGroup(options);
-		dynamic_pointer_cast<DummySpawner>(group->spawner)->concurrency = 2;
+		spawnerConfig->concurrency = 2;
 		{
 			LockGuard l(pool->syncher);
 			group->spawn();
@@ -428,8 +439,7 @@ namespace tut {
 		options.appGroupName = "test";
 		options.minProcesses = 2;
 		pool->setMax(2);
-		GroupPtr group = pool->findOrCreateGroup(options);
-		dynamic_pointer_cast<DummySpawner>(group->spawner)->concurrency = 2;
+		spawnerConfig->concurrency = 2;
 		
 		vector<SessionPtr> sessions;
 		int expectedNumber = 1;
@@ -478,7 +488,7 @@ namespace tut {
 		options.minProcesses = 2;
 		pool->setMax(3);
 		GroupPtr group = pool->findOrCreateGroup(options);
-		dynamic_pointer_cast<DummySpawner>(group->spawner)->concurrency = 2;
+		spawnerConfig->concurrency = 2;
 		
 		vector<SessionPtr> sessions;
 		int expectedNumber = 1;
@@ -497,7 +507,7 @@ namespace tut {
 		
 		// The next asyncGet() should spawn a new process and the action should be queued.
 		ScopedLock l(pool->syncher);
-		dynamic_pointer_cast<DummySpawner>(group->spawner)->spawnTime = 5000000;
+		spawnerConfig->spawnTime = 5000000;
 		pool->asyncGet(options, callback, false);
 		ensure(group->spawning());
 		ensure_equals(group->getWaitlist.size(), 1u);
@@ -520,7 +530,7 @@ namespace tut {
 		options.minProcesses = 2;
 		pool->setMax(3);
 		GroupPtr group = pool->findOrCreateGroup(options);
-		dynamic_pointer_cast<DummySpawner>(group->spawner)->concurrency = 2;
+		spawnerConfig->concurrency = 2;
 		
 		vector<SessionPtr> sessions;
 		int expectedNumber = 1;
@@ -637,7 +647,6 @@ namespace tut {
 		// If there were waiters in the group then those waiters will be satisfied after
 		// capacity has become free.
 		Options options = createOptions();
-		Ticket ticket;
 		pool->setMax(2);
 		
 		// Get from /foo and retain its session.
@@ -711,7 +720,7 @@ namespace tut {
 		Options options = createOptions();
 		options.appGroupName = "test";
 		pool->setMax(1);
-		pool->spawnerFactory->dummySpawnTime = 1000000;
+		spawnerConfig->spawnTime = 1000000;
 
 		pool->asyncGet(options, callback);
 		EVENTUALLY(5,
@@ -734,6 +743,10 @@ namespace tut {
 			ensure_equals(pool->superGroups.get("test")->defaultGroup->enabledCount, 0);
 			ensure_equals(pool->superGroups.get("test")->defaultGroup->getWaitlist.size(), 1u);
 		}
+
+		EVENTUALLY(5,
+			result = number == 2;
+		);
 	}
 	
 	TEST_METHOD(32) {
@@ -742,8 +755,9 @@ namespace tut {
 		// by the waiters.
 		Options options = createOptions();
 		options.appGroupName = "test";
+		options.minProcesses = 0;
 		pool->setMax(1);
-		pool->spawnerFactory->dummySpawnTime = 30000;
+		spawnerConfig->spawnTime = 30000;
 
 		// Begin spawning a process.
 		pool->asyncGet(options, callback);
@@ -752,7 +766,8 @@ namespace tut {
 		// asyncGet() on another group should now put it on the waiting list.
 		Options options2 = createOptions();
 		options2.appGroupName = "test2";
-		pool->spawnerFactory->dummySpawnTime = 90000;
+		options2.minProcesses = 0;
+		spawnerConfig->spawnTime = 90000;
 		pool->asyncGet(options2, callback);
 		{
 			LockGuard l(pool->syncher);
@@ -772,6 +787,9 @@ namespace tut {
 			ensure(pool->superGroups.get("test2") != NULL);
 			ensure_equals(pool->getWaitlist.size(), 0u);
 		}
+		EVENTUALLY(5,
+			result = number == 2;
+		);
 	}
 	
 	TEST_METHOD(33) {
@@ -817,14 +835,12 @@ namespace tut {
 		// Disabling the sole process in a group should trigger a new process spawn.
 		ensureMinProcesses(1);
 		Options options = createOptions();
-		Ticket ticket;
 		SessionPtr session = pool->get(options, &ticket);
 
 		ensure_equals(pool->getProcessCount(), 1u);
 		ensure(!pool->isSpawning());
 
-		GroupPtr group = session->getProcess()->getGroup();
-		dynamic_pointer_cast<DummySpawner>(group->spawner)->spawnTime = 60000;
+		spawnerConfig->spawnTime = 60000;
 		AtomicInt code = -1;
 		TempThread thr(boost::bind(&ApplicationPool2_PoolTest::disableProcess,
 			this, session->getProcess(), &code));
@@ -834,17 +850,104 @@ namespace tut {
 		EVENTUALLY(1,
 			result = pool->getProcessCount() == 2u;
 		);
+		ensure_equals((int) code, -1);
 		session.reset();
 		EVENTUALLY(1,
 			result = code == (int) DR_SUCCESS;
 		);
 	}
 
-	// If there are no enabled processes in the group, then disabling should
-	// succeed after the new process has been spawned.
-	// Suppose that a previous disable command triggered a new process spawn,
-	// and the spawn fails. Then any disabling processes should become enabled
-	// again, and the callbacks for the previous disable commands should be called.
+	TEST_METHOD(42) {
+		// If there are no enabled processes in the group, then disabling should
+		// succeed after the new process has been spawned.
+		initPoolDebugging();
+		debug->messages->send("Proceed with spawn loop iteration 1");
+		debug->messages->send("Proceed with spawn loop iteration 2");
+
+		Options options = createOptions();
+		SessionPtr session1 = pool->get(options, &ticket);
+		SessionPtr session2 = pool->get(options, &ticket);
+		ensure_equals(pool->getProcessCount(), 2u);
+		GroupPtr group = session1->getGroup();
+
+		AtomicInt code1 = -1, code2 = -1;
+		TempThread thr(boost::bind(&ApplicationPool2_PoolTest::disableProcess,
+			this, session1->getProcess(), &code1));
+		TempThread thr2(boost::bind(&ApplicationPool2_PoolTest::disableProcess,
+			this, session2->getProcess(), &code2));
+		EVENTUALLY(2,
+			LockGuard l(pool->syncher);
+			result = group->enabledCount == 0
+				&& group->disablingCount == 2
+				&& group->disabledCount == 0;
+		);
+		session1.reset();
+		session2.reset();
+		SHOULD_NEVER_HAPPEN(20,
+			result = code1 != -1 || code2 != -1;
+		);
+
+		debug->messages->send("Proceed with spawn loop iteration 3");
+		EVENTUALLY(5,
+			result = code1 == DR_SUCCESS;
+		);
+		EVENTUALLY(5,
+			result = code2 == DR_SUCCESS;
+		);
+		{
+			LockGuard l(pool->syncher);
+			ensure_equals(group->enabledCount, 1);
+			ensure_equals(group->disablingCount, 0);
+			ensure_equals(group->disabledCount, 2);
+		}
+	}
+
+	TEST_METHOD(43) {
+		// Suppose that a previous disable command triggered a new process spawn,
+		// and the spawn fails. Then any disabling processes should become enabled
+		// again, and the callbacks for the previous disable commands should be called.
+		initPoolDebugging();
+		debug->messages->send("Proceed with spawn loop iteration 1");
+		debug->messages->send("Proceed with spawn loop iteration 2");
+
+		Options options = createOptions();
+		options.minProcesses = 2;
+		SessionPtr session1 = pool->get(options, &ticket);
+		SessionPtr session2 = pool->get(options, &ticket);
+		ensure_equals(pool->getProcessCount(), 2u);
+
+		AtomicInt code1 = -1, code2 = -1;
+		TempThread thr(boost::bind(&ApplicationPool2_PoolTest::disableProcess,
+			this, session1->getProcess(), &code1));
+		TempThread thr2(boost::bind(&ApplicationPool2_PoolTest::disableProcess,
+			this, session2->getProcess(), &code2));
+		EVENTUALLY(2,
+			GroupPtr group = session1->getGroup();
+			LockGuard l(pool->syncher);
+			result = group->enabledCount == 0
+				&& group->disablingCount == 2
+				&& group->disabledCount == 0;
+		);
+		SHOULD_NEVER_HAPPEN(20,
+			result = code1 != -1 || code2 != -1;
+		);
+
+		setLogLevel(-2);
+		debug->messages->send("Fail spawn loop iteration 3");
+		EVENTUALLY(5,
+			result = code1 == DR_ERROR;
+		);
+		EVENTUALLY(5,
+			result = code2 == DR_ERROR;
+		);
+		{
+			GroupPtr group = session1->getGroup();
+			LockGuard l(pool->syncher);
+			ensure_equals(group->enabledCount, 2);
+			ensure_equals(group->disablingCount, 0);
+			ensure_equals(group->disabledCount, 0);
+		}
+	}
 
 	// asyncGet() should not select a disabling process if there are enabled processes.
 	// asyncGet() should not select a disabling process when non-rolling restarting.
@@ -865,7 +968,6 @@ namespace tut {
 		// callback being called after disabling is done.
 		ensureMinProcesses(2);
 		Options options = createOptions();
-		Ticket ticket;
 		SessionPtr session = pool->get(options, &ticket);
 
 		AtomicInt code = -1;
@@ -1054,7 +1156,7 @@ namespace tut {
 		options.appRoot = "tmp.wsgi";
 		options.appType = "wsgi";
 		options.spawnMethod = "direct";
-		spawnerFactory->forwardStderr = false;
+		spawnerConfig->forwardStderr = false;
 
 		writeFile("tmp.wsgi/passenger_wsgi.py",
 			"import sys\n"
@@ -1080,7 +1182,7 @@ namespace tut {
 		options.appType = "wsgi";
 		options.spawnMethod = "direct";
 		options.minProcesses = 4;
-		spawnerFactory->forwardStderr = false;
+		spawnerConfig->forwardStderr = false;
 
 		writeFile("tmp.wsgi/counter", "0");
 		// Our application starts successfully the first two times,
@@ -1176,7 +1278,6 @@ namespace tut {
 
 	TEST_METHOD(71) {
 		// A process is detached after processing maxRequests sessions.
-		Ticket ticket;
 		Options options = createOptions();
 		options.minProcesses = 0;
 		options.maxRequests = 5;
@@ -1203,46 +1304,28 @@ namespace tut {
 		// If we restart while spawning is in progress, then the spawn
 		// loop will exit as soon as it has detected that we're restarting.
 		TempDirCopy dir("stub/wsgi", "tmp.wsgi");
-		spawnerFactory->dummySpawnTime = 20000;
-		spawnerFactory->dummySpawnerCreationSleepTime = 100000;
-
+		initPoolDebugging();
 		Options options = createOptions();
 		options.appRoot = "tmp.wsgi";
 		options.minProcesses = 3;
 
-		// Trigger spawn loop. The spawn loop itself won't take longer than 3*20=60 msec.
-		pool->findOrCreateGroup(options);
-		ScopedLock l(pool->syncher);
-		pool->asyncGet(options, callback, false);
-		// Wait until spawn loop tries to grab the lock.
-		EVENTUALLY(3,
-			LockGuard l2(pool->debugSyncher);
-			result = pool->spawnLoopIteration == 1;
-		);
-		l.unlock();
-
-		// At this point, the spawn loop is about to attach its first spawned
-		// process to the group. We wait until it has succeeded doing so.
-		// Remaining maximum time in the spawn loop: 2*20=40 msec.
-		EVENTUALLY2(200, 0,
-			result = pool->getProcessCount() == 1;
-		);
-
-		// Trigger restart. It will immediately detach the sole process in the pool,
-		// and it will finish after approximately 100 msec,
-		// allowing the spawn loop to detect that the restart flag is true.
-		touchFile("tmp.wsgi/tmp/restart.txt");
+		// Trigger spawn loop and freeze it at the point where it's spawning a process.
 		pool->asyncGet(options, callback);
-		ensure_equals("(1)", pool->getProcessCount(), 0u);
+		debug->debugger->recv("Begin spawn loop iteration 1");
 
-		// The spawn loop will succeed at spawning the second process.
-		// Upon attaching it, it should detect the restart the stop,
-		// so that it never spawns the third process.
-		SHOULD_NEVER_HAPPEN(300,
-			LockGuard l2(pool->debugSyncher);
-			result = pool->spawnLoopIteration > 2;
-		);
-		ensure_equals("(2)", pool->getProcessCount(), 1u);
+		// Trigger restart, freeze the restart procedure, then let spawn loop continue.
+		touchFile("tmp.wsgi/tmp/restart.txt", 1);
+		pool->asyncGet(options, callback);
+		debug->debugger->recv("About to end restarting");
+		debug->messages->send("Proceed with spawn loop iteration 1");
+
+		// The spawn loop will succeed at spawning this process.
+		// After the spawn loop attaches the process, it should detect the
+		// restart and stop, so that it never spawns the second and third processes.
+		debug->debugger->recv("Spawn loop done");
+		ensure_equals(debug->debugger->peek("At spawn loop iteration 2"), MessagePtr());
+		ensure_equals(debug->debugger->peek("At spawn loop iteration 3"), MessagePtr());
+		ensure_equals("(1)", pool->getProcessCount(), 1u);
 	}
 
 	TEST_METHOD(73) {
@@ -1261,7 +1344,7 @@ namespace tut {
 		);
 		
 		// Trigger a restart. The creation of the new spawner should take a while.
-		spawnerFactory->dummySpawnerCreationSleepTime = 20000;
+		spawnerConfig->spawnerCreationSleepTime = 20000;
 		touchFile("tmp.wsgi/tmp/restart.txt");
 		pool->asyncGet(options, callback);
 		GroupPtr group = pool->findOrCreateGroup(options);
@@ -1285,7 +1368,7 @@ namespace tut {
 		options.appRoot = "tmp.wsgi";
 		options.appType = "wsgi";
 		options.spawnMethod = "direct";
-		spawnerFactory->forwardStderr = false;
+		spawnerConfig->forwardStderr = false;
 		pool->setMax(1);
 
 		writeFile("tmp.wsgi/passenger_wsgi.py",
@@ -1336,7 +1419,7 @@ namespace tut {
 		options.appType = "wsgi";
 		options.spawnMethod = "direct";
 		options.minProcesses = 2;
-		spawnerFactory->forwardStderr = false;
+		spawnerConfig->forwardStderr = false;
 
 		// Spawn 2 processes.
 		retainSessions = true;
@@ -1353,7 +1436,6 @@ namespace tut {
 			"sys.stderr.write('Something went wrong!')\n"
 			"exit(1)\n");
 		try {
-			Ticket ticket;
 			setLogLevel(-2);
 			currentSession = pool->get(options, &ticket);
 			fail("SpawnException expected");
@@ -1434,13 +1516,18 @@ namespace tut {
 
 	TEST_METHOD(82) {
 		// Test ignoreSpawnErrors and get().
+		initPoolDebugging();
 		TempDirCopy c1("stub/wsgi", "tmp.wsgi");
 		Options options = createOptions();
 		options.appRoot = "tmp.wsgi";
 		options.appType = "wsgi";
 		options.spawnMethod = "direct";
 		options.ignoreSpawnErrors = true;
-		spawnerFactory->forwardStderr = false;
+		spawnerConfig->forwardStderr = false;
+
+		debug->messages->send("Proceed with spawn loop iteration 1");
+		debug->messages->send("Proceed with spawn loop iteration 2");
+		debug->messages->send("Proceed with spawn loop iteration 3");
 		
 		// Spawn a process.
 		Ticket ticket;
@@ -1458,10 +1545,7 @@ namespace tut {
 		pool->asyncGet(options, callback);
 		
 		// The pool will eventually notice that spawning has failed...
-		EVENTUALLY(4,
-			LockGuard l(pool->debugSyncher);
-			result = pool->spawnErrors == 1;
-		);
+		debug->debugger->recv("Spawn error 1");
 		// Now the asyncGet() is just waiting until the first process becomes available...
 		ensure_equals("(1)", (int) number, 0);
 
@@ -1475,8 +1559,7 @@ namespace tut {
 			"	return ['hello world']\n");
 		pool->asyncGet(options, callback);
 		SHOULD_NEVER_HAPPEN(500,
-			LockGuard l(pool->debugSyncher);
-			result = pool->spawnLoopIteration != 2;
+			result = debug->debugger->peek("Begin spawn loop iteration 3") != NULL;
 		);
 		ensure_equals("(2)", (int) number, 0);
 
@@ -1486,6 +1569,7 @@ namespace tut {
 		
 		// Until the user explicitly restarts the app.
 		touchFile("tmp.wsgi/tmp/restart.txt");
+		debug->messages->send("Finish restarting");
 		SessionPtr session2 = pool->get(options, &ticket);
 		ensure("(3)", session2->getPid() != session1Pid);
 		ensure_equals("(4)", pool->getProcessCount(), 1u);
@@ -1493,6 +1577,7 @@ namespace tut {
 
 	TEST_METHOD(83) {
 		// Test ignoreSpawnErrors and rolling restarts.
+		initPoolDebugging();
 		TempDirCopy c1("stub/wsgi", "tmp.wsgi");
 		Options options = createOptions();
 		options.appRoot = "tmp.wsgi";
@@ -1500,7 +1585,12 @@ namespace tut {
 		options.spawnMethod = "direct";
 		options.rollingRestart = true;
 		options.ignoreSpawnErrors = true;
-		spawnerFactory->forwardStderr = false;
+		spawnerConfig->forwardStderr = false;
+
+		debug->messages->send("Proceed with spawn loop iteration 1");
+		debug->messages->send("Proceed with spawn loop iteration 2");
+		debug->messages->send("Proceed with spawn loop iteration 3");
+		debug->messages->send("Finish restarting");
 		
 		// Spawn 3 processes.
 		Ticket ticket;
@@ -1527,10 +1617,7 @@ namespace tut {
 		// It will eventually fail.
 		setLogLevel(-2);
 		pool->asyncGet(options, callback);
-		EVENTUALLY(4,
-			LockGuard l(pool->debugSyncher);
-			result = pool->spawnErrors == 1;
-		);
+		debug->debugger->recv("Spawn error 1");
 		EVENTUALLY(2,
 			result = number == 1;
 		);

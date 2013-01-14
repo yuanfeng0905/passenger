@@ -91,6 +91,9 @@ private:
 	static string generateSecret(const SuperGroupPtr &superGroup);
 	void onSessionInitiateFailure(const ProcessPtr &process, Session *session);
 	void onSessionClose(const ProcessPtr &process, Session *session);
+	void lockAndAsyncOOBWRequestIfNeeded(const ProcessPtr &process, DisableResult result, GroupPtr self);
+	void asyncOOBWRequestIfNeeded(const ProcessPtr &process);
+	void spawnThreadOOBWRequest(GroupPtr self, ProcessPtr process);
 	void spawnThreadMain(GroupPtr self, SpawnerPtr spawner, Options options);
 	void spawnThreadRealMain(const SpawnerPtr &spawner, const Options &options);
 	void finalizeRestart(GroupPtr self, Options options, SpawnerFactoryPtr spawnerFactory,
@@ -344,6 +347,8 @@ private:
 			const DisableWaiter &waiter = *it;
 			const ProcessPtr process = waiter.process;
 			// A process can appear multiple times in disableWaitlist.
+			assert(process->enabled == Process::DISABLING
+				|| process->enabled == Process::ENABLED);
 			if (process->enabled == Process::DISABLING) {
 				removeProcessFromList(process, disablingProcesses);
 				addProcessToList(process, enabledProcesses);
@@ -370,10 +375,12 @@ private:
 	}
 
 	void clearDisableWaitlist(DisableResult result, vector<Callback> &postLockActions) {
+		// This function may be called after processes in the disableWaitlist
+		// have been disabled or enabled, so do not assume any value for
+		// waiter.process->enabled in this function.
 		postLockActions.reserve(postLockActions.size() + disableWaitlist.size());
 		while (!disableWaitlist.empty()) {
 			const DisableWaiter &waiter = disableWaitlist.front();
-			assert(waiter.process->enabled == Process::DISABLING);
 			postLockActions.push_back(boost::bind(waiter.callback, waiter.process, result));
 			disableWaitlist.pop_front();
 		}
@@ -470,6 +477,10 @@ public:
 	 */
 	queue<GetWaiter> getWaitlist;
 	/**
+	 * Disable() commands that couldn't finish immediately will put their callbacks
+	 * in this queue. Note that there may be multiple DisableWaiters pointing to the
+	 * same Process.
+	 *
 	 * Invariant:
 	 *    disableWaitlist.size() >= disablingCount
 	 */
@@ -540,7 +551,7 @@ public:
 				}
 			}
 
-			getWaitlist.push(GetWaiter(newOptions, callback));
+			getWaitlist.push(GetWaiter(newOptions.copyAndPersist().clearLogger(), callback));
 			P_DEBUG("No session checked out yet: group is spawning or restarting");
 			return SessionPtr();
 		} else {
@@ -551,7 +562,7 @@ public:
 				 * Wait until a new one has been spawned or until
 				 * resources have become free.
 				 */
-				getWaitlist.push(GetWaiter(newOptions, callback));
+				getWaitlist.push(GetWaiter(newOptions.copyAndPersist().clearLogger(), callback));
 				P_DEBUG("No session checked out yet: all processes are at full capacity");
 				return SessionPtr();
 			} else {
@@ -581,6 +592,9 @@ public:
 		return getSuperGroup() == NULL;
 	}
 	
+	// Thread-safe.
+	void requestOOBW(const ProcessPtr &process);
+	
 	/**
 	 * Attaches the given process to this Group and mark it as enabled. This
 	 * function doesn't touch getWaitlist so be sure to fix its invariants
@@ -603,11 +617,16 @@ public:
 			// The same process can appear multiple times in disableWaitlist.
 			assert(process2->enabled == Process::DISABLING
 				|| process2->enabled == Process::DISABLED);
-			if (process2->enabled == Process::DISABLING && process2->sessions == 0) {
-				P_DEBUG("Disabling DISABLING process " << process2->inspect() <<
-					"; disable command succeeded immediately");
-				removeProcessFromList(process2, disablingProcesses);
-				addProcessToList(process2, disabledProcesses);
+			if (process2->sessions == 0) {
+				if (process2->enabled == Process::DISABLING) {
+					P_DEBUG("Disabling DISABLING process " << process2->inspect() <<
+						"; disable command succeeded immediately");
+					removeProcessFromList(process2, disablingProcesses);
+					addProcessToList(process2, disabledProcesses);
+				} else {
+					P_DEBUG("Disabling (already disabled) DISABLING process " <<
+						process2->inspect() << "; disable command succeeded immediately");
+				}
 				postLockActions.push_back(boost::bind(waiter.callback, process2, DR_SUCCESS));
 			} else {
 				newDisableWaitlist.push_back(waiter);

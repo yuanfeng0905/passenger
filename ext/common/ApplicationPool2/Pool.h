@@ -37,6 +37,7 @@
 #include <RandomGenerator.h>
 #include <Utils/Lock.h>
 #include <Utils/SystemTime.h>
+#include <Utils/MessagePassing.h>
 #include <Utils/VariantMap.h>
 #include <Utils/ProcessMetricsCollector.h>
 
@@ -72,7 +73,26 @@ public:
 	typedef UnionStation::LoggerFactory LoggerFactory;
 	typedef UnionStation::LoggerFactoryPtr LoggerFactoryPtr;
 	typedef UnionStation::LoggerPtr LoggerPtr;
-	
+
+	struct DebugSupport {
+		MessageBoxPtr debugger;
+		MessageBoxPtr messages;
+
+		// The following fields may only be accessed by Pool.
+		boost::mutex syncher;
+		unsigned int spawnLoopIteration;
+		unsigned int spawnErrors;
+
+		DebugSupport() {
+			debugger = make_shared<MessageBox>();
+			messages = make_shared<MessageBox>();
+			spawnLoopIteration = 0;
+			spawnErrors = 0;
+		}
+	};
+
+	typedef shared_ptr<DebugSupport> DebugSupportPtr;
+
 	SpawnerFactoryPtr spawnerFactory;
 	LoggerFactoryPtr loggerFactory;
 	RandomGeneratorPtr randomGenerator;
@@ -137,10 +157,8 @@ public:
 	 */
 	vector<GetWaiter> getWaitlist;
 
-	mutable boost::mutex debugSyncher;
-	unsigned short spawnLoopIteration;
-	unsigned short spawnErrors;
-	
+	DebugSupportPtr debugSupport;
+
 	bool restarterThreadActive;
 	string restarterThreadStatus;
 
@@ -556,9 +574,11 @@ public:
 			} catch (const tracable_exception &e) {
 				UPDATE_TRACE_POINT();
 
-				{
-					LockGuard l(debugSyncher);
-					spawnErrors++;
+				if (debugSupport != NULL) {
+					LockGuard g(debugSupport->syncher);
+					debugSupport->spawnErrors++;
+					debugSupport->debugger->send("Spawn error " +
+						toString(debugSupport->spawnErrors));
 				}
 
 				l.lock();
@@ -941,9 +961,6 @@ public:
 		analyticsCollectionTimer.set(3.0, 0.0);
 		libev->start(analyticsCollectionTimer);
 
-		spawnLoopIteration = 0;
-		spawnErrors = false;
-
 		// The following code only serve to instantiate certain inline methods
 		// so that they can be invoked from gdb.
 		(void) SuperGroupPtr().get();
@@ -955,6 +972,11 @@ public:
 	~Pool() {
 		TRACE_POINT();
 		destroy();
+	}
+
+	void initDebugging() {
+		LockGuard l(syncher);
+		debugSupport = make_shared<DebugSupport>();
 	}
 
 	void destroy() {
@@ -1054,7 +1076,9 @@ public:
 				 * become available.
 				 */
 				P_DEBUG("Could not free a process; putting request to top-level getWaitlist");
-				getWaitlist.push_back(GetWaiter(options, callback));
+				getWaitlist.push_back(GetWaiter(
+					options.copyAndPersist().clearLogger(),
+					callback));
 			} else {
 				GroupPtr group;
 				SuperGroupPtr superGroup;

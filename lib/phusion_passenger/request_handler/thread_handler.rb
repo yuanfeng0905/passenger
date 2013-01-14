@@ -41,6 +41,7 @@ class ThreadHandler
 
 	REQUEST_METHOD = 'REQUEST_METHOD'.freeze
 	PING           = 'PING'.freeze
+	OOBW           = 'OOBW'.freeze
 	PASSENGER_CONNECT_PASSWORD  = 'PASSENGER_CONNECT_PASSWORD'.freeze
 	MAX_REQUEST_TIME            = 'PASSENGER_MAX_REQUEST_TIME'.freeze
 
@@ -135,6 +136,8 @@ private
 			begin
 				if headers[REQUEST_METHOD] == PING
 					process_ping(headers, connection)
+				elsif headers[REQUEST_METHOD] == OOBW
+					process_oobw(headers, connection)
 				else
 					process_request(headers, connection, @protocol == :http)
 				end
@@ -260,6 +263,11 @@ private
 
 	def process_ping(env, connection)
 		connection.write("pong")
+	end
+
+	def process_oobw(env, connection)
+		PhusionPassenger.call_event(:oob_work)
+		connection.write("oobw done")
 	end
 
 #	def process_request(env, connection, full_http_response)

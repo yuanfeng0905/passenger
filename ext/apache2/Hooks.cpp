@@ -1269,8 +1269,8 @@ public:
 			serverConfig.root, "ruby", serverConfig.maxPoolSize,
 			serverConfig.maxInstancesPerApp, serverConfig.poolIdleTime,
 			"",
-			serverConfig.analyticsLogDir, serverConfig.analyticsLogUser,
-			serverConfig.analyticsLogGroup, serverConfig.analyticsLogPermissions,
+			serverConfig.analyticsLogUser,
+			serverConfig.analyticsLogGroup,
 			serverConfig.unionStationGatewayAddress,
 			serverConfig.unionStationGatewayPort,
 			serverConfig.unionStationGatewayCert,
@@ -1616,11 +1616,11 @@ init_module(apr_pool_t *pconf, apr_pool_t *plog, apr_pool_t *ptemp, server_rec *
 		
 		fprintf(stderr, "Output of 'uname -a' follows:\n");
 		fflush(stderr);
-		system("uname -a >&2");
+		::system("uname -a >&2");
 		
 		fprintf(stderr, "\nOutput of 'ulimit -a' follows:\n");
 		fflush(stderr);
-		system("ulimit -a >&2");
+		::system("ulimit -a >&2");
 		
 		return DECLINED;
 		

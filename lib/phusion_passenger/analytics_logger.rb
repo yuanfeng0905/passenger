@@ -35,6 +35,10 @@ class AnalyticsLogger
 		end
 		
 		def message(text)
+			if !@connection
+				DebugLogging.trace(3, "[Union Station log to null] #{@txn_id} #{timestamp_string} #{text}")
+				return
+			end
 			@connection.synchronize do
 				return if !@connection.connected?
 				begin
@@ -49,7 +53,7 @@ class AnalyticsLogger
 					@connection.disconnect
 					raise e
 				end
-			end if @connection
+			end
 		end
 		
 		def begin_measure(name, extra_info = nil)
@@ -102,6 +106,7 @@ class AnalyticsLogger
 		
 		def close(flush_to_disk = false)
 			@connection.synchronize do
+				return if !@connection.connected?
 				begin
 					# We need an ACK here. See abstract_request_handler.rb finalize_request.
 					@connection.channel.write("closeTransaction", @txn_id,

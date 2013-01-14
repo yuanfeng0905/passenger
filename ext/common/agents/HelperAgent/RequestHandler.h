@@ -674,6 +674,11 @@ private:
 		client->clientOutputPipe->write(header.data(), header.size());
 		client->clientOutputPipe->write(data.data(), data.size());
 		client->clientOutputPipe->end();
+
+		if (client->useUnionStation()) {
+			client->logMessage("Status: 500 Internal Server Error");
+			// TODO: record error message
+		}
 	}
 
 
@@ -882,6 +887,13 @@ private:
 			}
 		}
 
+		if (client->useUnionStation()) {
+			Header status = lookupHeader(headerData, "Status", "status");
+			string message = "Status: ";
+			message.append(status.value);
+			client->logMessage(message);
+		}
+
 		// Process chunked transfer encoding.
 		Header transferEncoding = lookupHeader(headerData, "Transfer-Encoding", "transfer-encoding");
 		if (!transferEncoding.empty() && transferEncoding.value == "chunked") {
@@ -895,6 +907,16 @@ private:
 			headerData.append("X-Powered-By: Phusion Passenger " PASSENGER_VERSION "\r\n");
 		} else {
 			headerData.append("X-Powered-By: Phusion Passenger\r\n");
+		}
+
+		// Detect out of band work request
+		Header oobw = lookupHeader(headerData, "X-Passenger-Request-OOB-Work", "x-passenger-request-oob-work");
+		if (!oobw.empty()) {
+			P_TRACE(3, "Response with oobw detected.");
+			if (client->session != NULL) {
+				client->session->requestOOBW();
+			}
+			removeHeader(headerData, oobw);
 		}
 
 		headerData.append("\r\n");
@@ -1812,14 +1834,6 @@ private:
 
 
 	/******* State: SENDING_HEADER_TO_APP *******/
-
-	static StaticString makeStaticStringWithNull(const char *data) {
-		return StaticString(data, strlen(data) + 1);
-	}
-
-	static StaticString makeStaticStringWithNull(const string &data) {
-		return StaticString(data.c_str(), data.size() + 1);
-	}
 
 	void state_sendingHeaderToApp_verifyInvariants(const ClientPtr &client) {
 		assert(!client->clientInput->isStarted());
