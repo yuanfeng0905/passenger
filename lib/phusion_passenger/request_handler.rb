@@ -447,6 +447,16 @@ private
 			:memory_limit => @memory_limit
 		)
 
+		# Used for marking threads that have finished initializing,
+		# or failed during initialization. Threads that are not yet done
+		# are not in `initialization_state`. Threads that have succeeded
+		# set their own state to true. Threads that have failed set their
+		# own state to false.
+		initialization_state_mutex = Mutex.new
+		initialization_state_cond = ConditionVariable.new
+		initialization_state = {}
+
+		# Actually start all the threads.
 		thread_handler = @thread_handler
 		@threads_mutex.synchronize do
 			@concurrency.times do |i|
@@ -456,8 +466,16 @@ private
 						Thread.current[:name] = "Worker #{number + 1}"
 						handler = thread_handler.new(self, main_socket_options)
 						handler.install
+						initialization_state_mutex.synchronize do
+							initialization_state[Thread.current] = true
+							initialization_state_cond.signal
+						end
 						handler.main_loop
 					ensure
+						initialization_state_mutex.synchronize do
+							initialization_state[Thread.current] = false
+							initialization_state_cond.signal
+						end
 						unregister_current_thread
 					end
 				end
@@ -476,6 +494,13 @@ private
 				end
 			end
 			@threads << thread
+		end
+
+		# Wait until all threads have finished starting.
+		initialization_state_mutex.synchronize do
+			while initialization_state.size != @concurrency
+				initialization_state_cond.wait(initialization_state_mutex)
+			end
 		end
 	end
 
