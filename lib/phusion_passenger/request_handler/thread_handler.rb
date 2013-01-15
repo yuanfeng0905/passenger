@@ -1,5 +1,5 @@
 #  Phusion Passenger - https://www.phusionpassenger.com/
-#  Copyright (c) 2010-2012 Phusion
+#  Copyright (c) 2010-2013 Phusion
 #
 #  "Phusion Passenger" is a trademark of Hongli Lai & Ninh Bui.
 #
@@ -78,6 +78,7 @@ class ThreadHandler
 	def install
 		Thread.current[:handler] = self
 		install_robust_interruption
+		PhusionPassenger.call_event(:starting_request_handler_thread)
 	end
 
 	def main_loop
@@ -148,7 +149,7 @@ private
 			if @analytics_logger && headers && headers[PASSENGER_TXN_ID]
 				log_analytics_exception(headers, e)
 			end
-			raise e
+			raise e if should_reraise_error?(e)
 		end
 	ensure
 		# The 'close_write' here prevents forked child
@@ -369,6 +370,11 @@ private
 		ensure
 			log.close
 		end
+	end
+
+	def should_reraise_error?(e)
+		# Stubable by unit tests.
+		return true
 	end
 end
 
