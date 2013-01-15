@@ -147,7 +147,7 @@ class RequestHandler
 
 		@async_irb_socket_address, @async_irb_socket = create_unix_socket_on_filesystem
 		@server_sockets[:async_irb] = {
-			:address     => "unix:#{@async_irb_socket_address}",
+			:address     => @async_irb_socket_address,
 			:socket      => @async_irb_socket,
 			:protocol    => :irb,
 			:concurrency => 0
@@ -674,14 +674,16 @@ private
 	end
 	
 	def stop_async_irb_server
-		@async_irb_thread.join
-		threads = @async_irb_worker_threads
-		@async_irb_mutex.synchronize do
-			@async_irb_worker_threads = []
-		end
-		threads.each do |thread|
-			thread.terminate
-			thread.join
+		if @async_irb_worker_threads
+			@async_irb_thread.join
+			threads = @async_irb_worker_threads
+			@async_irb_mutex.synchronize do
+				@async_irb_worker_threads = []
+			end
+			threads.each do |thread|
+				thread.terminate
+				thread.join
+			end
 		end
 	end
 end

@@ -371,35 +371,19 @@ describe RequestHandler do
 	############################
 	
 	it "exits if memory usage exceeds 'memory_limit'" do
+		@request_handler.soft_termination_linger_time = 0
 		@request_handler.memory_limit = 1
 		@request_handler.start_main_loop_thread
+		client = connect
 		begin
-			channel = MessageChannel.new(connect)
-			channel.write_scalar("REQUEST_METHOD\0PING\0")
+			send_binary_request(client,
+				"REQUEST_METHOD" => "PING")
+			client.read
 			eventually do
 				!@request_handler.main_loop_running?
 			end
-			@request_handler.processed_requests.should == 1
 		ensure
-			client.close rescue nil
-		end
-	end
-	
-	specify "the irb socket works" do
-		@request_handler.connect_password = "1234"
-		@request_handler.start_main_loop_thread
-		socket = connect(:irb)
-		begin
-			channel = MessageChannel.new(socket)
-			channel.write_scalar("1234")
-			channel.read.should == ["ok"]
-			
-			channel.write_scalar("1 + 2 * 3")
-			header, body = channel.read
-			header.should == "end"
-			body.unpack('m').first.should == "=> 7"
-		ensure
-			socket.close
+			client.close
 		end
 	end
 	
