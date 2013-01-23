@@ -1,6 +1,6 @@
 /*
  *  Phusion Passenger - https://www.phusionpassenger.com/
- *  Copyright (c) 2010, 2011, 2012 Phusion
+ *  Copyright (c) 2010-2013 Phusion
  *
  *  "Phusion Passenger" is a trademark of Hongli Lai & Ninh Bui.
  *
@@ -23,7 +23,7 @@
 #include <string>
 #include <exception>
 #include <stdexcept>
-#include <iomanip>
+#include <ios>
 #include <ostream>
 #include <sstream>
 #include <cstdio>
@@ -41,48 +41,27 @@ using namespace oxt;
 /********** Debug logging facilities **********/
 
 extern int _logLevel;
-extern ostream *_logStream;
+extern int _logOutput;
 
 int getLogLevel();
 void setLogLevel(int value);
-void setDebugFile(const char *logFile = NULL);
+bool setDebugFile(const char *logFile = NULL);
+void _prepareLogEntry(std::stringstream &sstream);
+void _writeLogEntry(const std::string &str);
 
-/**
- * Write the given expression to the given stream.
- *
- * @param expr The expression to write.
- * @param stream A pointer to an object that accepts the '<<' operator.
- */
-#define P_LOG_TO(level, expr, stream) \
-	do { \
-		if (stream != 0 && Passenger::_logLevel >= level) { \
-			time_t the_time;			\
-			struct tm the_tm;			\
-			char datetime_buf[60];			\
-			struct timeval tv;			\
-			std::stringstream sstream;              \
-								\
-			the_time = time(NULL);			\
-			localtime_r(&the_time, &the_tm);	\
-			strftime(datetime_buf, sizeof(datetime_buf) - 1, "%F %H:%M:%S", &the_tm); \
-			gettimeofday(&tv, NULL); \
-			sstream << \
-				"[ pid=" << ((unsigned long) getpid()) <<  \
-				" thr=" << pthread_self() << \
-				" file=" << __FILE__ << ":" << (unsigned long) __LINE__ << \
-				" time=" << datetime_buf << "." << std::setfill('0') << std::setw(4) << \
-					(unsigned long) (tv.tv_usec / 100) << \
-				" ]: " << \
-				expr << std::endl;	\
-			*stream << sstream.str();		\
-			stream->flush();			\
-		} \
-	} while (false)
 
 /**
  * Write the given expression to the log stream.
  */
-#define P_LOG(level, expr) P_LOG_TO(level, expr, Passenger::_logStream)
+#define P_LOG(level, expr) \
+	do { \
+		if (Passenger::_logLevel >= level) { \
+			std::stringstream sstream; \
+			Passenger::_prepareLogEntry(sstream); \
+			sstream << expr << "\n"; \
+			Passenger::_writeLogEntry(sstream.str()); \
+		} \
+	} while (false)
 
 /**
  * Write the given expression, which represents a warning,
@@ -109,7 +88,7 @@ void setDebugFile(const char *logFile = NULL);
 #define P_DEBUG(expr) P_TRACE(1, expr)
 
 #ifdef PASSENGER_DEBUG
-	#define P_TRACE(level, expr) P_LOG_TO(level, expr, Passenger::_logStream)
+	#define P_TRACE(level, expr) P_LOG(level, expr)
 #else
 	#define P_TRACE(level, expr) do { /* nothing */ } while (false)
 #endif

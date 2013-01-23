@@ -276,7 +276,7 @@ namespace tut {
 	}
 	
 	TEST_METHOD(5) {
-		// If one matching process already exists but it's at full capacity,
+		// If one matching process already exists but it's at full utilization,
 		// and the limits and pool capacity allow spawning of a new process,
 		// then get() will put the get action on the group's wait
 		// queue while spawning a process in the background.
@@ -292,7 +292,6 @@ namespace tut {
 		debug->messages->send("Proceed with spawn loop iteration 1");
 		SessionPtr session1 = pool->get(options, &ticket);
 		ProcessPtr process1 = session1->getProcess();
-		currentSession.reset();
 		
 		// Now spawn a process that never finishes.
 		pool->asyncGet(options, callback);
@@ -300,7 +299,9 @@ namespace tut {
 		// Release the session on the first process.
 		session1.reset();
 		
-		ensure_equals("The callback should have been called now", number, 1);
+		EVENTUALLY(1,
+			result = number == 1;
+		);
 		ensure_equals("The first process handled the second asyncGet() request",
 			currentSession->getProcess(), process1);
 
@@ -844,7 +845,7 @@ namespace tut {
 		AtomicInt code = -1;
 		TempThread thr(boost::bind(&ApplicationPool2_PoolTest::disableProcess,
 			this, session->getProcess(), &code));
-		EVENTUALLY2(30, 1,
+		EVENTUALLY2(100, 1,
 			result = pool->isSpawning();
 		);
 		EVENTUALLY(1,
@@ -1185,6 +1186,7 @@ namespace tut {
 		spawnerConfig->forwardStderr = false;
 
 		writeFile("tmp.wsgi/counter", "0");
+		chmod("tmp.wsgi/counter", 0666);
 		// Our application starts successfully the first two times,
 		// and fails all the other times.
 		writeFile("tmp.wsgi/passenger_wsgi.py",
@@ -1364,6 +1366,7 @@ namespace tut {
 	TEST_METHOD(74) {
 		// If a process fails to spawn, it sends a SpawnException result to all get waiters.
 		TempDirCopy dir("stub/wsgi", "tmp.wsgi");
+		chmod("tmp.wsgi", 0777);
 		Options options = createOptions();
 		options.appRoot = "tmp.wsgi";
 		options.appType = "wsgi";

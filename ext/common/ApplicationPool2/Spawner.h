@@ -1,6 +1,6 @@
 /*
  *  Phusion Passenger - https://www.phusionpassenger.com/
- *  Copyright (c) 2011, 2012 Phusion
+ *  Copyright (c) 2011-2013 Phusion
  *
  *  "Phusion Passenger" is a trademark of Hongli Lai & Ninh Bui.
  *
@@ -85,29 +85,6 @@ namespace ApplicationPool2 {
 using namespace std;
 using namespace boost;
 using namespace oxt;
-
-
-struct SpawnerConfig {
-	// Used by SmartSpawner and DirectSpawner.
-	/** Whether to forward the preloader process's stdout to our stdout. */
-	bool forwardStdout;
-	/** Whether to forward the preloader process's stderr to our stderr. */
-	bool forwardStderr;
-
-	// Used by DummySpawner and SpawnerFactory.
-	unsigned int concurrency;
-	unsigned int spawnerCreationSleepTime;
-	unsigned int spawnTime;
-
-	SpawnerConfig()
-		: forwardStdout(true),
-		  forwardStderr(true),
-		  concurrency(1),
-		  spawnerCreationSleepTime(0),
-		  spawnTime(0)
-		{ }
-};
-typedef shared_ptr<SpawnerConfig> SpawnerConfigPtr;
 
 
 class Spawner {
@@ -317,6 +294,7 @@ protected:
 		FileDescriptor errorPipe;
 		const Options *options;
 		bool forwardStderr;
+		int forwardStderrTo;
 		DebugDirPtr debugDir;
 		
 		// Working state.
@@ -330,6 +308,7 @@ protected:
 			pid = 0;
 			options = NULL;
 			forwardStderr = false;
+			forwardStderrTo = STDERR_FILENO;
 			spawnStartTime = 0;
 			timeout = 0;
 		}
@@ -347,6 +326,7 @@ protected:
 		DebugDirPtr debugDir;
 		const Options *options;
 		bool forwardStderr;
+		int forwardStderrTo;
 
 		// Working state.
 		unsigned long long timeout;
@@ -354,6 +334,7 @@ protected:
 		StartupDetails() {
 			options = NULL;
 			forwardStderr = false;
+			forwardStderrTo = STDERR_FILENO;
 			timeout = 0;
 		}
 	};
@@ -499,7 +480,7 @@ private:
 			details.gupid, details.connectPassword,
 			details.adminSocket, details.errorPipe,
 			sockets, creationTime, details.spawnStartTime,
-			details.forwardStderr);
+			config);
 	}
 	
 protected:
@@ -650,7 +631,7 @@ protected:
 					details.stderrCapturer->appendToBuffer(result);
 				}
 				if (details.forwardStderr) {
-					write(STDOUT_FILENO, result.data(), result.size());
+					write(details.forwardStderrTo, result.data(), result.size());
 				}
 			}
 		}
@@ -871,27 +852,30 @@ protected:
 
 	void switchUser(const SpawnPreparationInfo &info) {
 		if (info.switchUser) {
+			bool setgroupsCalled = false;
 			#ifdef HAVE_GETGROUPLIST
-				if (setgroups(info.ngroups, info.gidset.get()) == -1) {
-					int e = errno;
-					printf("!> Error\n");
-					printf("!> \n");
-					printf("setgroups(%d, ...) failed: %s (errno=%d)\n",
-						info.ngroups, strerror(e), e);
-					fflush(stdout);
-					_exit(1);
-				}
-			#else
-				if (initgroups(info.username.c_str(), info.gid) == -1) {
-					int e = errno;
-					printf("!> Error\n");
-					printf("!> \n");
-					printf("initgroups() failed: %s (errno=%d)\n",
-						strerror(e), e);
-					fflush(stdout);
-					_exit(1);
+				if (info.ngroups <= NGROUPS_MAX) {
+					setgroupsCalled = true;
+					if (setgroups(info.ngroups, info.gidset.get()) == -1) {
+						int e = errno;
+						printf("!> Error\n");
+						printf("!> \n");
+						printf("setgroups(%d, ...) failed: %s (errno=%d)\n",
+							info.ngroups, strerror(e), e);
+						fflush(stdout);
+						_exit(1);
+					}
 				}
 			#endif
+			if (!setgroupsCalled && initgroups(info.username.c_str(), info.gid) == -1) {
+				int e = errno;
+				printf("!> Error\n");
+				printf("!> \n");
+				printf("initgroups() failed: %s (errno=%d)\n",
+					strerror(e), e);
+				fflush(stdout);
+				_exit(1);
+			}
 			if (setgid(info.gid) == -1) {
 				int e = errno;
 				printf("!> Error\n");
@@ -1197,7 +1181,7 @@ private:
 		if (ret <= 0) {
 			preloaderOutputWatcher.stop();
 		} else if (config->forwardStdout) {
-			write(STDOUT_FILENO, buf, ret);
+			write(config->forwardStdoutTo, buf, ret);
 		}
 	}
 
@@ -1368,12 +1352,13 @@ private:
 			details.stderrCapturer =
 				make_shared<BackgroundIOCapturer>(
 					errorPipe.first,
-					config->forwardStderr ? STDERR_FILENO : -1);
+					config->forwardStderr ? config->forwardStderrTo : -1);
 			details.stderrCapturer->start();
 			details.debugDir = debugDir;
 			details.options = &options;
 			details.timeout = options.startTimeout * 1000;
 			details.forwardStderr = config->forwardStderr;
+			details.forwardStderrTo = config->forwardStderrTo;
 			
 			{
 				this_thread::restore_interruption ri(di);
@@ -1389,7 +1374,8 @@ private:
 			libev->start(preloaderOutputWatcher);
 			setNonBlocking(errorPipe.first);
 			preloaderErrorWatcher = make_shared<PipeWatcher>(libev,
-				errorPipe.first, config->forwardStderr ? STDERR_FILENO : -1);
+				errorPipe.first,
+				config->forwardStderr ? config->forwardStderrTo : -1);
 			preloaderErrorWatcher->start();
 			preloaderAnnotations = debugDir->readAll();
 			P_DEBUG("Preloader for " << options.appRoot <<
@@ -1868,6 +1854,7 @@ public:
 		details.io = result.io;
 		details.options = &options;
 		details.forwardStderr = config->forwardStderr;
+		details.forwardStderrTo = config->forwardStderrTo;
 		ProcessPtr process = negotiateSpawn(details);
 		P_DEBUG("Process spawning done: appRoot=" << options.appRoot <<
 			", pid=" << process->pid);
@@ -2089,7 +2076,7 @@ public:
 			details.stderrCapturer =
 				make_shared<BackgroundIOCapturer>(
 					errorPipe.first,
-					config->forwardStderr ? STDERR_FILENO : -1);
+					config->forwardStderr ? config->forwardStderrTo : -1);
 			details.stderrCapturer->start();
 			details.pid = pid;
 			details.adminSocket = adminSocket.second;
@@ -2097,6 +2084,7 @@ public:
 			details.errorPipe = errorPipe.first;
 			details.options = &options;
 			details.forwardStderr = config->forwardStderr;
+			details.forwardStderrTo = config->forwardStderrTo;
 			details.debugDir = debugDir;
 			
 			ProcessPtr process;

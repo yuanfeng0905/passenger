@@ -34,6 +34,7 @@ module Packaging
 	# A list of globs which match all files that should be packaged
 	# in the Phusion Passenger gem or tarball.
 	GLOB = [
+		'.travis.yml',
 		'configure',
 		'Rakefile',
 		'README.md',
@@ -71,6 +72,7 @@ module Packaging
 		'resources/**/*',
 		'test/.rspec',
 		'test/*.example',
+		'test/*.travis',
 		'test/support/*.{c,cpp,h,rb}',
 		'test/tut/*',
 		'test/cxx/**/*.{cpp,h}',

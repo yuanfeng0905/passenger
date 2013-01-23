@@ -85,11 +85,13 @@ class ThreadHandler
 		socket_wrapper = Utils::UnseekableSocket.new
 		channel        = MessageChannel.new
 		buffer         = ''
+		buffer.force_encoding('binary') if buffer.respond_to?(:force_encoding)
 		
 		begin
 			disable_interruptions do
 				while !Utils::RobustInterruption.interrupted?
-					accept_and_process_next_request(socket_wrapper, channel, buffer)
+					hijacked = accept_and_process_next_request(socket_wrapper, channel, buffer)
+					socket_wrapper = Utils::UnseekableSocket.new if hijacked
 					if @memory_limit > 0
 						mem_usage = @memory_measurer.measure
 						if mem_usage && mem_usage > @memory_limit
@@ -110,6 +112,7 @@ class ThreadHandler
 	end
 
 private
+	# Returns true if the socket has been hijacked, false otherwise.
 	def accept_and_process_next_request(socket_wrapper, channel, buffer)
 		@stats_mutex.synchronize { @iterations += 1 }
 		connection = enable_interruptions { socket_wrapper.wrap(@server_socket.accept) }
@@ -130,6 +133,11 @@ private
 				has_error = true
 				raise
 			ensure
+				if headers[RACK_HIJACK_IO]
+					socket_wrapper = nil
+					connection = nil
+					channel = nil
+				end
 				finalize_request(headers, has_error)
 				trace(3, "Request done.")
 			end
@@ -137,14 +145,13 @@ private
 			trace(2, "No headers parsed; disconnecting client.")
 		end
 	rescue => e
-		if socket_wrapper.source_of_exception?(e)
+		if socket_wrapper && socket_wrapper.source_of_exception?(e)
 			# EPIPE is harmless, it just means that the client closed the connection.
 			# Other errors might indicate a problem so we print them, but they're
 			# probably not bad enough to warrant stopping the request handler.
 			if !e.is_a?(Errno::EPIPE)
 				Utils.print_exception("Passenger RequestHandler's client socket", e)
 			end
-			return true
 		else
 			if @analytics_logger && headers && headers[PASSENGER_TXN_ID]
 				log_analytics_exception(headers, e)

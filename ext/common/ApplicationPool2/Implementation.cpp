@@ -25,7 +25,7 @@ using namespace oxt;
 
 
 template<typename T>
-bool
+static bool
 exceptionIsInstanceOf(const tracable_exception &e) {
 	try {
 		(void) dynamic_cast<T>(e);
@@ -517,6 +517,7 @@ Group::spawnThreadRealMain(const SpawnerPtr &spawner, const Options &options) {
 	while (!done) {
 		bool shouldFail = false;
 		if (debug != NULL) {
+			UPDATE_TRACE_POINT();
 			this_thread::restore_interruption ri(di);
 			this_thread::restore_syscall_interruption rsi(dsi);
 			this_thread::interruption_point();
@@ -629,7 +630,9 @@ Group::spawnThreadRealMain(const SpawnerPtr &spawner, const Options &options) {
 		UPDATE_TRACE_POINT();
 		pool->fullVerifyInvariants();
 		lock.unlock();
+		UPDATE_TRACE_POINT();
 		runAllActions(actions);
+		UPDATE_TRACE_POINT();
 	}
 
 	if (debug != NULL) {

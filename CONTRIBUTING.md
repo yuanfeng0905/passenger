@@ -43,7 +43,10 @@ You can contribute by answering support questions on the [community discussion f
 
 Phusion Passenger is mostly written in C++, but the build system and various small helper scripts are in Ruby. The loaders for each supported language is written in the respective language.
 
-The source code is filled with inline comments, so look there if you want to understand how things work. We also have dedicated documents on some topics and for some subsystems. For example, you should read ext/common/ApplicationPool2/README.md if you're interesting in working on the ApplicationPool and Spawner subsystems.
+The source code is filled with inline comments, so look there if you want to understand how things work. We also have dedicated documents on some topics and for some subsystems. Some interesting documents are:
+
+ * ext/common/ApplicationPool2/README.md - If you're interesting in the ApplicationPool and Spawner subsystems.
+ * doc/DebuggingAndStressTesting.md
 
 ### Compilation and build system
 
@@ -75,6 +78,15 @@ The `test:cxx` unit test suite contains many different test groups. You can run 
 
     rake test:cxx GROUPS='ApplicationPool2_PoolTest,UtilsTest'
 
+You can also run just a single test within a suite. Pass the relevant test number like this:
+
+    rake test:cxx GROUPS='ApplicationPool2_PoolTest:82'
+
+You can also run the C++ tests in GDB or Valgrind. We have a useful GDB config file in `test/gdbinit.example`. You should copy it to `test/.gdbinit` and edit it.
+
+    rake test:cxx GDB=1
+    rake test:cxx VALGRIND=1
+
 Run just the unit tests for the Ruby components:
 
     rake test:ruby
@@ -85,10 +97,7 @@ Run just the integration tests:
     rake test:integration:apache2    # Just integration tests for Apache 2.
     rake test:integration:nginx      # Just integration tests for Nginx.
 
-Notes:
-
- * Some tests, such as the ones that test privilege lowering, require root privileges. Those will only be run if Rake is run as root.
- * Some tests will be run against multiple Rails versions in order to test compatibility. This can take a long time. If you want to test against only a single Rails version, then set the environment variable `ONLY_RAILS_VERSION` to one of the subdirectory names in `test/stub/rails_apps`, e.g. `export ONLY_RAILS_VERSION=2.3`.
+Note that some tests, such as the ones that test privilege lowering, require root privileges. Those will only be run if Rake is run as root.
 
 ### Directory structure
 
