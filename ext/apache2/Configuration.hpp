@@ -457,7 +457,6 @@ struct ServerConfig {
 	int unionStationGatewayPort;
 	string unionStationGatewayCert;
 	string unionStationProxyAddress;
-	string unionStationProxyType;
 	
 	/** Directory in which analytics logs should be saved. */
 	string analyticsLogUser;
@@ -506,13 +505,6 @@ struct ServerConfig {
 			}
 			
 			defaultGroup = groupEntry->gr_name;
-		}
-		
-		if (unionStationProxyType != ""
-		 && unionStationProxyType != "http"
-		 && unionStationProxyType != "socks5") {
-			throw ConfigurationException(string("The option 'UnionStationProxyType' ") +
-				"may only be set to 'http' or 'socks5'.");
 		}
 	}
 };

@@ -1,6 +1,6 @@
 /*
  *  Phusion Passenger - https://www.phusionpassenger.com/
- *  Copyright (c) 2010-2012 Phusion
+ *  Copyright (c) 2010-2013 Phusion
  *
  *  "Phusion Passenger" is a trademark of Hongli Lai & Ninh Bui.
  *
@@ -369,7 +369,6 @@ public:
 	           unsigned short unionStationGatewayPort,
 	           const string &unionStationGatewayCert,
 	           const string &unionStationProxyAddress,
-	           const string &unionStationProxyType,
 	           const set<string> &prestartURLs,
 	           const function<void ()> &afterFork = function<void ()>())
 	{
@@ -410,7 +409,6 @@ public:
 			.setInt ("union_station_gateway_port", unionStationGatewayPort)
 			.set    ("union_station_gateway_cert", realUnionStationGatewayCert)
 			.set    ("union_station_proxy_address", unionStationProxyAddress)
-			.set    ("union_station_proxy_type",   unionStationProxyType)
 			.set    ("prestart_urls",   serializePrestartURLs(prestartURLs));
 		
 		SocketPair fds;
