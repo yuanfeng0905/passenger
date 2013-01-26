@@ -1,6 +1,6 @@
 /*
  *  Phusion Passenger - http://www.modrails.com/
- *  Copyright (c) 2012 Phusion
+ *  Copyright (c) 2012-2013 Phusion
  *
  *  "Phusion Passenger" is a trademark of Hongli Lai & Ninh Bui.
  *
@@ -9,8 +9,10 @@
 
 #include <sys/types.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include "MD5.h"
+#include "License.h"
 
 #ifdef __cplusplus
 namespace Passenger {
@@ -18,13 +20,8 @@ namespace Passenger {
 
 #define MAX_LICENSE_LINES 30
 #define LICENSE_SECRET "An error occurred while fetching this page. Please contact an administrator if this problem persists."
-#define APPEAL_MESSAGE \
- 	"We kindly ask you not to try to crack this software or to obtain it illegally. " \
- 	"We're trying to make a living out of this and the profits are used to fund the development of the " \
- 	"open source version of Phusion Passenger. We can only do this with your support. If you don't have " \
- 	"a valid license, please buy it from www.phusionpassenger.com.\n" \
- 	"Thank you for your support.\n" \
- 	"- Hongli, Ninh, and the rest of the Phusion team"
+
+char *licenseKey = (char *) 0;
 
 static md5_byte_t
 hexNibbleToByte(char hexNibble) {
@@ -35,23 +32,28 @@ hexNibbleToByte(char hexNibble) {
 	}
 }
 
-static char *
+char *
 passenger_enterprise_license_check() {
 	FILE *f;
 	char *lines[MAX_LICENSE_LINES];
 	char line[1024];
 	unsigned int count = 0, i;
 	char *message = NULL;
-	size_t len;
+	size_t len, totalSize = 0;
 	struct md5_state_s md5;
 	md5_byte_t digest[MD5_SIZE], readDigest[MD5_SIZE], *readDigestCursor;
 	const char *data, *dataEnd;
+	char *dataEnd2;
+
+	if (licenseKey != NULL) {
+		return strdup("License key already checked.");
+	}
 
 	f = fopen("/etc/passenger-enterprise-license", "r");
 	if (f == NULL) {
 		return strdup("Could not open the Passenger Enterprise Server license file. "
 			"Please check whether it's installed correctly and whether it's world-readable.\n"
-			APPEAL_MESSAGE);
+			CRACK_APPEAL_MESSAGE);
 	}
 
 	while (1) {
@@ -59,7 +61,7 @@ passenger_enterprise_license_check() {
 			if (ferror(f)) {
 				message = strdup(
 					"An I/O error occurred while reading the Passenger Enterprise Server license file.\n"
-					APPEAL_MESSAGE);
+					CRACK_APPEAL_MESSAGE);
 				goto finish;
 			} else {
 				break;
@@ -69,17 +71,18 @@ passenger_enterprise_license_check() {
 		len = strlen(line);
 		if (len == 0 || line[len - 1] != '\n' || count >= MAX_LICENSE_LINES) {
 			message = strdup("The Passenger Enterprise Server license file appears to be corrupted. Please reinstall it.\n"
-				APPEAL_MESSAGE);
+				CRACK_APPEAL_MESSAGE);
 			goto finish;
 		}
 
 		lines[count] = strdup(line);
 		count++;
+		totalSize += len;
 	}
 
 	if (count == 0) {
 		message = strdup("The Passenger Enterprise Server license file appears to be corrupted. Please reinstall it.\n"
-			APPEAL_MESSAGE);
+			CRACK_APPEAL_MESSAGE);
 		goto finish;
 	}
 
@@ -104,9 +107,18 @@ passenger_enterprise_license_check() {
 
 	if (memcmp(digest, readDigest, MD5_SIZE) != 0) {
 		message = strdup("The Passenger Enterprise Server license file is invalid.\n"
-			APPEAL_MESSAGE);
+			CRACK_APPEAL_MESSAGE);
 		goto finish;
 	}
+
+	licenseKey = (char *) malloc(totalSize + 1);
+	dataEnd2 = licenseKey;
+	for (i = 0; i < count - 1; i++) {
+		len = strlen(lines[i]);
+		memcpy(dataEnd2, lines[i], len);
+		dataEnd2 += len;
+	}
+	*dataEnd2 = '\0';
 
 	finish:
 	fclose(f);
