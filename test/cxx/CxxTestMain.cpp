@@ -17,6 +17,7 @@
 #include <Utils/IOUtils.h>
 #include <Utils/StrIntUtils.h>
 #include <Utils/json.h>
+#include <Utils/License.c>
 
 using namespace std;
 
@@ -169,6 +170,7 @@ main(int argc, char *argv[]) {
 	setenv("PYTHONDONTWRITEBYTECODE", "1", 1);
 	unsetenv("PASSENGER_TMPDIR");
 	unsetenv("PASSENGER_TEMP_DIR");
+	Passenger::passenger_enterprise_license_check();
 	oxt::initialize();
 	oxt::setup_syscall_interruption_support();
     

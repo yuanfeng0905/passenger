@@ -184,7 +184,11 @@ TEST_CXX_OBJECTS = {
 		ext/common/Utils/IOUtils.h),
 	'test/cxx/TemplateTest.o' => %w(
 		test/cxx/TemplateTest.cpp
-		ext/common/Utils/Template.h)
+		ext/common/Utils/Template.h),
+	
+	'test/cxx/CloudUsageTrackerTest.o' => %w(
+		test/cxx/CloudUsageTrackerTest.cpp
+		ext/common/CloudUsageTracker.h)
 }
 
 dependencies = [

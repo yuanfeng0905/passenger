@@ -128,6 +128,11 @@ passenger_enterprise_license_check() {
 	return message;
 }
 
+int
+passenger_enterprise_on_cloud_license() {
+	return strstr(licenseKey, "Cloud license") != NULL;
+}
+
 #ifdef __cplusplus
 } // namespace Passenger
 #endif

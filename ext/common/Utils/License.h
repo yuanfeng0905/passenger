@@ -25,6 +25,7 @@ namespace Passenger {
 extern char *licenseKey;
 
 char *passenger_enterprise_license_check();
+int passenger_enterprise_on_cloud_license();
 
 #ifdef __cplusplus
 } // namespace Passenger
