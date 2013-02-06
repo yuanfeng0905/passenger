@@ -1,7 +1,8 @@
 #!/usr/bin/env ruby
 FILES = Dir[
 	"bin/*",
-	"ext/{apache2,common,nginx,phusion_passenger}/**/*.{c,cpp,h,hpp}",
+	"build/*.rb",
+	"ext/{apache2,common,nginx,ruby}/**/*.{c,cpp,h,hpp}",
 	"helper-scripts/*",
 	"lib/**/*.rb",
 	"lib/**/*.py",
