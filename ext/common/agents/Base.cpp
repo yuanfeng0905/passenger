@@ -80,7 +80,8 @@ static bool stopOnAbort = false;
 static char *alternativeStack;
 static unsigned int alternativeStackSize;
 
-static unsigned int randomSeed;
+static volatile unsigned int abortHandlerCalled = 0;
+static unsigned int randomSeed = 0;
 static const char *argv0 = NULL;
 static const char *backtraceSanitizerPath = NULL;
 static bool backtraceSanitizerUseShell = false;
@@ -237,6 +238,9 @@ appendSignalName(char *buf, int signo) {
 		break;
 	case SIGFPE:
 		buf = appendText(buf, "SIGFPE");
+		break;
+	case SIGILL:
+		buf = appendText(buf, "SIGILL");
 		break;
 	default:
 		return appendULL(buf, (unsigned long long) signo);
@@ -631,6 +635,40 @@ abortHandler(int signo, siginfo_t *info, void *ctx) {
 	pid_t child;
 	time_t t = time(NULL);
 	char crashLogFile[256];
+
+	abortHandlerCalled++;
+	if (abortHandlerCalled > 1) {
+		// The abort handler itself crashed!
+		char *end = state.messageBuf;
+		end = appendText(end, "[ origpid=");
+		end = appendULL(end, (unsigned long long) state.pid);
+		end = appendText(end, ", pid=");
+		end = appendULL(end, (unsigned long long) getpid());
+		end = appendText(end, ", timestamp=");
+		end = appendULL(end, (unsigned long long) t);
+		if (abortHandlerCalled == 2) {
+			// This is the first time it crashed.
+			end = appendText(end, " ] Abort handler crashed! signo=");
+			end = appendSignalName(end, state.signo);
+			end = appendText(end, ", reason=");
+			end = appendSignalReason(end, state.info);
+			end = appendText(end, "\n");
+			write(STDERR_FILENO, state.messageBuf, end - state.messageBuf);
+			// Run default signal handler.
+			raise(signo);
+		} else {
+			// This is the second time it crashed, meaning it failed to
+			// invoke the default signal handler to abort the process!
+			end = appendText(end, " ] Abort handler crashed again! Force exiting this time. signo=");
+			end = appendSignalName(end, state.signo);
+			end = appendText(end, ", reason=");
+			end = appendSignalReason(end, state.info);
+			end = appendText(end, "\n");
+			write(STDERR_FILENO, state.messageBuf, end - state.messageBuf);
+			_exit(1);
+		}
+		return;
+	}
 
 	/* We want to dump the entire crash log to both stderr and a log file.
 	 * We use 'tee' for this.

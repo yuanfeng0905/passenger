@@ -1,10 +1,11 @@
 #  Phusion Passenger - https://www.phusionpassenger.com/
-#  Copyright (c) 2010 Phusion
+#  Copyright (c) 2010-2012 Phusion
 #
 #  See LICENSE file for license information.
 require 'mkmf'
 $LIBS = ""
 $CFLAGS << " -g"
+$LIBS << " -lpthread" if RUBY_PLATFORM =~ /openbsd/
 
 if RUBY_PLATFORM =~ /solaris/
 	have_library('xnet')
