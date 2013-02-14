@@ -198,8 +198,11 @@ public:
 	}
 
 	void fullVerifyInvariants() const {
+		TRACE_POINT();
 		verifyInvariants();
+		UPDATE_TRACE_POINT();
 		verifyExpensiveInvariants();
+		UPDATE_TRACE_POINT();
 		StringMap<SuperGroupPtr>::const_iterator sg_it, sg_end = superGroups.end();
 		for (sg_it = superGroups.begin(); sg_it != sg_end; sg_it++) {
 			pair<StaticString, SuperGroupPtr> p = *sg_it;
@@ -774,6 +777,31 @@ public:
 		}
 	}
 
+	static void collectPids(const ProcessList &processes, vector<pid_t> &pids) {
+		foreach (const ProcessPtr &process, processes) {
+			pids.push_back(process->pid);
+		}
+	}
+
+	static void updateProcessMetrics(const ProcessList &processes,
+		const ProcessMetricMap &allMetrics,
+		vector<ProcessPtr> &processesToDetach)
+	{
+		foreach (const ProcessPtr &process, processes) {
+			ProcessMetricMap::const_iterator metrics_it =
+				allMetrics.find(process->pid);
+			if (metrics_it != allMetrics.end()) {
+				process->metrics = metrics_it->second;
+			// If the process is missing from 'allMetrics' then either 'ps'
+			// failed or the process really is gone. We double check by sending
+			// it a signal.
+			} else if (syscalls::kill(process->pid, 0) == -1 && errno == ESRCH) {
+				P_WARN("Process " << process->inspect() << " no longer exists! Detaching it from the pool.");
+				processesToDetach.push_back(process);
+			}
+		}
+	}
+
 	void realCollectAnalytics(ev::timer &timer) {
 		PoolPtr self = shared_from_this(); // Keep pool object alive.
 		TRACE_POINT();
@@ -800,24 +828,9 @@ public:
 
 				for (g_it = superGroup->groups.begin(); g_it != g_end; g_it++) {
 					const GroupPtr &group = *g_it;
-					ProcessList::const_iterator p_it, p_end = group->enabledProcesses.end();
-
-					for (p_it = group->enabledProcesses.begin(); p_it != p_end; p_it++) {
-						const ProcessPtr &process = *p_it;
-						pids.push_back(process->pid);
-					}
-
-					p_end = group->disablingProcesses.end();
-					for (p_it = group->disablingProcesses.begin(); p_it != p_end; p_it++) {
-						const ProcessPtr &process = *p_it;
-						pids.push_back(process->pid);
-					}
-
-					p_end = group->disabledProcesses.end();
-					for (p_it = group->disabledProcesses.begin(); p_it != p_end; p_it++) {
-						const ProcessPtr &process = *p_it;
-						pids.push_back(process->pid);
-					}
+					collectPids(group->enabledProcesses, pids);
+					collectPids(group->disablingProcesses, pids);
+					collectPids(group->disabledProcesses, pids);
 				}
 			}
 		}
@@ -836,6 +849,8 @@ public:
 		{
 			UPDATE_TRACE_POINT();
 			vector<ProcessAnalyticsLogEntryPtr> logEntries;
+			vector<ProcessPtr> processesToDetach;
+			vector<Callback> actions;
 			ScopedLock l(syncher);
 			SuperGroupMap::iterator sg_it, sg_end = superGroups.end();
 			
@@ -846,36 +861,10 @@ public:
 
 				for (g_it = superGroup->groups.begin(); g_it != g_end; g_it++) {
 					const GroupPtr &group = *g_it;
-					ProcessList::iterator p_it, p_end = group->enabledProcesses.end();
 
-					for (p_it = group->enabledProcesses.begin(); p_it != p_end; p_it++) {
-						ProcessPtr &process = *p_it;
-						ProcessMetricMap::const_iterator metrics_it =
-							allMetrics.find(process->pid);
-						if (metrics_it != allMetrics.end()) {
-							process->metrics = metrics_it->second;
-						}
-					}
-
-					p_end = group->disablingProcesses.end();
-					for (p_it = group->disablingProcesses.begin(); p_it != p_end; p_it++) {
-						ProcessPtr &process = *p_it;
-						ProcessMetricMap::const_iterator metrics_it =
-							allMetrics.find(process->pid);
-						if (metrics_it != allMetrics.end()) {
-							process->metrics = metrics_it->second;
-						}
-					}
-
-					p_end = group->disabledProcesses.end();
-					for (p_it = group->disabledProcesses.begin(); p_it != p_end; p_it++) {
-						ProcessPtr &process = *p_it;
-						ProcessMetricMap::const_iterator metrics_it =
-							allMetrics.find(process->pid);
-						if (metrics_it != allMetrics.end()) {
-							process->metrics = metrics_it->second;
-						}
-					}
+					updateProcessMetrics(group->enabledProcesses, allMetrics, processesToDetach);
+					updateProcessMetrics(group->disablingProcesses, allMetrics, processesToDetach);
+					updateProcessMetrics(group->disabledProcesses, allMetrics, processesToDetach);
 
 					// Log to Union Station.
 					if (group->options.analytics && loggerFactory != NULL) {
@@ -891,7 +880,15 @@ public:
 				}
 			}
 
+			UPDATE_TRACE_POINT();
+			foreach (const ProcessPtr process, processesToDetach) {
+				detachProcessUnlocked(process, actions);
+			}
+			UPDATE_TRACE_POINT();
+			processesToDetach.clear();
+
 			l.unlock();
+			UPDATE_TRACE_POINT();
 			while (!logEntries.empty()) {
 				ProcessAnalyticsLogEntryPtr entry = logEntries.back();
 				logEntries.pop_back();
@@ -899,6 +896,12 @@ public:
 					"processes", entry->key);
 				logger->message(entry->data.str());
 			}
+
+			UPDATE_TRACE_POINT();
+			runAllActions(actions);
+			UPDATE_TRACE_POINT();
+			// Run destructors with updated trace point.
+			actions.clear();
 		}
 		
 		end:
@@ -1437,6 +1440,9 @@ public:
 			if (group != NULL) {
 				result << group->name << ":" << endl;
 				result << "  App root: " << group->options.appRoot << endl;
+				if (group->restarting()) {
+					result << "  (restarting...)" << endl;
+				}
 				if (group->spawning()) {
 					result << "  (spawning new process...)" << endl;
 				}
@@ -1464,6 +1470,19 @@ public:
 		result << "<max>" << max << "</max>";
 		result << "<utilization>" << utilization(false) << "</utilization>";
 		result << "<get_wait_list_size>" << getWaitlist.size() << "</get_wait_list_size>";
+
+		if (includeSecrets) {
+			vector<GetWaiter>::const_iterator w_it, w_end = getWaitlist.end();
+
+			result << "<get_wait_list>";
+			for (w_it = getWaitlist.begin(); w_it != w_end; w_it++) {
+				const GetWaiter &waiter = *w_it;
+				result << "<item>";
+				result << "<app_group_name>" << escapeForXml(waiter.options.getAppGroupName()) << "</app_group_name>";
+				result << "</item>";
+			}
+			result << "</get_wait_list>";
+		}
 		
 		result << "<supergroups>";
 		for (sg_it = superGroups.begin(); sg_it != superGroups.end(); sg_it++) {
