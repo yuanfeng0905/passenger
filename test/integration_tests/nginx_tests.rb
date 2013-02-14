@@ -337,6 +337,7 @@ describe "Phusion Passenger for Nginx" do
 				server[:server_name] = "1.passenger.test"
 				server[:root]        = @foobar.full_app_root + "/public"
 				server << %q{
+					passenger_app_group_name one;
 					passenger_memory_limit 75;
 				}
 			end
@@ -344,6 +345,7 @@ describe "Phusion Passenger for Nginx" do
 				server[:server_name] = "2.passenger.test"
 				server[:root]        = @foobar.full_app_root + "/public"
 				server << %q{
+					passenger_app_group_name two;
 					passenger_max_request_time 3;
 				}
 			end
