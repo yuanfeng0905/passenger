@@ -134,6 +134,19 @@ class RequestHandler
 		
 		#############
 
+		if options["debugger"]
+			@server_sockets[:ruby_debug_cmd] = {
+				:address     => "tcp://127.0.0.1:#{Debugger.cmd_port}",
+				:protocol    => :ruby_debug_cmd,
+				:concurrency => 1
+			}
+			@server_sockets[:ruby_debug_ctrl] = {
+				:address     => "tcp://127.0.0.1:#{Debugger.ctrl_port}",
+				:protocol    => :ruby_debug_ctrl,
+				:concurrency => 1
+			}
+		end
+
 		@async_irb_socket_address, @async_irb_socket = create_unix_socket_on_filesystem
 		@server_sockets[:async_irb] = {
 			:address     => @async_irb_socket_address,
