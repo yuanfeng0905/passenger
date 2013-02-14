@@ -1,3 +1,5 @@
+require 'cgi'
+
 app = lambda do |env|
     case env['PATH_INFO']
     when '/hello'
@@ -28,6 +30,17 @@ app = lambda do |env|
         STDOUT.puts "hello stdout!"
         sleep 0.1  # Give HelperAgent the time to process stdout first.
         STDERR.puts "hello stderr!"
+        [200, { "Content-Type" => "text/html" }, ["ok"]]
+    when '/allocate_memory'
+        $global_variable = " " * (1024 * 1024 * 125)
+        [200, { "Content-Type" => "text/html" }, ["ok"]]
+    when '/sleep_until_exists'
+        params = CGI.parse(env['QUERY_STRING'])
+        name = params['name'][0]
+        File.open("waiting_#{name}", 'w')
+        while !File.exist?(name)
+            sleep 0.1
+        end
         [200, { "Content-Type" => "text/html" }, ["ok"]]
     else
         [200, { "Content-Type" => "text/html" }, ["hello <b>world</b>"]]

@@ -331,12 +331,19 @@ describe "Phusion Passenger for Nginx" do
 	
 	describe "enterprise features" do
 		before :all do
-			@foobar = RailsStub.new('2.3/foobar')
+			create_nginx_controller
+			@foobar = RackStub.new('rack')
 			@nginx.add_server do |server|
 				server[:server_name] = "1.passenger.test"
 				server[:root]        = @foobar.full_app_root + "/public"
 				server << %q{
 					passenger_memory_limit 75;
+				}
+			end
+			@nginx.add_server do |server|
+				server[:server_name] = "2.passenger.test"
+				server[:root]        = @foobar.full_app_root + "/public"
+				server << %q{
 					passenger_max_request_time 3;
 				}
 			end
@@ -345,6 +352,7 @@ describe "Phusion Passenger for Nginx" do
 		
 		after :all do
 			@foobar.destroy
+			@nginx.stop if @nginx
 		end
 		
 		before :each do
@@ -353,25 +361,25 @@ describe "Phusion Passenger for Nginx" do
 		
 		specify "if the application's memory usage exceeds passenger_memory_limit, then it will be restarted after it's done with the current request" do
 			@server = "http://1.passenger.test:#{@nginx.port}"
-			pid = get('/foo/pid')
-			get('/foo/allocate_memory').should == 'ok'
+			pid = get('/pid')
+			get('/allocate_memory').should == 'ok'
 			
 			# Application should eventually be restarted.
-			eventually(3) do
-				get('/foo/pid') != pid
+			eventually(6) do
+				get('/pid') != pid
 			end
 		end
 		
 		specify "passenger_max_request_time works" do
-			@server = "http://1.passenger.test:#{@nginx.port}"
+			@server = "http://2.passenger.test:#{@nginx.port}"
 			
-			pid = get('/foo/pid')
+			pid = get('/pid')
 			
 			start_time = Time.now
-			get('/foo/sleep_until_exists?name=nonexistant.txt')
+			get('/sleep_until_exists?name=nonexistant.txt')
 			time_taken = Time.now - start_time
 			
-			new_pid = get('/foo/pid')
+			new_pid = get('/pid')
 			
 			time_taken.should be_between(3, 5)
 			new_pid.should_not == pid

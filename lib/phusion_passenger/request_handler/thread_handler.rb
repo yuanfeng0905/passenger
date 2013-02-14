@@ -11,7 +11,6 @@ require 'phusion_passenger/message_channel'
 require 'phusion_passenger/utils'
 require 'phusion_passenger/utils/unseekable_socket'
 require 'phusion_passenger/utils/robust_interruption'
-require 'phusion_passenger/utils/memory_measurer'
 require 'phusion_passenger/native_support'
 
 module PhusionPassenger
@@ -70,9 +69,6 @@ class ThreadHandler
 		else
 			raise ArgumentError, "Unknown protocol specified"
 		end
-
-		@memory_limit = options[:memory_limit].to_i
-		@memory_measurer = Utils::MemoryMeasurer.new
 	end
 
 	def install
@@ -92,13 +88,6 @@ class ThreadHandler
 				while !Utils::RobustInterruption.interrupted?
 					hijacked = accept_and_process_next_request(socket_wrapper, channel, buffer)
 					socket_wrapper = Utils::UnseekableSocket.new if hijacked
-					if @memory_limit > 0
-						mem_usage = @memory_measurer.measure
-						if mem_usage && mem_usage > @memory_limit
-							warn "*** Exceeded memory limit of #{@memory_limit} MB; shutting down."
-							@request_handler.soft_shutdown
-						end
-					end
 				end
 			end
 		rescue Utils::RobustInterruption::Interrupted

@@ -277,6 +277,12 @@ public:
 	
 	/** The number of seconds that preloader processes may stay alive idling. */
 	long maxPreloaderIdleTime;
+
+	/**
+	 * The maximum amount of memory (in MB) the spawned application may use.
+	 * A value of 0 (the default) means unlimited.
+	 */
+	unsigned long memoryLimit;
 	
 	
 	/*********** Per-request options that should be set manually and that only matter to Pool ***********/
@@ -337,12 +343,6 @@ public:
 	 * A value of 0 (the default) means unspecified, and has no effect.
 	 */
 	unsigned int maxProcesses;
-	
-	/**
-	 * The maximum amount of memory (in MB) the spawned application may use.
-	 * A value of 0 (the default) means unlimited.
-	 */
-	unsigned long memoryLimit;
 	
 	/**
 	 * Whether rolling restarting should be used. Defaults to false.

@@ -792,6 +792,19 @@ public:
 				allMetrics.find(process->pid);
 			if (metrics_it != allMetrics.end()) {
 				process->metrics = metrics_it->second;
+				
+				// Check memory limit.
+				GroupPtr group = process->getGroup();
+				if (group->options.memoryLimit > 0
+				 && process->metrics.realMemory() / 1024 > group->options.memoryLimit)
+				{
+					P_WARN("*** Process " << process->inspect() << " is now using " <<
+						process->metrics.realMemory() / 1024 <<  " MB of memory, "
+						"which exceeds its limit of " << group->options.memoryLimit <<
+						" MB. Shutting it down and detaching it...");
+					processesToDetach.push_back(process);
+				}
+
 			// If the process is missing from 'allMetrics' then either 'ps'
 			// failed or the process really is gone. We double check by sending
 			// it a signal.
