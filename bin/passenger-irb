@@ -113,6 +113,13 @@ def attach_debugger(process)
 		cmd_host, cmd_port   = process.server_sockets[:ruby_debug_cmd].address.sub(/^tcp:\/\//, '').split(/:/, 2)
 		ctrl_host, ctrl_port = process.server_sockets[:ruby_debug_ctrl].address.sub(/^tcp:\/\//, '').split(/:/, 2)
 		rdebug = PlatformInfo.locate_ruby_tool('rdebug')
+		puts "Using Ruby interpreter: #{PlatformInfo.ruby_command}"
+		puts "Using rdebug command  : #{rdebug || 'not found'}"
+		if !rdebug
+			STDERR.puts "*** ERROR: Cannot find 'rdebug' command. Please ensure the 'ruby-debug' " +
+				"(Ruby 1.8) or 'debugger' (Ruby 1.9) gem is installed for this Ruby interpreter."
+			return false
+		end
 		puts "*** Attaching debugger to process #{process.pid}."
 		puts "*** Attaching will succeed as soon as process #{process.pid} reaches a 'debugger' call."
 		puts "*** Press Ctrl-C or Ctrl-D to exit debugger."
