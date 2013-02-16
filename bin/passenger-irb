@@ -116,7 +116,7 @@ def attach_debugger(process)
 		puts "Using Ruby interpreter: #{PlatformInfo.ruby_command}"
 		puts "Using rdebug command  : #{rdebug || 'not found'}"
 		if !rdebug
-			STDERR.puts "*** ERROR: Cannot find 'rdebug' command. Please ensure the 'ruby-debug' " +
+			STDERR.puts "*** ERROR: Cannot find 'rdebug' command. Please ensure that the 'ruby-debug' " +
 				"(Ruby 1.8) or 'debugger' (Ruby 1.9) gem is installed for this Ruby interpreter."
 			return false
 		end
