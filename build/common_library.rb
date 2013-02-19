@@ -5,6 +5,8 @@
 #
 #  See LICENSE file for license information.
 
+require 'phusion_passenger/platform_info/cxx_portability'
+
 ########## Phusion Passenger common library ##########
 
 require 'phusion_passenger/common_library'

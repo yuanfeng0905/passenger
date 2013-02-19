@@ -32,10 +32,10 @@
 #include <UnionStation.h>
 #include <Logging.h>
 #include <SafeLibev.h>
-#include <AnsiColorConstants.h>
 #include <Exceptions.h>
 #include <RandomGenerator.h>
 #include <Utils/Lock.h>
+#include <Utils/AnsiColorConstants.h>
 #include <Utils/SystemTime.h>
 #include <Utils/MessagePassing.h>
 #include <Utils/VariantMap.h>
