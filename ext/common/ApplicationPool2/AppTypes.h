@@ -102,13 +102,13 @@ public:
 
 	PassengerAppType checkDocumentRoot(const StaticString &documentRoot, bool resolveFirstSymlink = false) {
 		if (!resolveFirstSymlink) {
+			return checkAppRoot(extractDirNameStatic(documentRoot));
+		} else {
 			char ntDocRoot[documentRoot.size() + 1];
 			memcpy(ntDocRoot, documentRoot.data(), documentRoot.size());
 			ntDocRoot[documentRoot.size()] = '\0';
 			string resolvedDocumentRoot = resolveSymlink(ntDocRoot);
 			return checkAppRoot(extractDirNameStatic(resolvedDocumentRoot));
-		} else {
-			return checkAppRoot(extractDirNameStatic(documentRoot));
 		}
 	}
 
