@@ -20,6 +20,7 @@
 #include <boost/make_shared.hpp>
 #include <boost/function.hpp>
 #include <boost/foreach.hpp>
+#include <boost/date_time/posix_time/posix_time_types.hpp>
 #include <oxt/dynamic_thread_group.hpp>
 #include <oxt/backtrace.hpp>
 #include <ApplicationPool2/Common.h>
@@ -78,6 +79,11 @@ public:
 		MessageBoxPtr debugger;
 		MessageBoxPtr messages;
 
+		// Choose aspects to debug.
+		bool restarting;
+		bool spawning;
+		bool superGroup;
+
 		// The following fields may only be accessed by Pool.
 		boost::mutex syncher;
 		unsigned int spawnLoopIteration;
@@ -86,6 +92,9 @@ public:
 		DebugSupport() {
 			debugger = make_shared<MessageBox>();
 			messages = make_shared<MessageBox>();
+			restarting = true;
+			spawning   = true;
+			superGroup = false;
 			spawnLoopIteration = 0;
 			spawnErrors = 0;
 		}
@@ -102,8 +111,7 @@ public:
 	unsigned int max;
 	unsigned long long maxIdleTime;
 	
-	ev::timer garbageCollectionTimer;
-	ev::timer analyticsCollectionTimer;
+	condition_variable garbageCollectionCond;
 	
 	/**
 	 * Code can register background threads in one of these dynamic thread groups
@@ -116,6 +124,12 @@ public:
 	 */
 	dynamic_thread_group interruptableThreads;
 	dynamic_thread_group nonInterruptableThreads;
+
+	enum LifeStatus {
+		ALIVE,
+		SHUTTING_DOWN,
+		SHUT_DOWN
+	} lifeStatus;
 	
 	SuperGroupMap superGroups;
 	
@@ -300,6 +314,19 @@ public:
 		
 		getWaitlist = newWaitlist;
 	}
+
+	template<typename Queue>
+	static void assignExceptionToGetWaiters(Queue &getWaitlist,
+		const ExceptionPtr &exception,
+		vector<Callback> &postLockActions)
+	{
+		while (!getWaitlist.empty()) {
+			postLockActions.push_back(boost::bind(
+				getWaitlist.front().callback, SessionPtr(),
+				exception));
+			getWaitlist.pop();
+		}
+	}
 	
 	void possiblySpawnMoreProcessesForExistingGroups() {
 		StringMap<SuperGroupPtr>::const_iterator sg_it, sg_end = superGroups.end();
@@ -335,14 +362,6 @@ public:
 		}
 	}
 	
-	void migrateGroupGetWaitlistToPool(const GroupPtr &group) {
-		getWaitlist.reserve(getWaitlist.size() + group->getWaitlist.size());
-		while (!group->getWaitlist.empty()) {
-			getWaitlist.push_back(group->getWaitlist.front());
-			group->getWaitlist.pop();
-		}
-	}
-	
 	void migrateSuperGroupGetWaitlistToPool(const SuperGroupPtr &superGroup) {
 		getWaitlist.reserve(getWaitlist.size() + superGroup->getWaitlist.size());
 		while (!superGroup->getWaitlist.empty()) {
@@ -356,24 +375,26 @@ public:
 	 * the SuperGroup may have a non-empty getWaitlist so be sure to do
 	 * something with it.
 	 *
-	 * 'superGroup' is a non-const non-reference smart pointer so that
-	 * it does not get destroy immediately after the 'superGroups.remove()'
-	 * call.
+	 * Also, one of the post lock actions can potentially perform a long-running
+	 * operation, so running them in a thread is advised.
 	 */
-	void forceDetachSuperGroup(SuperGroupPtr superGroup, vector<Callback> &postLockActions) {
+	void forceDetachSuperGroup(const SuperGroupPtr &superGroup,
+		vector<Callback> &postLockActions,
+		const SuperGroup::ShutdownCallback &callback)
+	{
+		const SuperGroupPtr sp = superGroup; // Prevent premature destruction.
 		bool removed = superGroups.remove(superGroup->name);
 		assert(removed);
 		(void) removed; // Shut up compiler warning.
-		superGroup->destroy(postLockActions, false);
-		superGroup->setPool(PoolPtr());
+		superGroup->destroy(false, postLockActions, callback);
 	}
 
 	bool detachProcessUnlocked(const ProcessPtr &process, vector<Callback> &postLockActions) {
-		GroupPtr group = process->getGroup();
-		if (group != NULL && group->getPool().get() == this) {
+		if (OXT_LIKELY(process->isAlive())) {
 			verifyInvariants();
 			
-			SuperGroupPtr superGroup = group->getSuperGroup();
+			const GroupPtr group = process->getGroup();
+			const SuperGroupPtr superGroup = group->getSuperGroup();
 			assert(superGroup->state != SuperGroup::INITIALIZING);
 			assert(superGroup->getWaitlist.empty());
 			
@@ -423,6 +444,17 @@ public:
 		}
 	}
 
+	struct DetachSuperGroupWaitTicket {
+		boost::mutex syncher;
+		condition_variable cond;
+		SuperGroup::ShutdownResult result;
+		bool done;
+
+		DetachSuperGroupWaitTicket() {
+			done = false;
+		}
+	};
+
 	struct DisableWaitTicket {
 		boost::mutex syncher;
 		condition_variable cond;
@@ -434,10 +466,26 @@ public:
 		}
 	};
 
+	static void syncDetachSuperGroupCallback(SuperGroup::ShutdownResult result,
+		shared_ptr<DetachSuperGroupWaitTicket> ticket)
+	{
+		LockGuard l(ticket->syncher);
+		ticket->done = true;
+		ticket->result = result;
+		ticket->cond.notify_one();
+	}
+
+	static void waitDetachSuperGroupCallback(shared_ptr<DetachSuperGroupWaitTicket> ticket) {
+		ScopedLock l(ticket->syncher);
+		while (!ticket->done) {
+			ticket->cond.wait(l);
+		}
+	}
+
 	static void syncDisableProcessCallback(const ProcessPtr &process, DisableResult result,
 		shared_ptr<DisableWaitTicket> ticket)
 	{
-		ScopedLock l(ticket->syncher);
+		LockGuard l(ticket->syncher);
 		ticket->done = true;
 		ticket->result = result;
 		ticket->cond.notify_one();
@@ -499,7 +547,7 @@ public:
 	 * restarted, or null if there is no such process.
 	 */
 	ProcessPtr findProcessNeedingRollingRestart(const GroupPtr &group) const {
-		if (group->hasSpawnError) {
+		if (!group->isAlive() || group->hasSpawnError) {
 			return ProcessPtr();
 		}
 
@@ -585,7 +633,7 @@ public:
 				}
 
 				l.lock();
-				if (!oldProcess->detached()) {
+				if (oldProcess->isAlive()) {
 					// Don't try to rolling restart this group next time.
 					// We know we won't succeed.
 					group->hasSpawnError = true;
@@ -600,10 +648,11 @@ public:
 				// Let other (unexpected) exceptions crash the program so
 				// gdb can generate a backtrace.
 			}
+			ScopeGuard newProcessGuard(boost::bind(Process::maybeShutdown, newProcess));
 			l.lock();
 
 			UPDATE_TRACE_POINT();
-			if (group->detached()) {
+			if (group->isAlive()) {
 				P_DEBUG("Group " << group->name << " was detached after process " <<
 					oldProcessId << " has been rolling restarted; " <<
 					"discarding newly spawned process " << newProcess->inspect());
@@ -611,14 +660,14 @@ public:
 			}
 
 			UPDATE_TRACE_POINT();
-			if (oldProcess->detached()) {
+			if (!oldProcess->isAlive()) {
 				/* Apparently the old process has gone away during the
 				 * time we spent on spawning a new one. But we can
 				 * replace another old process, if any.
 				 */
 				oldProcess = findProcessNeedingRollingRestart(group);
 			}
-			assert(!oldProcess->detached());
+			assert(oldProcess->isAlive());
 
 			vector<Callback> actions;
 			// TODO: respect maxInstances and maxPoolSize
@@ -634,11 +683,13 @@ public:
 						"rolling restarted process " << newProcess->inspect());
 				} else {
 					group->attach(newProcess, actions);
+					newProcessGuard.clear();
 				}
 			} else {
 				UPDATE_TRACE_POINT();
 				group->detach(oldProcess, actions);
 				group->attach(newProcess, actions);
+				newProcessGuard.clear();
 			}
 
 			UPDATE_TRACE_POINT();
@@ -665,12 +716,32 @@ public:
 		verifyExpensiveInvariants();
 	}
 
-	void garbageCollect(ev::timer &timer, int revents) {
-		PoolPtr self = shared_from_this(); // Keep pool object alive.
+	static void garbageCollect(PoolPtr self) {
+		TRACE_POINT();
+		{
+			ScopedLock lock(self->syncher);
+			self->garbageCollectionCond.timed_wait(lock,
+				posix_time::seconds(5));
+		}
+		while (!this_thread::interruption_requested()) {
+			try {
+				UPDATE_TRACE_POINT();
+				unsigned long long sleepTime = self->realGarbageCollect();
+				ScopedLock lock(self->syncher);
+				self->garbageCollectionCond.timed_wait(lock,
+					posix_time::microseconds(sleepTime));
+			} catch (const thread_interrupted &) {
+				break;
+			} catch (const tracable_exception &e) {
+				P_WARN("ERROR: " << e.what() << "\n  Backtrace:\n" << e.backtrace());
+			}
+		}
+	}
+
+	unsigned long long realGarbageCollect() {
 		TRACE_POINT();
 		ScopedLock lock(syncher);
 		SuperGroupMap::iterator it, end = superGroups.end();
-		vector<SuperGroupPtr> superGroupsToDetach;
 		vector<Callback> actions;
 		unsigned long long now = SystemTime::getUsec();
 		unsigned long long nextGcRunTime = 0;
@@ -721,7 +792,7 @@ public:
 						group->options.getMaxPreloaderIdleTime() * 1000000;
 					if (now >= spawnerGcTime) {
 						P_DEBUG("Garbage collect idle spawner: group=" << group->name);
-						group->asyncCleanupSpawner();
+						group->cleanupSpawner(actions);
 					} else if (nextGcRunTime == 0
 					        || spawnerGcTime < nextGcRunTime) {
 						nextGcRunTime = spawnerGcTime;
@@ -729,36 +800,27 @@ public:
 				}
 			}
 			
-			// ...remove entire supergroup if it has become garbage
-			// collectable after detaching idle processes.
-			if (superGroup->garbageCollectable(now)) {
-				superGroupsToDetach.push_back(superGroup);
-			}
-			
 			superGroup->verifyInvariants();
 		}
 		
-		vector<SuperGroupPtr>::const_iterator it2;
-		for (it2 = superGroupsToDetach.begin(); it2 != superGroupsToDetach.end(); it2++) {
-			P_DEBUG("Garbage collect SuperGroup: " << (*it2)->inspect());
-			detachSuperGroup(*it2, false, &actions);
-		}
-		
 		verifyInvariants();
+		lock.unlock();
 
 		// Schedule next garbage collection run.
-		ev_tstamp tstamp;
+		unsigned long long sleepTime;
 		if (nextGcRunTime == 0 || nextGcRunTime <= now) {
-			tstamp = maxIdleTime / 1000000.0;
+			sleepTime = maxIdleTime;
 		} else {
-			tstamp = (nextGcRunTime - now) / 1000000.0;
+			sleepTime = nextGcRunTime - now;
 		}
 		P_DEBUG("Garbage collection done; next garbage collect in " <<
-			std::fixed << std::setprecision(3) << tstamp << " sec");
+			std::fixed << std::setprecision(3) << (sleepTime / 1000000.0) << " sec");
 
-		lock.unlock();
+		UPDATE_TRACE_POINT();
 		runAllActions(actions);
-		timer.start(tstamp, 0.0);
+		UPDATE_TRACE_POINT();
+		actions.clear();
+		return sleepTime;
 	}
 
 	struct ProcessAnalyticsLogEntry {
@@ -769,11 +831,19 @@ public:
 
 	typedef shared_ptr<ProcessAnalyticsLogEntry> ProcessAnalyticsLogEntryPtr;
 
-	void collectAnalytics(ev::timer &timer, int revents) {
-		try {
-			realCollectAnalytics(timer);
-		} catch (const tracable_exception &e) {
-			P_WARN("ERROR: " << e.what() << "\n  Backtrace:\n" << e.backtrace());
+	static void collectAnalytics(PoolPtr self) {
+		TRACE_POINT();
+		syscalls::usleep(3000000);
+		while (!this_thread::interruption_requested()) {
+			try {
+				UPDATE_TRACE_POINT();
+				unsigned long long sleepTime = self->realCollectAnalytics();
+				syscalls::usleep(sleepTime);
+			} catch (const thread_interrupted &) {
+				break;
+			} catch (const tracable_exception &e) {
+				P_WARN("ERROR: " << e.what() << "\n  Backtrace:\n" << e.backtrace());
+			}
 		}
 	}
 
@@ -808,21 +878,22 @@ public:
 			// If the process is missing from 'allMetrics' then either 'ps'
 			// failed or the process really is gone. We double check by sending
 			// it a signal.
-			} else if (syscalls::kill(process->pid, 0) == -1 && errno == ESRCH) {
-				P_WARN("Process " << process->inspect() << " no longer exists! Detaching it from the pool.");
+			} else if (!process->dummy && !process->osProcessExists()) {
+				P_WARN("Process " << process->inspect() << " no longer exists! "
+					"Detaching it from the pool.");
 				processesToDetach.push_back(process);
 			}
 		}
 	}
 
-	void realCollectAnalytics(ev::timer &timer) {
-		PoolPtr self = shared_from_this(); // Keep pool object alive.
+	unsigned long long realCollectAnalytics() {
 		TRACE_POINT();
 		this_thread::disable_interruption di;
 		this_thread::disable_syscall_interruption dsi;
 		vector<pid_t> pids;
 		unsigned int max;
 		
+		P_DEBUG("Collecting analytics");
 		// Collect all the PIDs.
 		{
 			UPDATE_TRACE_POINT();
@@ -920,11 +991,13 @@ public:
 		end:
 		// Sleep for about 4 seconds, aligned to seconds boundary
 		// for saving power on laptops.
-		ev_now_update(libev->getLoop());
 		unsigned long long currentTime = SystemTime::getUsec();
 		unsigned long long deadline =
 			roundUp<unsigned long long>(currentTime, 1000000) + 4000000;
-		timer.start((deadline - currentTime) / 1000000.0, 0.0);
+		P_DEBUG("Analytics collection done; next analytics collection in " <<
+			std::fixed << std::setprecision(3) << ((deadline - currentTime) / 1000000.0) <<
+			" sec");
+		return deadline - currentTime;
 	}
 	
 	SuperGroupPtr createSuperGroup(const Options &options) {
@@ -965,18 +1038,12 @@ public:
 			this->randomGenerator = make_shared<RandomGenerator>();
 		}
 		
+		lifeStatus  = ALIVE;
 		max         = 6;
 		maxIdleTime = 60 * 1000000;
 
 		restarterThreadActive = false;
 		
-		garbageCollectionTimer.set<Pool, &Pool::garbageCollect>(this);
-		garbageCollectionTimer.set(maxIdleTime / 1000000.0, 0.0);
-		libev->start(garbageCollectionTimer);
-		analyticsCollectionTimer.set<Pool, &Pool::collectAnalytics>(this);
-		analyticsCollectionTimer.set(3.0, 0.0);
-		libev->start(analyticsCollectionTimer);
-
 		// The following code only serve to instantiate certain inline methods
 		// so that they can be invoked from gdb.
 		(void) SuperGroupPtr().get();
@@ -986,8 +1053,23 @@ public:
 	}
 	
 	~Pool() {
-		TRACE_POINT();
-		destroy();
+		if (lifeStatus != SHUT_DOWN) {
+			P_BUG("You must call Pool::destroy() before actually destroying the Pool object!");
+		}
+	}
+
+	void initialize() {
+		LockGuard l(syncher);
+		interruptableThreads.create_thread(
+			boost::bind(collectAnalytics, shared_from_this()),
+			"Pool analytics collector",
+			POOL_HELPER_THREAD_STACK_SIZE
+		);
+		interruptableThreads.create_thread(
+			boost::bind(garbageCollect, shared_from_this()),
+			"Pool garbage collector",
+			POOL_HELPER_THREAD_STACK_SIZE
+		);
 	}
 
 	void initDebugging() {
@@ -997,34 +1079,29 @@ public:
 
 	void destroy() {
 		TRACE_POINT();
-		libev->stop(garbageCollectionTimer);
-		libev->stop(analyticsCollectionTimer);
+		ScopedLock lock(syncher);
+		assert(lifeStatus == ALIVE);
+
+		lifeStatus = SHUTTING_DOWN;
+
+		while (!superGroups.empty()) {
+			string name = superGroups.begin()->second->name;
+			lock.unlock();
+			detachSuperGroupByName(name);
+			lock.lock();
+		}
 
 		UPDATE_TRACE_POINT();
+		lock.unlock();
 		interruptableThreads.interrupt_and_join_all();
 		nonInterruptableThreads.join_all();
+		lock.lock();
+
+		lifeStatus = SHUT_DOWN;
 
 		UPDATE_TRACE_POINT();
-		ScopedLock l(syncher);
-		SuperGroupMap::iterator it;
-		vector<SuperGroupPtr>::iterator it2;
-		vector<SuperGroupPtr> superGroupsToDetach;
-		vector<Callback> actions;
-		for (it = superGroups.begin(); it != superGroups.end(); it++) {
-			superGroupsToDetach.push_back(it->second);
-		}
-		for (it2 = superGroupsToDetach.begin(); it2 != superGroupsToDetach.end(); it2++) {
-			detachSuperGroup(*it2, false, &actions);
-		}
-		
 		verifyInvariants();
 		verifyExpensiveInvariants();
-		l.unlock();
-		runAllActions(actions);
-
-		// detachSuperGroup() may launch additional threads, so wait for them.
-		interruptableThreads.interrupt_and_join_all();
-		nonInterruptableThreads.join_all();
 	}
 
 	// 'lockNow == false' may only be used during unit tests. Normally we
@@ -1032,6 +1109,7 @@ public:
 	void asyncGet(const Options &options, const GetCallback &callback, bool lockNow = true) {
 		DynamicScopedLock lock(syncher, lockNow);
 		
+		assert(lifeStatus == ALIVE);
 		verifyInvariants();
 		P_TRACE(2, "asyncGet(appRoot=" << options.appRoot << ")");
 		
@@ -1180,7 +1258,7 @@ public:
 				createSuperGroup(options);
 			}
 		}
-		return get(options2, &ticket)->getProcess()->getGroup();
+		return get(options2, &ticket)->getGroup();
 	}
 	
 	void setMax(unsigned int max) {
@@ -1211,18 +1289,10 @@ public:
 		}
 	}
 
-	void activateNewMaxIdleTime() {
-		LockGuard l(syncher);
-		garbageCollectionTimer.stop();
-		garbageCollectionTimer.start(maxIdleTime / 1000000.0, 0.0);
-	}
-
 	void setMaxIdleTime(unsigned long long value) {
-		{
-			LockGuard l(syncher);
-			maxIdleTime = value;
-		}
-		libev->run(boost::bind(&Pool::activateNewMaxIdleTime, this));
+		LockGuard l(syncher);
+		maxIdleTime = value;
+		garbageCollectionCond.notify_all();
 	}
 	
 	unsigned int utilization(bool lock = true) const {
@@ -1277,6 +1347,11 @@ public:
 		}
 		return result;
 	}
+
+	unsigned int getSuperGroupCount() const {
+		LockGuard l(syncher);
+		return superGroups.size();
+	}
 	
 	SuperGroupPtr findSuperGroupBySecret(const string &secret, bool lock = true) const {
 		DynamicScopedLock l(syncher, lock);
@@ -1301,21 +1376,29 @@ public:
 		}
 		return ProcessPtr();
 	}
-	
-	bool detachSuperGroup(const SuperGroupPtr &superGroup, bool lock = true,
-		vector<Callback> *postLockActions = NULL)
-	{
-		assert(lock || postLockActions != NULL);
-		DynamicScopedLock l(syncher, lock);
+
+	bool detachSuperGroupByName(const string &name) {
+		TRACE_POINT();
+		ScopedLock l(syncher);
 		
-		if (OXT_LIKELY(superGroup->getPool().get() == this)) {
+		SuperGroupPtr superGroup = superGroups.get(name);
+		if (OXT_LIKELY(superGroup != NULL)) {
 			if (OXT_LIKELY(superGroups.get(superGroup->name) != NULL)) {
+				UPDATE_TRACE_POINT();
 				verifyInvariants();
 				verifyExpensiveInvariants();
 				
 				vector<Callback> actions;
-				
-				forceDetachSuperGroup(superGroup, actions);
+				shared_ptr<DetachSuperGroupWaitTicket> ticket =
+					make_shared<DetachSuperGroupWaitTicket>();
+				ExceptionPtr exception = copyException(
+					GetAbortedException("The containg SuperGroup was detached."));
+
+				forceDetachSuperGroup(superGroup, actions,
+					boost::bind(syncDetachSuperGroupCallback, _1, ticket));
+				assignExceptionToGetWaiters(superGroup->getWaitlist,
+					exception, actions);
+				#if 0
 				/* If this SuperGroup had get waiters, either
 				 * on itself or in one of its groups, then we must
 				 * reprocess them immediately. Detaching such a
@@ -1323,26 +1406,25 @@ public:
 				 */
 				migrateSuperGroupGetWaitlistToPool(superGroup);
 				
+				UPDATE_TRACE_POINT();
 				assignSessionsToGetWaiters(actions);
+				#endif
 				possiblySpawnMoreProcessesForExistingGroups();
 				
 				verifyInvariants();
 				verifyExpensiveInvariants();
 				
-				if (lock) {
-					l.unlock();
-					runAllActions(actions);
-				} else if (postLockActions->empty()) {
-					*postLockActions = actions;
-				} else {
-					postLockActions->reserve(postLockActions->size() +
-						actions.size());
-					for (unsigned int i = 0; i < actions.size(); i++) {
-						postLockActions->push_back(actions[i]);
-					}
+				l.unlock();
+				UPDATE_TRACE_POINT();
+				runAllActions(actions);
+				actions.clear();
+
+				UPDATE_TRACE_POINT();
+				ScopedLock l2(ticket->syncher);
+				while (!ticket->done) {
+					ticket->cond.wait(l2);
 				}
-				
-				return true;
+				return ticket->result == SuperGroup::SUCCESS;
 			} else {
 				return false;
 			}
@@ -1351,11 +1433,14 @@ public:
 		}
 	}
 	
-	bool detachSuperGroup(const string &superGroupSecret) {
-		LockGuard l(syncher);
+	bool detachSuperGroupBySecret(const string &superGroupSecret) {
+		ScopedLock l(syncher);
 		SuperGroupPtr superGroup = findSuperGroupBySecret(superGroupSecret, false);
 		if (superGroup != NULL) {
-			return detachSuperGroup(superGroup, false);
+			string name = superGroup->name;
+			superGroup.reset();
+			l.unlock();
+			return detachSuperGroupByName(name);
 		} else {
 			return false;
 		}
@@ -1389,23 +1474,63 @@ public:
 	DisableResult disableProcess(const string &gupid) {
 		ScopedLock l(syncher);
 		ProcessPtr process = findProcessByGupid(gupid, false);
-		GroupPtr group = process->getGroup();
-		// Must be a shared_ptr to be interruption-safe.
-		shared_ptr<DisableWaitTicket> ticket = make_shared<DisableWaitTicket>();
-		DisableResult result = group->disable(process,
-			boost::bind(syncDisableProcessCallback, _1, _2, ticket));
-		group->verifyInvariants();
-		group->verifyExpensiveInvariants();
-		if (result == DR_DEFERRED) {
-			l.unlock();
-			ScopedLock l2(ticket->syncher);
-			while (!ticket->done) {
-				ticket->cond.wait(l2);
+		if (process != NULL) {
+			GroupPtr group = process->getGroup();
+			// Must be a shared_ptr to be interruption-safe.
+			shared_ptr<DisableWaitTicket> ticket = make_shared<DisableWaitTicket>();
+			DisableResult result = group->disable(process,
+				boost::bind(syncDisableProcessCallback, _1, _2, ticket));
+			group->verifyInvariants();
+			group->verifyExpensiveInvariants();
+			if (result == DR_DEFERRED) {
+				l.unlock();
+				ScopedLock l2(ticket->syncher);
+				while (!ticket->done) {
+					ticket->cond.wait(l2);
+				}
+				return ticket->result;
+			} else {
+				return result;
 			}
-			return ticket->result;
 		} else {
-			return result;
+			return DR_NOOP;
 		}
+	}
+
+	unsigned int restartGroupsByAppRoot(const string &appRoot) {
+		ScopedLock l(syncher);
+		SuperGroupMap::iterator sg_it, sg_end = superGroups.end();
+		unsigned int result = 0;
+
+		for (sg_it = superGroups.begin(); sg_it != sg_end; sg_it++) {
+			const SuperGroupPtr &superGroup = sg_it->second;
+			foreach (const GroupPtr &group, superGroup->groups) {
+				if (group->options.appRoot == appRoot) {
+					result++;
+					if (!group->restarting()) {
+						group->restart(group->options);
+					}
+				}
+			}
+		}
+
+		return result;
+	}
+
+	unsigned int restartSuperGroupsByAppRoot(const string &appRoot) {
+		ScopedLock l(syncher);
+		SuperGroupMap::iterator sg_it, sg_end = superGroups.end();
+		unsigned int result = 0;
+
+		for (sg_it = superGroups.begin(); sg_it != sg_end; sg_it++) {
+			const SuperGroupPtr &superGroup = sg_it->second;
+			if (superGroup->options.appRoot == appRoot) {
+				result++;
+				superGroup->restart(superGroup->options);
+			}
+		}
+
+		return result;
 	}
 
 	/**

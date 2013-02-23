@@ -39,6 +39,7 @@ namespace tut {
 			spawnerFactory = make_shared<SpawnerFactory>(bg.safe, *resourceLocator, generation,
 				RandomGeneratorPtr(), spawnerConfig);
 			pool = make_shared<Pool>(bg.safe.get(), spawnerFactory);
+			pool->initialize();
 			bg.start();
 			callback = boost::bind(&ApplicationPool2_PoolTest::_callback, this, _1, _2);
 		}
@@ -48,11 +49,11 @@ namespace tut {
 			// additional code that depend on other fields in this
 			// class.
 			TRACE_POINT();
+			clearAllSessions();
+			UPDATE_TRACE_POINT();
 			pool->destroy();
 			UPDATE_TRACE_POINT();
 			pool.reset();
-			UPDATE_TRACE_POINT();
-			clearAllSessions();
 			setLogLevel(0);
 			SystemTime::releaseAll();
 		}
@@ -560,6 +561,63 @@ namespace tut {
 		ensure_equals(currentSession->getProcess()->pid, 3);
 		ensure_equals(group->getWaitlist.size(), 0u);
 	}
+
+	TEST_METHOD(12) {
+		// Test shutting down.
+		ensureMinProcesses(2);
+		ensure(pool->detachSuperGroupByName("stub/rack"));
+		ensure_equals(pool->getSuperGroupCount(), 0u);
+	}
+
+	TEST_METHOD(13) {
+		// Test shutting down while Group is restarting.
+		initPoolDebugging();
+		debug->messages->send("Proceed with spawn loop iteration 1");
+		ensureMinProcesses(1);
+
+		ensure_equals(pool->restartGroupsByAppRoot("stub/rack"), 1u);
+		debug->debugger->recv("About to end restarting");
+		ensure(pool->detachSuperGroupByName("stub/rack"));
+		ensure_equals(pool->getSuperGroupCount(), 0u);
+	}
+
+	TEST_METHOD(14) {
+		// Test shutting down while Group is spawning.
+		initPoolDebugging();
+		Options options = createOptions();
+		
+		pool->asyncGet(options, callback);
+		debug->debugger->recv("Begin spawn loop iteration 1");
+		ensure(pool->detachSuperGroupByName("stub/rack"));
+		ensure_equals(pool->getSuperGroupCount(), 0u);
+	}
+
+	TEST_METHOD(15) {
+		// Test shutting down while SuperGroup is initializing.
+		initPoolDebugging();
+		debug->spawning = false;
+		debug->superGroup = true;
+		Options options = createOptions();
+
+		pool->asyncGet(options, callback);
+		debug->debugger->recv("About to finish SuperGroup initialization");
+		ensure(pool->detachSuperGroupByName("stub/rack"));
+		ensure_equals(pool->getSuperGroupCount(), 0u);
+	}
+
+	TEST_METHOD(16) {
+		// Test shutting down while SuperGroup is restarting.
+		initPoolDebugging();
+		debug->spawning = false;
+		debug->superGroup = true;
+		debug->messages->send("Proceed with initializing SuperGroup");
+		ensureMinProcesses(1);
+
+		ensure_equals(pool->restartSuperGroupsByAppRoot("stub/rack"), 1u);
+		debug->debugger->recv("About to finish SuperGroup restart");
+		ensure(pool->detachSuperGroupByName("stub/rack"));
+		ensure_equals(pool->getSuperGroupCount(), 0u);
+	}
 	
 	
 	/*********** Test asyncGet() behavior on multiple SuperGroups,
@@ -599,7 +657,6 @@ namespace tut {
 		);
 		
 		ensure_equals(pool->getProcessCount(), 2u);
-		ensure(!superGroup1->detached());
 		ensure_equals(superGroup1->getProcessCount(), 0u);
 	}
 	
@@ -638,7 +695,6 @@ namespace tut {
 		);
 		
 		ensure_equals(pool->getProcessCount(), 2u);
-		ensure(!superGroup1->detached());
 		ensure_equals(superGroup1->getProcessCount(), 0u);
 	}
 	
@@ -666,8 +722,7 @@ namespace tut {
 		pool->asyncGet(options, callback);
 		{
 			LockGuard l(pool->syncher);
-			ensure("(1)", !session1->getProcess()->detached());
-			ensure("(2)", !fooGroup->detached());
+			ensure("(1)", session1->getProcess()->isAlive());
 			ensure_equals("(3)", fooGroup->getWaitlist.size(), 1u);
 		}
 
@@ -677,8 +732,7 @@ namespace tut {
 		SessionPtr session3 = pool->get(options, &ticket);
 		{
 			LockGuard l(pool->syncher);
-			ensure("(4)", session1->getProcess()->detached());
-			ensure("(5)", !fooGroup->detached());
+			ensure("(4)", !session1->getProcess()->isAlive());
 			ensure_equals("(6)", fooGroup->getWaitlist.size(), 1u);
 			ensure_equals("(7)", pool->getWaitlist.size(), 0u);
 		}
@@ -707,8 +761,9 @@ namespace tut {
 			result = number == 1;
 		);
 
+		ProcessPtr process = currentSession->getProcess();
 		pool->detachProcess(currentSession->getProcess());
-		ensure(currentSession->getProcess()->detached());
+		ensure(!process->isAlive());
 		EVENTUALLY(5,
 			result = pool->getProcessCount() == 2;
 		);
@@ -807,7 +862,7 @@ namespace tut {
 		pool->detachProcess(process);
 		LockGuard l(pool->syncher);
 		ensure_equals(pool->superGroups.size(), 1u);
-		ensure(!superGroup->detached());
+		ensure(superGroup->isAlive());
 		ensure(!superGroup->garbageCollectable());
 	}
 
@@ -822,12 +877,12 @@ namespace tut {
 			pool->disableProcess(processes[0]->gupid), DR_SUCCESS);
 		
 		LockGuard l(pool->syncher);
-		ensure(!processes[0]->detached());
+		ensure(processes[0]->isAlive());
 		ensure_equals("Process is disabled",
 			processes[0]->enabled,
 			Process::DISABLED);
 		ensure("Other processes are not affected",
-			!processes[1]->detached());
+			processes[1]->isAlive());
 		ensure_equals("Other processes are not affected",
 			processes[1]->enabled, Process::ENABLED);
 	}
@@ -1011,7 +1066,8 @@ namespace tut {
 
 		ensure_equals(pool->getProcessCount(), 2u);
 		ensure(pool->atFullCapacity());
-		pool->detachSuperGroup(pool->getSuperGroup("test"));
+		clearAllSessions();
+		pool->detachSuperGroupByName("test");
 		ensure(!pool->atFullCapacity());
 	}
 	
@@ -1121,7 +1177,6 @@ namespace tut {
 		options.appRoot = "tmp.wsgi";
 		options.appType = "wsgi";
 		options.spawnMethod = "direct";
-		ProcessPtr process;
 		pool->setMax(1);
 
 		// Send normal request.
@@ -1211,7 +1266,7 @@ namespace tut {
 		EVENTUALLY(5,
 			result = pool->getProcessCount() == 2;
 		);
-		EVENTUALLY(2,
+		EVENTUALLY(5,
 			result = !pool->isSpawning();
 		);
 		SHOULD_NEVER_HAPPEN(500,
@@ -1445,7 +1500,7 @@ namespace tut {
 		retainSessions = true;
 		pool->asyncGet(options, callback);
 		pool->asyncGet(options, callback);
-		EVENTUALLY(5,
+		EVENTUALLY(10,
 			result = number == 2;
 		);
 		ensure_equals(pool->getProcessCount(), 2u);
