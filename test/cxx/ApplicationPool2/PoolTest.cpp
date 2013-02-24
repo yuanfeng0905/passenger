@@ -1556,7 +1556,6 @@ namespace tut {
 		options.rollingRestart = true;
 		
 		// Spawn a process.
-		Ticket ticket;
 		pool->setMax(1);
 		currentSession = pool->get(options, &ticket);
 		pid_t originalPid = currentSession->getPid();
@@ -1610,7 +1609,38 @@ namespace tut {
 	}
 
 	TEST_METHOD(82) {
-		// Test ignoreSpawnErrors and get().
+		// Test detaching a group after the rolling restarter thread has spawned
+		// a new process, but before it has attached the new process to the group.
+		initPoolDebugging();
+		TempDirCopy c1("stub/wsgi", "tmp.wsgi");
+		debug->restarting = false;
+		debug->spawning = false;
+		debug->rollingRestarting = true;
+
+		Options options = createOptions();
+		options.appRoot = "tmp.wsgi";
+		options.appType = "wsgi";
+		options.spawnMethod = "direct";
+		options.rollingRestart = true;
+		pool->get(options, &ticket)->getProcess();
+
+		touchFile("tmp.wsgi/tmp/restart.txt");
+		pool->get(options, &ticket);
+		debug->debugger->recv("About to attach rolling restarted process");
+		ensure_equals(pool->detachSuperGroupByName("tmp.wsgi"), 1u);
+		debug->messages->send("Proceed with attaching rolling restarted process");
+		EVENTUALLY(2,
+			LockGuard l(pool->syncher);
+			result = !pool->restarterThreadActive;
+		);
+
+		ensure_equals(pool->getProcessCount(), 0u);
+	}
+
+	TEST_METHOD(83) {
+		// Test deployment error resistance. When ignoreSpawnErrors is set,
+		// and a spawn error is encountered, get() should never try to spawn
+		// another process until the group is restarted.
 		initPoolDebugging();
 		TempDirCopy c1("stub/wsgi", "tmp.wsgi");
 		Options options = createOptions();
@@ -1670,8 +1700,9 @@ namespace tut {
 		ensure_equals("(4)", pool->getProcessCount(), 1u);
 	}
 
-	TEST_METHOD(83) {
-		// Test ignoreSpawnErrors and rolling restarts.
+	TEST_METHOD(84) {
+		// Upon encountering a spawn error, the rolling restarter thread should
+		// quit trying to restart that group.
 		initPoolDebugging();
 		TempDirCopy c1("stub/wsgi", "tmp.wsgi");
 		Options options = createOptions();
@@ -1733,9 +1764,14 @@ namespace tut {
 		ensure(pid1 == orig_pid1 || pid1 == orig_pid2 || pid1 == orig_pid3);
 		ensure(pid2 == orig_pid1 || pid2 == orig_pid2 || pid2 == orig_pid3);
 		ensure(pid3 == orig_pid1 || pid3 == orig_pid2 || pid3 == orig_pid3);
+
+		EVENTUALLY(2,
+			LockGuard l(pool->syncher);
+			result = !pool->restarterThreadActive;
+		);
 	}
 
-	TEST_METHOD(84) {
+	TEST_METHOD(85) {
 		// Test that the maxProcesses option causes no more than the specified number
 		// of processes to be spawned per group.
 		Options options = createOptions();

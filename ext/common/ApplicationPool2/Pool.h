@@ -83,6 +83,7 @@ public:
 		bool restarting;
 		bool spawning;
 		bool superGroup;
+		bool rollingRestarting;
 
 		// The following fields may only be accessed by Pool.
 		boost::mutex syncher;
@@ -95,6 +96,7 @@ public:
 			restarting = true;
 			spawning   = true;
 			superGroup = false;
+			rollingRestarting = false;
 			spawnLoopIteration = 0;
 			spawnErrors = 0;
 		}
@@ -633,7 +635,7 @@ public:
 				}
 
 				l.lock();
-				if (oldProcess->isAlive()) {
+				if (group->isAlive() && oldProcess->isAlive()) {
 					// Don't try to rolling restart this group next time.
 					// We know we won't succeed.
 					group->hasSpawnError = true;
@@ -648,11 +650,20 @@ public:
 				// Let other (unexpected) exceptions crash the program so
 				// gdb can generate a backtrace.
 			}
+
 			ScopeGuard newProcessGuard(boost::bind(Process::maybeShutdown, newProcess));
+			
+			if (debugSupport != NULL && debugSupport->rollingRestarting) {
+				this_thread::restore_interruption ri(di);
+				this_thread::restore_syscall_interruption rsi(dsi);
+				debugSupport->debugger->send("About to attach rolling restarted process");
+				debugSupport->messages->recv("Proceed with attaching rolling restarted process");
+			}
+
 			l.lock();
 
 			UPDATE_TRACE_POINT();
-			if (group->isAlive()) {
+			if (!group->isAlive()) {
 				P_DEBUG("Group " << group->name << " was detached after process " <<
 					oldProcessId << " has been rolling restarted; " <<
 					"discarding newly spawned process " << newProcess->inspect());
