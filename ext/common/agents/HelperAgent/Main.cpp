@@ -313,7 +313,7 @@ private:
 		cerr.flush();
 
 		cerr << "### Pool state (XML)\n";
-		cerr << self->pool->toXml(true);
+		cerr << self->pool->toXml(true, false);
 		cerr << "\n\n";
 		cerr.flush();
 
