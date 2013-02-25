@@ -42,6 +42,7 @@ module Packaging
 		'LICENSE',
 		'INSTALL.md',
 		'NEWS',
+		'passenger-enterprise-server.gemspec',
 		'build/*.rb',
 		'lib/*.rb',
 		'lib/**/*.rb',
