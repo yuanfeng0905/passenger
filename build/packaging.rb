@@ -6,12 +6,12 @@
 #  See LICENSE file for license information.
 
 desc "Upload packages to Phusion Passenger Enterprise customer area"
-task 'package:upload_enterprise' => :package do
+task 'package:upload_enterprise' => [:package, 'package:sign'] do
 	require 'phusion_passenger'
 	version = PhusionPassenger::VERSION_STRING
 	dir = "/u/apps/passenger_website/shared"
 	subdir = string_option('NAME', version)
-	sh "scp pkg/passenger-enterprise-server-#{version}.{gem,tar.gz} app@shell.phusion.nl:#{dir}/"
+	sh "scp pkg/passenger-enterprise-server-#{version}.{gem,tar.gz,gem.asc,tar.gz.asc} app@shell.phusion.nl:#{dir}/"
 	sh "ssh app@shell.phusion.nl 'mkdir -p \"#{dir}/assets/#{subdir}\" && mv #{dir}/passenger-enterprise-server-#{version}.{gem,tar.gz} \"#{dir}/assets/#{subdir}/\"'"
 end
 
