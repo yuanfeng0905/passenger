@@ -15,6 +15,12 @@ task 'package:upload_enterprise' => :package do
 	sh "ssh app@shell.phusion.nl 'mkdir -p \"#{dir}/assets/#{subdir}\" && mv #{dir}/passenger-enterprise-server-#{version}.{gem,tar.gz} \"#{dir}/assets/#{subdir}/\"'"
 end
 
+desc "List directories in the Phusion Passenger Enterprise customer area"
+task 'package:list_enterprise' do
+	dir = "/u/apps/passenger_website/shared"
+	sh "ssh app@shell.phusion.nl ls \"#{dir}/assets\""
+end
+
 task :clobber => 'package:clean'
 
 desc "Build the gem and tarball"
