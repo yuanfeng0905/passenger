@@ -716,6 +716,8 @@ public:
 			lock_guard<boost::mutex> l(simpleFieldSyncher);
 			m_lastUsed = SystemTime::getUsec();
 		}
+		UPDATE_TRACE_POINT();
+		lock_guard<boost::mutex> l(syncher);
 		if (!preloaderStarted()) {
 			UPDATE_TRACE_POINT();
 			startPreloader();
