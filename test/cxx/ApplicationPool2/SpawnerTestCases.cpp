@@ -21,7 +21,7 @@
 		spawner = createSpawner(options)
 
 	#define RUN_USER_SWITCHING_TEST() \
-		spawner->spawn(options); \
+		process = spawner->spawn(options); \
 		BufferedIO io(FileDescriptor(open("/tmp/info.txt", O_RDONLY))); \
 		uid_t uid = (uid_t) atol(io.readLine().c_str()); \
 		gid_t gid = (gid_t) atol(io.readLine().c_str()); \
@@ -766,6 +766,17 @@
 		RUN_USER_SWITCHING_TEST();
 		runShellCommand(("groups " + testConfig["normal_user_1"].asString() + " > /tmp/info2.txt").c_str());
 		string defaultGroups = strip(readAll("/tmp/info2.txt"));
-		// default_groups.gsub!(/.*: */, '')
+
+		// On Linux, the 'groups' output is prepended by the group name so
+		// get rid of that.
+		string::size_type pos = defaultGroups.find(':');
+		if (pos != string::npos) {
+			pos++;
+			while (pos < defaultGroups.size() && defaultGroups[pos] == ' ') {
+				pos++;
+			}
+			defaultGroups.erase(0, pos);
+		}
+		
 		ensure_equals(groups, defaultGroups);
 	}
