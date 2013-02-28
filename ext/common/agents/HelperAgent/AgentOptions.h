@@ -37,6 +37,8 @@ struct AgentOptions {
 	string loggingAgentPassword;
 	string prestartUrls;
 
+	string requestSocketLink;
+
 	AgentOptions() { }
 
 	AgentOptions(const VariantMap &options) {
@@ -61,6 +63,7 @@ struct AgentOptions {
 		
 		// Optional options.
 		prestartUrls          = options.get("prestart_urls", false, "");
+		requestSocketLink     = options.get("request_socket_link", false);
 	}
 };
 
