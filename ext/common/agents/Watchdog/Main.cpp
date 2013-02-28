@@ -10,6 +10,8 @@
 #include <oxt/system_calls.hpp>
 #include <boost/function.hpp>
 #include <boost/bind.hpp>
+#include <boost/make_shared.hpp>
+#include <boost/enable_shared_from_this.hpp>
 #include <string>
 
 #include <sys/select.h>
@@ -56,10 +58,6 @@ static string  defaultGroup;
 static uid_t   webServerWorkerUid;
 static gid_t   webServerWorkerGid;
 static string  passengerRoot;
-static string  rubyCommand;
-static unsigned int maxPoolSize;
-static unsigned int maxInstancesPerApp;
-static unsigned int poolIdleTime;
 static string  serializedPrestartURLs;
 
 static string oldOomScore;
@@ -79,12 +77,12 @@ static void setOomScore(const StaticString &score);
 /**
  * Abstract base class for watching agent processes.
  */
-class AgentWatcher {
+class AgentWatcher: public enable_shared_from_this<AgentWatcher> {
 private:
 	/** The watcher thread. */
 	oxt::thread *thr;
 	
-	void threadMain() {
+	void threadMain(shared_ptr<AgentWatcher> self) {
 		try {
 			pid_t pid, ret;
 			int status, e;
@@ -494,12 +492,12 @@ public:
 			throw RuntimeException("Already started watching.");
 		}
 		
-		thr = new oxt::thread(boost::bind(&AgentWatcher::threadMain, this),
+		thr = new oxt::thread(boost::bind(&AgentWatcher::threadMain, this, shared_from_this()),
 			name(), 256 * 1024);
 	}
 	
-	static void stopWatching(vector<AgentWatcher *> &watchers) {
-		vector<AgentWatcher *>::const_iterator it;
+	static void stopWatching(vector< shared_ptr<AgentWatcher> > &watchers) {
+		vector< shared_ptr<AgentWatcher> >::const_iterator it;
 		oxt::thread *threads[watchers.size()];
 		unsigned int i = 0;
 		
@@ -508,6 +506,10 @@ public:
 		}
 		
 		oxt::thread::interrupt_and_join_multiple(threads, watchers.size());
+		for (it = watchers.begin(); it != watchers.end(); it++, i++) {
+			delete (*it)->thr;
+			(*it)->thr = NULL;
+		}
 	}
 	
 	/**
@@ -553,6 +555,8 @@ public:
 		return feedbackFd;
 	}
 };
+
+typedef shared_ptr<AgentWatcher> AgentWatcherPtr;
 
 
 class HelperAgentWatcher: public AgentWatcher {
@@ -864,7 +868,7 @@ setOomScoreNeverKill() {
  * an error.
  */
 static bool
-waitForStarterProcessOrWatchers(vector<AgentWatcher *> &watchers) {
+waitForStarterProcessOrWatchers(vector<AgentWatcherPtr> &watchers) {
 	fd_set fds;
 	int max, ret;
 	char x;
@@ -887,7 +891,7 @@ waitForStarterProcessOrWatchers(vector<AgentWatcher *> &watchers) {
 	}
 	
 	if (FD_ISSET(errorEvent->fd(), &fds)) {
-		vector<AgentWatcher *>::const_iterator it;
+		vector<AgentWatcherPtr>::const_iterator it;
 		string message, backtrace, watcherName;
 		
 		for (it = watchers.begin(); it != watchers.end() && message.empty(); it++) {
@@ -910,7 +914,7 @@ waitForStarterProcessOrWatchers(vector<AgentWatcher *> &watchers) {
 }
 
 static void
-cleanupAgentsInBackground(vector<AgentWatcher *> &watchers) {
+cleanupAgentsInBackground(vector<AgentWatcherPtr> &watchers) {
 	this_thread::disable_interruption di;
 	this_thread::disable_syscall_interruption dsi;
 	pid_t pid;
@@ -919,13 +923,15 @@ cleanupAgentsInBackground(vector<AgentWatcher *> &watchers) {
 	pid = fork();
 	if (pid == 0) {
 		// Child
-		vector<AgentWatcher *>::const_iterator it;
+		vector<AgentWatcherPtr>::const_iterator it;
 		Timer timer(false);
 		fd_set fds, fds2;
 		int max, agentProcessesDone;
 		unsigned long long deadline = 30000; // miliseconds
 		
-		// Wait until all agent processes have exited.
+		// Wait until all agent processes have exited. The starter
+		// process is responsible for telling the individual agents
+		// to exit.
 		
 		max = 0;
 		FD_ZERO(&fds);
@@ -994,8 +1000,8 @@ cleanupAgentsInBackground(vector<AgentWatcher *> &watchers) {
 }
 
 static void
-forceAllAgentsShutdown(vector<AgentWatcher *> &watchers) {
-	vector<AgentWatcher *>::iterator it;
+forceAllAgentsShutdown(vector<AgentWatcherPtr> &watchers) {
+	vector<AgentWatcherPtr>::iterator it;
 	
 	for (it = watchers.begin(); it != watchers.end(); it++) {
 		(*it)->forceShutdown();
@@ -1024,33 +1030,46 @@ main(int argc, char *argv[]) {
 	oldOomScore = setOomScoreNeverKill();
 	
 	agentsOptions = initializeAgent(argc, argv, "PassengerWatchdog");
-	logLevel      = agentsOptions.getInt("log_level");
-	webServerPid  = agentsOptions.getPid("web_server_pid");
-	tempDir       = agentsOptions.get("temp_dir");
-	userSwitching = agentsOptions.getBool("user_switching");
-	defaultUser   = agentsOptions.get("default_user");
-	defaultGroup  = agentsOptions.get("default_group");
-	webServerWorkerUid = agentsOptions.getUid("web_server_worker_uid");
-	webServerWorkerGid = agentsOptions.getGid("web_server_worker_gid");
-	passengerRoot = agentsOptions.get("passenger_root");
-	rubyCommand   = agentsOptions.get("ruby");
-	maxPoolSize        = agentsOptions.getInt("max_pool_size");
-	maxInstancesPerApp = agentsOptions.getInt("max_instances_per_app");
-	poolIdleTime       = agentsOptions.getInt("pool_idle_time");
-	serializedPrestartURLs  = agentsOptions.get("prestart_urls");
-	
+	agentsOptions
+		.setDefaultInt ("log_level", DEFAULT_LOG_LEVEL)
+		.setDefaultBool("user_switching", true)
+		.setDefault    ("default_user", DEFAULT_WEB_APP_USER)
+		.setDefaultUid ("web_server_worker_uid", getuid())
+		.setDefaultGid ("web_server_worker_gid", getgid())
+		.setDefault    ("ruby", DEFAULT_RUBY)
+		.setDefault    ("python", DEFAULT_PYTHON)
+		.setDefaultInt ("max_pool_size", DEFAULT_MAX_POOL_SIZE);
+
 	P_DEBUG("Starting Watchdog...");
 	
 	try {
+		TRACE_POINT();
+		// Required options
+		passengerRoot = agentsOptions.get("passenger_root");
+		tempDir       = agentsOptions.get("temp_dir");
+		webServerPid  = agentsOptions.getPid("web_server_pid");
+
+		// Optional options
+		UPDATE_TRACE_POINT();
+		logLevel      = agentsOptions.getInt("log_level");
+		userSwitching = agentsOptions.getBool("user_switching");
+		defaultUser   = agentsOptions.get("default_user");
+		defaultGroup  = agentsOptions.get("default_group");
+		webServerWorkerUid = agentsOptions.getUid("web_server_worker_uid");
+		webServerWorkerGid = agentsOptions.getGid("web_server_worker_gid");
+
+		UPDATE_TRACE_POINT();
 		randomGenerator = new RandomGenerator();
 		errorEvent = new EventFd();
 		
+		UPDATE_TRACE_POINT();
 		serverInstanceDir.reset(new ServerInstanceDir(webServerPid, tempDir));
 		generation = serverInstanceDir->newGeneration(userSwitching, defaultUser,
 			defaultGroup, webServerWorkerUid, webServerWorkerGid);
 		agentsOptions.set("server_instance_dir", serverInstanceDir->getPath());
 		agentsOptions.setInt("generation_number", generation->getNumber());
 		
+		UPDATE_TRACE_POINT();
 		ServerInstanceDirToucher serverInstanceDirToucher;
 		ResourceLocator resourceLocator(passengerRoot);
 		if (agentsOptions.get("analytics_server", false).empty()) {
@@ -1062,16 +1081,21 @@ main(int argc, char *argv[]) {
 			loggingAgentAddress = agentsOptions.get("analytics_server");
 		}
 		
-		HelperAgentWatcher helperAgentWatcher(resourceLocator);
-		LoggingAgentWatcher loggingAgentWatcher(resourceLocator);
+		UPDATE_TRACE_POINT();
+		shared_ptr<HelperAgentWatcher> helperAgentWatcher =
+			make_shared<HelperAgentWatcher>(resourceLocator);
+		shared_ptr<LoggingAgentWatcher> loggingAgentWatcher =
+			make_shared<LoggingAgentWatcher>(resourceLocator);
 		
-		vector<AgentWatcher *> watchers;
-		vector<AgentWatcher *>::iterator it;
-		watchers.push_back(&helperAgentWatcher);
+		UPDATE_TRACE_POINT();
+		vector<AgentWatcherPtr> watchers;
+		vector<AgentWatcherPtr>::iterator it;
+		watchers.push_back(helperAgentWatcher);
 		if (agentsOptions.get("analytics_server", false).empty()) {
-			watchers.push_back(&loggingAgentWatcher);
+			watchers.push_back(loggingAgentWatcher);
 		}
 		
+		UPDATE_TRACE_POINT();
 		for (it = watchers.begin(); it != watchers.end(); it++) {
 			try {
 				(*it)->start();
@@ -1085,6 +1109,7 @@ main(int argc, char *argv[]) {
 			}
 			// Allow other exceptions to propagate and crash the watchdog.
 		}
+		UPDATE_TRACE_POINT();
 		for (it = watchers.begin(); it != watchers.end(); it++) {
 			try {
 				(*it)->startWatching();
@@ -1099,21 +1124,25 @@ main(int argc, char *argv[]) {
 			// Allow other exceptions to propagate and crash the watchdog.
 		}
 		
+		UPDATE_TRACE_POINT();
 		writeArrayMessage(FEEDBACK_FD,
 			"Basic startup info",
 			serverInstanceDir->getPath().c_str(),
 			toString(generation->getNumber()).c_str(),
 			NULL);
 		
+		UPDATE_TRACE_POINT();
 		for (it = watchers.begin(); it != watchers.end(); it++) {
 			(*it)->sendStartupInfo(FEEDBACK_FD);
 		}
 		
+		UPDATE_TRACE_POINT();
 		writeArrayMessage(FEEDBACK_FD, "All agents started", NULL);
 		P_DEBUG("All Phusion Passenger agents started!");
 		
 		this_thread::disable_interruption di;
 		this_thread::disable_syscall_interruption dsi;
+		UPDATE_TRACE_POINT();
 		bool exitGracefully = waitForStarterProcessOrWatchers(watchers);
 		if (exitGracefully) {
 			/* Fork a child process which cleans up all the agent processes in
@@ -1124,11 +1153,14 @@ main(int argc, char *argv[]) {
 		} else {
 			P_DEBUG("Web server did not exit gracefully, forcing shutdown of all agents...");
 		}
+		UPDATE_TRACE_POINT();
 		AgentWatcher::stopWatching(watchers);
 		if (exitGracefully) {
+			UPDATE_TRACE_POINT();
 			cleanupAgentsInBackground(watchers);
 			return 0;
 		} else {
+			UPDATE_TRACE_POINT();
 			forceAllAgentsShutdown(watchers);
 			return 1;
 		}
