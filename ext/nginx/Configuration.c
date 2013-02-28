@@ -1413,6 +1413,13 @@ const ngx_command_t passenger_commands[] = {
 
     /************************************/
 
+    { ngx_string("passenger_fly_with"),
+      NGX_HTTP_MAIN_CONF | NGX_CONF_TAKE1,
+      ngx_conf_set_str_slot,
+      NGX_HTTP_MAIN_CONF_OFFSET,
+      offsetof(passenger_main_conf_t, fly_with),
+      NULL },
+
     { ngx_string("passenger_max_instances"),
       NGX_HTTP_MAIN_CONF | NGX_HTTP_SRV_CONF | NGX_HTTP_LOC_CONF | NGX_HTTP_LIF_CONF | NGX_CONF_TAKE1,
       ngx_conf_set_num_slot,

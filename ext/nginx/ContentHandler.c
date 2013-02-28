@@ -212,9 +212,13 @@ set_upstream_server_address(ngx_http_upstream_t *upstream, ngx_http_upstream_con
      */
     if (address->name.data == passenger_placeholder_upstream_address.data) {
         sockaddr = (struct sockaddr_un *) address->sockaddr;
-        request_socket_filename =
-            psg_agents_starter_get_request_socket_filename(passenger_agents_starter,
-                                                           &request_socket_filename_len);
+        if (passenger_main_conf.fly_with.len != 0) {
+            request_socket_filename = (const char *) passenger_main_conf.fly_with.data;
+            request_socket_filename_len = passenger_main_conf.fly_with.len;
+        } else {
+            request_socket_filename = psg_agents_starter_get_request_socket_filename(
+                passenger_agents_starter, &request_socket_filename_len);
+        }
         
         address->name.data = (u_char *) request_socket_filename;
         address->name.len  = request_socket_filename_len;
@@ -605,9 +609,14 @@ create_request(ngx_http_request_t *r)
      * Build the request header data.
      **************************************************/
     
-    helper_agent_request_socket_password_data =
-        psg_agents_starter_get_request_socket_password(passenger_agents_starter,
-            &helper_agent_request_socket_password_len);
+    if (passenger_main_conf.fly_with.len != 0) {
+        helper_agent_request_socket_password_data = "";
+        helper_agent_request_socket_password_len  = 0;
+    } else {
+        helper_agent_request_socket_password_data =
+            psg_agents_starter_get_request_socket_password(passenger_agents_starter,
+                &helper_agent_request_socket_password_len);
+    }
     size = helper_agent_request_socket_password_len +
         /* netstring length + ":" + trailing "," */
         /* note: 10 == sizeof("4294967296") - 1 */
@@ -1421,7 +1430,8 @@ passenger_content_handler(ngx_http_request_t *r)
     ngx_str_t              page_cache_file;
     passenger_context_t   *context;
 
-    if (passenger_main_conf.root_dir.len == 0) {
+    if (passenger_main_conf.fly_with.len == 0
+     && passenger_main_conf.root_dir.len == 0) {
         return NGX_DECLINED;
     } else if (r->subrequest_in_memory) {
         ngx_log_error(NGX_LOG_ALERT, r->connection->log, 0,

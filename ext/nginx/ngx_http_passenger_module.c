@@ -401,12 +401,14 @@ pre_config_init(ngx_conf_t *cf)
     passenger_placeholder_upstream_address.len  = sizeof("unix:/passenger_helper_server") - 1;
     passenger_stat_cache = cached_file_stat_new(1024);
     passenger_app_type_detector = passenger_app_type_detector_new();
-    passenger_agents_starter = psg_agents_starter_new(AS_NGINX, &error_message);
-    
-    if (passenger_agents_starter == NULL) {
-        ngx_log_error(NGX_LOG_ALERT, cf->log, ngx_errno, "%s", error_message);
-        free(error_message);
-        return NGX_ERROR;
+    if (passenger_main_conf.fly_with.len == 0) {
+        passenger_agents_starter = psg_agents_starter_new(AS_NGINX, &error_message);
+        
+        if (passenger_agents_starter == NULL) {
+            ngx_log_error(NGX_LOG_ALERT, cf->log, ngx_errno, "%s", error_message);
+            free(error_message);
+            return NGX_ERROR;
+        }
     }
     
     return NGX_OK;
@@ -429,7 +431,8 @@ init_module(ngx_cycle_t *cycle) {
         return NGX_ERROR;
     }
 
-    if (passenger_main_conf.root_dir.len != 0) {
+    if (passenger_main_conf.fly_with.len != 0
+     || passenger_main_conf.root_dir.len != 0) {
         if (first_start) {
             /* Ignore SIGPIPE now so that, if the helper server fails to start,
              * Nginx doesn't get killed by the default SIGPIPE handler upon
@@ -438,7 +441,9 @@ init_module(ngx_cycle_t *cycle) {
             ignore_sigpipe();
             first_start = 0;
         }
-        if (start_helper_server(cycle) != NGX_OK) {
+        if (passenger_main_conf.fly_with.len != 0) {
+            ngx_log_error(NGX_LOG_INFO, cycle->log, 0, "Using Flying Passenger");
+        } else if (start_helper_server(cycle) != NGX_OK) {
             passenger_main_conf.root_dir.len = 0;
             return NGX_OK;
         }
@@ -459,7 +464,8 @@ static ngx_int_t
 init_worker_process(ngx_cycle_t *cycle) {
     ngx_core_conf_t *core_conf;
     
-    if (passenger_main_conf.root_dir.len != 0) {
+    if (passenger_main_conf.fly_with.len == 0
+     && passenger_main_conf.root_dir.len != 0) {
         save_master_process_pid(cycle);
         
         core_conf = (ngx_core_conf_t *) ngx_get_conf(cycle->conf_ctx, ngx_core_module);

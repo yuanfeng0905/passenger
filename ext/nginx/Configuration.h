@@ -96,6 +96,10 @@ typedef struct {
     ngx_str_t    union_station_gateway_cert;
     ngx_str_t    union_station_proxy_address;
     ngx_array_t *prestart_uris;
+
+    /************************************/
+
+    ngx_str_t    fly_with;
 } passenger_main_conf_t;
 
 extern const ngx_command_t   passenger_commands[];
