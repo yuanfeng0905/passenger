@@ -42,6 +42,7 @@ namespace tut {
 			pool->initialize();
 			bg.start();
 			callback = boost::bind(&ApplicationPool2_PoolTest::_callback, this, _1, _2);
+			setLogLevel(LVL_ERROR); // TODO: change to LVL_WARN
 		}
 		
 		~ApplicationPool2_PoolTest() {
@@ -54,7 +55,7 @@ namespace tut {
 			pool->destroy();
 			UPDATE_TRACE_POINT();
 			pool.reset();
-			setLogLevel(0);
+			setLogLevel(DEFAULT_LOG_LEVEL);
 			SystemTime::releaseAll();
 		}
 
@@ -1227,7 +1228,7 @@ namespace tut {
 
 		ensure(currentException != NULL);
 		shared_ptr<SpawnException> e = dynamic_pointer_cast<SpawnException>(currentException);
-		ensure_equals(e->getErrorPage(), "Something went wrong!");
+		ensure(e->getErrorPage().find("Something went wrong!") != string::npos);
 	}
 
 	TEST_METHOD(68) {

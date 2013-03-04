@@ -146,6 +146,10 @@ starting_helper_server_after_fork(void *arg) {
     ngx_cycle_t *cycle = (void *) arg;
     char        *log_filename;
     FILE        *log_file;
+    ngx_core_conf_t *ccf;
+    ngx_uint_t   i;
+    ngx_str_t   *envs;
+    const char  *env;
     
     /* At this point, stdout and stderr may still point to the console.
      * Make sure that they're both redirected to the log file.
@@ -180,6 +184,16 @@ starting_helper_server_after_fork(void *arg) {
         dup2(fileno(log_file), 1);
         dup2(fileno(log_file), 2);
         fclose(log_file);
+    }
+
+    /* Set environment variables in Nginx config file. */
+    ccf = (ngx_core_conf_t *) ngx_get_conf(cycle->conf_ctx, ngx_core_module);
+    envs = ccf->env.elts;
+    for (i = 0; i < ccf->env.nelts; i++) {
+        env = (const char *) envs[i].data;
+        if (strchr(env, '=') != NULL) {
+            putenv(strdup(env));
+        }
     }
     
     /* Set SERVER_SOFTWARE so that application processes know what web
@@ -234,6 +248,7 @@ start_helper_server(ngx_cycle_t *cycle) {
     char   *default_user = NULL;
     char   *default_group = NULL;
     char   *passenger_root = NULL;
+    char   *temp_dir = NULL;
     char   *analytics_log_user;
     char   *analytics_log_group;
     char   *union_station_gateway_address;
@@ -249,6 +264,7 @@ start_helper_server(ngx_cycle_t *cycle) {
     default_user   = ngx_str_null_terminate(&passenger_main_conf.default_user);
     default_group  = ngx_str_null_terminate(&passenger_main_conf.default_group);
     passenger_root = ngx_str_null_terminate(&passenger_main_conf.root_dir);
+    temp_dir       = ngx_str_null_terminate(&passenger_main_conf.temp_dir);
     analytics_log_user = ngx_str_null_terminate(&passenger_main_conf.analytics_log_user);
     analytics_log_group = ngx_str_null_terminate(&passenger_main_conf.analytics_log_group);
     union_station_gateway_address = ngx_str_null_terminate(&passenger_main_conf.union_station_gateway_address);
@@ -270,7 +286,7 @@ start_helper_server(ngx_cycle_t *cycle) {
     
     ret = agents_starter_start(passenger_agents_starter,
         passenger_main_conf.log_level, debug_log_file, getpid(),
-        "", passenger_main_conf.user_switching,
+        temp_dir, passenger_main_conf.user_switching,
         default_user, default_group,
         core_conf->user, core_conf->group,
         passenger_root, "ruby", passenger_main_conf.max_pool_size,
@@ -336,6 +352,7 @@ cleanup:
     free(default_user);
     free(default_group);
     free(passenger_root);
+    free(temp_dir);
     free(analytics_log_user);
     free(analytics_log_group);
     free(union_station_gateway_address);

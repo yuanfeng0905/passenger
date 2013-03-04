@@ -21,10 +21,11 @@ namespace tut {
 			bg.start();
 			PipeWatcher::onData = PipeWatcher::DataCallback();
 			gatherOutput = boost::bind(&ApplicationPool2_DirectSpawnerTest::_gatherOutput, this, _1, _2);
+			setLogLevel(LVL_ERROR); // TODO: change to LVL_WARN
 		}
 
 		~ApplicationPool2_DirectSpawnerTest() {
-			setLogLevel(0);
+			setLogLevel(DEFAULT_LOG_LEVEL);
 			unlink("stub/wsgi/passenger_wsgi.pyc");
 			Process::maybeShutdown(process);
 			PipeWatcher::onData = PipeWatcher::DataCallback();
@@ -71,8 +72,7 @@ namespace tut {
 		} catch (const SpawnException &e) {
 			ensure_equals(e.getErrorKind(),
 				SpawnException::APP_STARTUP_TIMEOUT);
-			ensure_equals(e.getErrorPage(),
-				"hello world\n");
+			ensure(e.getErrorPage().find("hello world\n") != string::npos);
 		}
 	}
 	
@@ -94,8 +94,26 @@ namespace tut {
 		} catch (const SpawnException &e) {
 			ensure_equals(e.getErrorKind(),
 				SpawnException::APP_STARTUP_PROTOCOL_ERROR);
-			ensure_equals(e.getErrorPage(),
-				"hello world\n");
+			ensure(e.getErrorPage().find("hello world\n") != string::npos);
 		}
+	}
+
+	TEST_METHOD(82) {
+		SHOW_EXCEPTION_BACKTRACE(
+		// Test that everything works correctly if the app re-execs() itself.
+		// https://code.google.com/p/phusion-passenger/issues/detail?id=842#c19
+		Options options = createOptions();
+		options.appRoot      = "stub/rack";
+		options.startCommand = "ruby\1" "start.rb\1" "--execself";
+		options.startupFile  = "start.rb";
+		SpawnerPtr spawner = createSpawner(options);
+		process = spawner->spawn(options);
+		ensure_equals(process->sockets->size(), 1u);
+		
+		Connection conn = process->sockets->front().checkoutConnection();
+		ScopeGuard guard(boost::bind(checkin, process, &conn));
+		writeExact(conn.fd, "ping\n");
+		ensure_equals(readAll(conn.fd), "pong\n");
+		);
 	}
 }

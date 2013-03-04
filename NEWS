@@ -1,3 +1,33 @@
+Release 3.9.6 (4.0.0 release candidate 4)
+-----------------------------------------
+
+ * Fixed compilation on systems where /tmp is mounted noexec.
+ * Fixed some memory corruption bugs.
+ * Improved debugging messages.
+ * Phusion Passenger Standalone now sets underscores_in_headers.
+   Fixes issue #708.
+ * Fixed some process spawning compatibility problems, as
+   reported in issue #842.
+ * The Python WSGI loader now correctly shuts down client sockets
+   even when there are child processes that keep the socket open.
+ * A new configuration option PassengerPython (Apache) and
+   passenger_python (Nginx) has been added so that users can
+   customize the Python interpreter on a per-application basis.
+   Fixes issue #852.
+ * The Apache module now supports file uploads larger than 2 GB
+   when on 32-bit systems. Fixes issue #838.
+ * The Nginx version now supports the `passenger_temp_dir` option.
+ * Environment variables set in the Nginx configuration file
+   (through the `env` config option) are now correctly passed to
+   all application processes. Fixes issue #371.
+ * Fixed support for RVM mixed mode installations. Fixes issue #828.
+ * Phusion Passenger now outputs the Date HTTP header in case the
+   application didn't already do that (and was violating the HTTP spec).
+   Fixes issue #485.
+ * Phusion Passenger now checks whether /dev/urandom isn't broken.
+   Fixes issue #516.
+
+
 Release 3.9.5 (4.0.0 release candidate 3)
 -----------------------------------------
 
@@ -64,6 +94,14 @@ This is the first beta of Phusion Passenger 4. The changes are numerous.
  * More stable Union Station support.
  * Many internal robustness improvements.
  * Better relocatability without wasting space.
+
+
+Release 3.0.20
+--------------
+
+ * Rebootstrapped the libev configure to fix compilation problems on Solaris 11.
+ * Fixed support for RVM mixed mode installations. Fixes issue #828.
+ * Fixed encoding problems in Phusion Passenger Standalone.
 
 
 Release 3.0.19

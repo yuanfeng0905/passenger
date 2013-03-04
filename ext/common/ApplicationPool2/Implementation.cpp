@@ -357,7 +357,7 @@ Group::onSessionInitiateFailure(const ProcessPtr &process, Session *session) {
 	PoolPtr pool = getPool();
 	unique_lock<boost::mutex> lock(pool->syncher);
 	assert(!process->isShutDown());
-	assert(isAlive());
+	assert(isAlive() || getLifeStatus() == SHUTTING_DOWN);
 
 	UPDATE_TRACE_POINT();
 	P_DEBUG("Could not initiate a session with process " <<
@@ -377,7 +377,7 @@ Group::onSessionClose(const ProcessPtr &process, Session *session) {
 	PoolPtr pool = getPool();
 	unique_lock<boost::mutex> lock(pool->syncher);
 	assert(!process->isShutDown());
-	assert(isAlive());
+	assert(isAlive() || getLifeStatus() == SHUTTING_DOWN);
 
 	P_TRACE(2, "Session closed for process " << process->inspect());
 	verifyInvariants();

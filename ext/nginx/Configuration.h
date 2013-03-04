@@ -45,6 +45,7 @@ typedef struct {
     ngx_flag_t   debugger;
     ngx_flag_t   show_version_in_header;
     ngx_str_t    ruby;
+    ngx_str_t    python;
     ngx_str_t    environment;
     ngx_str_t    user;
     ngx_str_t    group;
@@ -78,6 +79,7 @@ typedef struct {
     ngx_str_t    root_dir;
     ngx_int_t    log_level;
     ngx_str_t    debug_log_file;
+    ngx_str_t    temp_dir;
     ngx_flag_t   abort_on_startup_error;
     ngx_uint_t   max_pool_size;
     ngx_uint_t   max_instances_per_app;

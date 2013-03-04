@@ -1099,6 +1099,7 @@ protected:
 				details);
 		}
 		
+		protocol_begin:
 		if (result == "I have control 1.0\n") {
 			UPDATE_TRACE_POINT();
 			sendSpawnRequest(details);
@@ -1120,6 +1121,8 @@ protected:
 				return handleSpawnResponse(details);
 			} else if (result == "Error\n") {
 				handleSpawnErrorResponse(details);
+			} else if (result == "I have control 1.0\n") {
+				goto protocol_begin;
 			} else {
 				handleInvalidSpawnResponseType(result, details);
 			}

@@ -779,10 +779,15 @@ private:
 		string::size_type begin = headerData.find(' ');
 		string::size_type end = headerData.find("\r\n");
 		if (begin != string::npos && end != string::npos) {
-			StaticString status(headerData.data() + begin, end - begin);
-			headerData.append("Status: ");
-			headerData.append(status);
-			headerData.append("\r\n");
+			StaticString statusValue(headerData.data() + begin, end - begin);
+			char header[statusValue.size() + 20];
+			char *pos = header;
+			const char *end = header + statusValue.size() + 20;
+
+			pos = appendData(pos, end, "Status: ");
+			pos = appendData(pos, end, statusValue);
+			pos = appendData(pos, end, "\r\n");
+			headerData.append(header);
 			return true;
 		} else {
 			disconnectWithError(client, "application sent malformed response: the HTTP status line is invalid.");
@@ -907,6 +912,21 @@ private:
 			headerData.append("X-Powered-By: Phusion Passenger " PASSENGER_VERSION "\r\n");
 		} else {
 			headerData.append("X-Powered-By: Phusion Passenger\r\n");
+		}
+
+		// Add Date header. https://code.google.com/p/phusion-passenger/issues/detail?id=485
+		if (lookupHeader(headerData, "Date", "date").empty()) {
+			char dateStr[60];
+			char *pos = dateStr;
+			const char *end = dateStr + sizeof(dateStr) - 1;
+			time_t the_time = time(NULL);
+			struct tm the_tm;
+
+			pos = appendData(pos, end, "Date: ");
+			localtime_r(&the_time, &the_tm);
+			pos += strftime(pos, end - pos, "%a, %d %b %G %H:%M:%S %Z", &the_tm);
+			pos = appendData(pos, end, "\r\n");
+			headerData.append(dateStr, pos - dateStr);
 		}
 
 		// Detect out of band work request
@@ -1048,8 +1068,9 @@ private:
 				RH_TRACE(client, 3, "Waiting until the client socket is writable again.");
 				client->clientOutputWatcher.start();
 				consumed(0, true);
-			} else if (e == EPIPE) {
+			} else if (e == EPIPE || e == ECONNRESET) {
 				// If the client closed the connection then disconnect quietly.
+				RH_TRACE(client, 3, "Client stopped reading prematurely");
 				if (client->useUnionStation()) {
 					client->logMessage("Disconnecting: client stopped reading prematurely");
 				}
@@ -1518,6 +1539,7 @@ private:
 		fillPoolOption(client, options.appType, "PASSENGER_APP_TYPE");
 		fillPoolOption(client, options.environment, "PASSENGER_ENV");
 		fillPoolOption(client, options.ruby, "PASSENGER_RUBY");
+		fillPoolOption(client, options.python, "PASSENGER_PYTHON");
 		fillPoolOption(client, options.user, "PASSENGER_USER");
 		fillPoolOption(client, options.group, "PASSENGER_GROUP");
 		fillPoolOption(client, options.minProcesses, "PASSENGER_MIN_INSTANCES");
@@ -1743,7 +1765,7 @@ private:
 			client->endScopeLog(&client->scopeLogs.getFromPool, false);
 			shared_ptr<SpawnException> e2 = dynamic_pointer_cast<SpawnException>(e);
 			if (e2 != NULL) {
-				if (e2->getErrorPage().empty()) {
+				if (strip(e2->getErrorPage()).empty()) {
 					RH_WARN(client, "Cannot checkout session. " << e2->what());
 					writeErrorResponse(client, e2->what());
 				} else {
@@ -1936,6 +1958,7 @@ private:
 				1, client->appOutputBuffer);
 			if (ret == -1 && errno != EAGAIN) {
 				disconnectWithAppSocketWriteError(client, errno);
+				// TODO: what about other errors?
 			} else if (!client->appOutputBuffer.empty()) {
 				client->state = Client::SENDING_HEADER_TO_APP;
 				client->appOutputWatcher.start();
@@ -1950,9 +1973,10 @@ private:
 
 		ssize_t ret = gatheredWrite(client->session->fd(), NULL, 0, client->appOutputBuffer);
 		if (ret == -1) {
-			if (errno != EAGAIN && errno != EPIPE) {
+			if (errno != EAGAIN && errno != EPIPE && errno != ECONNRESET) {
 				disconnectWithAppSocketWriteError(client, errno);
 			}
+			// TODO: what about other errors?
 		} else if (client->appOutputBuffer.empty()) {
 			client->appOutputWatcher.stop();
 			sendBodyToApp(client);
@@ -2007,7 +2031,7 @@ private:
 				RH_TRACE(client, 3, "Waiting until the application socket is writable again.");
 				client->clientInput->stop();
 				client->appOutputWatcher.start();
-			} else if (e == EPIPE) {
+			} else if (e == EPIPE || e == ECONNRESET) {
 				// Client will be disconnected after response forwarding is done.
 				client->clientInput->stop();
 				syscalls::shutdown(client->fd, SHUT_RD);
@@ -2071,7 +2095,7 @@ private:
 				RH_TRACE(client, 3, "Waiting until the application socket is writable again.");
 				client->appOutputWatcher.start();
 				consumed(0, true);
-			} else if (e == EPIPE) {
+			} else if (e == EPIPE || e == ECONNRESET) {
 				// Client will be disconnected after response forwarding is done.
 				syscalls::shutdown(client->fd, SHUT_RD);
 				consumed(0, true);
@@ -2132,10 +2156,6 @@ public:
 			stream << "  Client " << client->fd << ":\n";
 			client->inspect(stream);
 		}
-	}
-
-	void resetInactivityTimer() {
-		libev->run(boost::bind(&Timer::start, &inactivityTimer));
 	}
 
 	unsigned long long inactivityTime() const {
