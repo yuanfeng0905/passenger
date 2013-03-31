@@ -236,10 +236,17 @@ public:
 		 */
 		DISABLED
 	} enabled;
-	/** Marks whether the process requested out-of-band work. If so, we need to
-	 * wait until all sessions have ended and the process has been disabled.
-	 */
-	bool oobwRequested;
+	enum OobwStatus {
+		/** Process is not using out-of-band work. */
+		OOBW_NOT_ACTIVE,
+		/** The process has requested out-of-band work. At some point, the code
+		 * will see this and set the status to OOBW_IN_PROGRESS. */
+		OOBW_REQUESTED,
+		/** An out-of-band work is in progress. We need to wait until all
+		 * sessions have ended and the process has been disabled before the
+		 * out-of-band work can be performed. */
+		OOBW_IN_PROGRESS,
+	} oobwStatus;
 	/** Caches whether or not the OS process still exists. */
 	mutable bool m_osProcessExists;
 	/** Collected by Pool::collectAnalytics(). */
@@ -275,7 +282,7 @@ public:
 		  processed(0),
 		  lifeStatus(ALIVE),
 		  enabled(ENABLED),
-		  oobwRequested(false),
+		  oobwStatus(OOBW_NOT_ACTIVE),
 		  m_osProcessExists(true)
 	{
 		SpawnerConfigPtr config;
@@ -510,29 +517,41 @@ public:
 		stream << "<uptime>" << uptime() << "</uptime>";
 		switch (lifeStatus) {
 		case ALIVE:
-			stream << "<life_status>alive</life_status>";
+			stream << "<life_status>ALIVE</life_status>";
 			break;
 		case SHUTTING_DOWN:
-			stream << "<life_status>shutting_down</life_status>";
+			stream << "<life_status>SHUTTING_DOWN</life_status>";
 			break;
 		case SHUT_DOWN:
-			stream << "<life_status>shut_down</life_status>";
+			stream << "<life_status>SHUT_DOWN</life_status>";
 			break;
 		default:
 			P_BUG("Unknown 'lifeStatus' state " << (int) lifeStatus);
 		}
 		switch (enabled) {
 		case ENABLED:
-			stream << "<enabled>enabled</enabled>";
+			stream << "<enabled>ENABLED</enabled>";
 			break;
 		case DISABLING:
-			stream << "<enabled>disabling</enabled>";
+			stream << "<enabled>DISABLING</enabled>";
 			break;
 		case DISABLED:
-			stream << "<enabled>disabled</enabled>";
+			stream << "<enabled>DISABLED</enabled>";
 			break;
 		default:
 			P_BUG("Unknown 'enabled' state " << (int) enabled);
+		}
+		if (metrics.isValid()) {
+			stream << "<has_metrics>true</has_metrics>";
+			stream << "<cpu>" << (int) metrics.cpu << "</cpu>";
+			stream << "<rss>" << metrics.rss << "</rss>";
+			stream << "<pss>" << metrics.pss << "</pss>";
+			stream << "<private_dirty>" << metrics.privateDirty << "</private_dirty>";
+			stream << "<swap>" << metrics.swap << "</swap>";
+			stream << "<real_memory>" << metrics.realMemory() << "</real_memory>";
+			stream << "<vmsize>" << metrics.vmsize << "</vmsize>";
+			stream << "<process_group_id>" << metrics.processGroupId << "</process_group_id>";
+			stream << "<command>" << escapeForXml(metrics.command) << "</command>";
 		}
 		if (includeSockets) {
 			SocketList::const_iterator it;

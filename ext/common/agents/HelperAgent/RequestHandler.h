@@ -519,6 +519,14 @@ typedef shared_ptr<Client> ClientPtr;
 
 
 class RequestHandler {
+public:
+	enum BenchmarkPoint {
+		BP_NONE,
+		BP_AFTER_CHECK_CONNECT_PASSWORD,
+		BP_AFTER_PARSING_HEADER,
+		BP_BEFORE_CHECKOUT_SESSION
+	};
+
 private:
 	friend class Client;
 	typedef UnionStation::LoggerFactory LoggerFactory;
@@ -612,6 +620,31 @@ private:
 		}
 	}
 
+	void writeSimpleResponse(const ClientPtr &client, const StaticString &data) {
+		char header[256];
+		char *pos = header;
+		const char *end = header + sizeof(header) - 1;
+
+		if (getBoolOption(client, "PASSENGER_STATUS_LINE", true)) {
+			pos = appendData(pos, end, "HTTP/1.1 200 OK\r\n");
+		}
+		pos += snprintf(pos, end - pos,
+			"Status: 200 OK\r\n"
+			"Content-Length: %lu\r\n"
+			"Content-Type: text/html; charset=UTF-8\r\n"
+			"Cache-Control: no-cache, no-store, must-revalidate\r\n"
+			"\r\n",
+			(unsigned long) data.size());
+
+		client->clientOutputPipe->write(header, pos - header);
+		client->clientOutputPipe->write(data.data(), data.size());
+		client->clientOutputPipe->end();
+
+		if (client->useUnionStation()) {
+			client->logMessage("Status: 200 OK");
+		}
+	}
+
 	void writeErrorResponse(const ClientPtr &client, const StaticString &message, const SpawnException *e = NULL) {
 		assert(client->state < Client::FORWARDING_BODY_TO_APP);
 		client->state = Client::WRITING_SIMPLE_RESPONSE;
@@ -620,44 +653,56 @@ private:
 		string data;
 
 		if (getBoolOption(client, "PASSENGER_FRIENDLY_ERROR_PAGES", true)) {
-			string cssFile = templatesDir + "/error_layout.css";
-			string errorLayoutFile = templatesDir + "/error_layout.html.template";
-			string generalErrorFile =
-				(e != NULL && e->isHTML())
-				? templatesDir + "/general_error_with_html.html.template"
-				: templatesDir + "/general_error.html.template";
-			string css = readAll(cssFile);
-			StringMap<StaticString> params;
+			try {
+				string cssFile = templatesDir + "/error_layout.css";
+				string errorLayoutFile = templatesDir + "/error_layout.html.template";
+				string generalErrorFile =
+					(e != NULL && e->isHTML())
+					? templatesDir + "/general_error_with_html.html.template"
+					: templatesDir + "/general_error.html.template";
+				string css = readAll(cssFile);
+				StringMap<StaticString> params;
 
-			params.set("CSS", css);
-			params.set("APP_ROOT", client->options.appRoot);
-			params.set("RUBY", client->options.ruby);
-			params.set("ENVIRONMENT", client->options.environment);
-			params.set("MESSAGE", message);
-			params.set("IS_RUBY_APP",
-				(client->options.appType == "classic-rails" || client->options.appType == "rack")
-				? "true" : "false");
-			if (e != NULL) {
-				params.set("TITLE", "Web application could not be started");
-				// Store all SpawnException annotations into 'params',
-				// but convert its name to uppercase.
-				const map<string, string> &annotations = e->getAnnotations();
-				map<string, string>::const_iterator it, end = annotations.end();
-				for (it = annotations.begin(); it != end; it++) {
-					string name = it->first;
-					for (string::size_type i = 0; i < name.size(); i++) {
-						name[i] = toupper(name[i]);
+				params.set("CSS", css);
+				params.set("APP_ROOT", client->options.appRoot);
+				params.set("RUBY", client->options.ruby);
+				params.set("ENVIRONMENT", client->options.environment);
+				params.set("MESSAGE", message);
+				params.set("IS_RUBY_APP",
+					(client->options.appType == "classic-rails" || client->options.appType == "rack")
+					? "true" : "false");
+				if (e != NULL) {
+					params.set("TITLE", "Web application could not be started");
+					// Store all SpawnException annotations into 'params',
+					// but convert its name to uppercase.
+					const map<string, string> &annotations = e->getAnnotations();
+					map<string, string>::const_iterator it, end = annotations.end();
+					for (it = annotations.begin(); it != end; it++) {
+						string name = it->first;
+						for (string::size_type i = 0; i < name.size(); i++) {
+							name[i] = toupper(name[i]);
+						}
+						params.set(name, it->second);
 					}
-					params.set(name, it->second);
+				} else {
+					params.set("TITLE", "Internal server error");
 				}
-			} else {
-				params.set("TITLE", "Internal server error");
+				string content = Template::apply(readAll(generalErrorFile), params);
+				params.set("CONTENT", content);
+				data = Template::apply(readAll(errorLayoutFile), params);
+			} catch (const SystemException &e2) {
+				P_ERROR("Cannot render an error page: " << e2.what() << "\n" <<
+					e2.backtrace());
+				data = message;
 			}
-			string content = Template::apply(readAll(generalErrorFile), params);
-			params.set("CONTENT", content);
-			data = Template::apply(readAll(errorLayoutFile), params);
 		} else {
-			data = readAll(templatesDir + "/undisclosed_error.html.template");
+			try {
+				data = readAll(templatesDir + "/undisclosed_error.html.template");
+			} catch (const SystemException &e2) {
+				P_ERROR("Cannot render an error page: " << e2.what() << "\n" <<
+					e2.backtrace());
+				data = "Internal Server Error";
+			}
 		}
 
 		stringstream str;
@@ -670,7 +715,7 @@ private:
 		str << "Cache-Control: no-cache, no-store, must-revalidate\r\n";
 		str << "\r\n";
 
-		const string &header = str.str();
+		const string header = str.str();
 		client->clientOutputPipe->write(header.data(), header.size());
 		client->clientOutputPipe->write(data.data(), data.size());
 		client->clientOutputPipe->end();
@@ -678,6 +723,22 @@ private:
 		if (client->useUnionStation()) {
 			client->logMessage("Status: 500 Internal Server Error");
 			// TODO: record error message
+		}
+	}
+
+	static BenchmarkPoint getDefaultBenchmarkPoint() {
+		const char *val = getenv("PASSENGER_REQUEST_HANDLER_BENCHMARK_POINT");
+		if (val == NULL || *val == '\0') {
+			return BP_NONE;
+		} else if (strcmp(val, "after_check_connect_password") == 0) {
+			return BP_AFTER_CHECK_CONNECT_PASSWORD;
+		} else if (strcmp(val, "after_parsing_header") == 0) {
+			return BP_AFTER_PARSING_HEADER;
+		} else if (strcmp(val, "before_checkout_session") == 0) {
+			return BP_BEFORE_CHECKOUT_SESSION;
+		} else {
+			P_WARN("Invalid RequestHandler benchmark point requested: " << val);
+			return BP_NONE;
 		}
 	}
 
@@ -1175,7 +1236,8 @@ private:
 					int e = errno;
 					P_ERROR("Cannot accept client: " << strerror(e) <<
 						" (errno=" << e << "). " <<
-						"Pausing listening on server socket for 3 seconds.");
+						"Pausing listening on server socket for 3 seconds. " <<
+						"Current client count: " << clients.size());
 					requestSocketWatcher.stop();
 					resumeSocketWatcherTimer.start();
 					endReached = true;
@@ -1394,6 +1456,10 @@ private:
 			client->state = Client::READING_HEADER;
 			client->freeBufferedConnectPassword();
 			client->timeoutTimer.stop();
+
+			if (benchmarkPoint == BP_AFTER_CHECK_CONNECT_PASSWORD) {
+				writeSimpleResponse(client, "Benchmark point: after_check_connect_password\n");
+			}
 		} else {
 			disconnectWithError(client, "wrong connect password");
 		}
@@ -1621,6 +1687,11 @@ private:
 				return consumed;
 			}
 
+			if (benchmarkPoint == BP_AFTER_PARSING_HEADER) {
+				writeSimpleResponse(client, "Benchmark point: after_parsing_header\n");
+				return consumed;
+			}
+
 			bool modified = modifyClientHeaders(client);
 			/* TODO: in case the headers are not modified, we only need to rebuild the header data
 			 * right now because the scgiParser buffer is invalidated as soon as onClientData exits.
@@ -1733,13 +1804,17 @@ private:
 	}
 
 	void checkoutSession(const ClientPtr &client) {
-		RH_TRACE(client, 2, "Checking out session: appRoot=" << client->options.appRoot);
-		client->state = Client::CHECKING_OUT_SESSION;
-		client->beginScopeLog(&client->scopeLogs.getFromPool, "get from pool");
-		pool->asyncGet(client->options, boost::bind(&RequestHandler::sessionCheckedOut,
-			this, client, _1, _2));
-		if (!client->sessionCheckedOut) {
-			client->backgroundOperations++;
+		if (benchmarkPoint != BP_BEFORE_CHECKOUT_SESSION) {
+			RH_TRACE(client, 2, "Checking out session: appRoot=" << client->options.appRoot);
+			client->state = Client::CHECKING_OUT_SESSION;
+			client->beginScopeLog(&client->scopeLogs.getFromPool, "get from pool");
+			pool->asyncGet(client->options, boost::bind(&RequestHandler::sessionCheckedOut,
+				this, client, _1, _2));
+			if (!client->sessionCheckedOut) {
+				client->backgroundOperations++;
+			}
+		} else {
+			writeSimpleResponse(client, "Benchmark point: before_checkout_session\n");
 		}
 	}
 
@@ -2123,6 +2198,8 @@ public:
 	// For unit testing purposes.
 	unsigned int connectPasswordTimeout; // milliseconds
 
+	BenchmarkPoint benchmarkPoint;
+
 	RequestHandler(const SafeLibevPtr &_libev,
 		const FileDescriptor &_requestSocket,
 		const PoolPtr &_pool,
@@ -2131,7 +2208,8 @@ public:
 		  requestSocket(_requestSocket),
 		  pool(_pool),
 		  options(_options),
-		  resourceLocator(_options.passengerRoot)
+		  resourceLocator(_options.passengerRoot),
+		  benchmarkPoint(getDefaultBenchmarkPoint())
 	{
 		accept4Available = true;
 		connectPasswordTimeout = 15000;

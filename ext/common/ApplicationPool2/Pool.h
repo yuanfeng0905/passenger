@@ -83,6 +83,7 @@ public:
 		bool restarting;
 		bool spawning;
 		bool superGroup;
+		bool oobw;
 		bool rollingRestarting;
 
 		// The following fields may only be accessed by Pool.
@@ -96,6 +97,7 @@ public:
 			restarting = true;
 			spawning   = true;
 			superGroup = false;
+			oobw       = false;
 			rollingRestarting = false;
 			spawnLoopIteration = 0;
 			spawnErrors = 0;
@@ -423,19 +425,28 @@ public:
 		for (p_it = processes.begin(); p_it != processes.end(); p_it++) {
 			const ProcessPtr &process = *p_it;
 			char buf[128];
+			char membuf[10];
 			
+			snprintf(membuf, sizeof(membuf), "%ldM",
+				(unsigned long) (process->metrics.realMemory() / 1024));
 			snprintf(buf, sizeof(buf),
-					"* PID: %-5lu   Sessions: %-2u   Processed: %-5u   Uptime: %s",
+					"  * PID   : %-5lu   Sessions : %-2u   Processed: %-5u   Uptime: %s\n"
+					"    Memory: %-5s   Last used: %s ago",
 					(unsigned long) process->pid,
 					process->sessions,
 					process->processed,
-					process->uptime().c_str());
-			result << "  " << buf << endl;
+					process->uptime().c_str(),
+					membuf,
+					distanceOfTimeInWords(process->lastUsed / 1000000).c_str());
+			result << buf << endl;
 
 			if (process->enabled == Process::DISABLING) {
 				result << "    Disabling..." << endl;
 			} else if (process->enabled == Process::DISABLED) {
 				result << "    DISABLED" << endl;
+			}
+			if (process->getLifeStatus() == Process::SHUTTING_DOWN) {
+				result << "    Shutting down...";
 			}
 
 			const Socket *socket;
@@ -820,7 +831,7 @@ public:
 		// Schedule next garbage collection run.
 		unsigned long long sleepTime;
 		if (nextGcRunTime == 0 || nextGcRunTime <= now) {
-			sleepTime = maxIdleTime;
+			sleepTime = std::max<unsigned long long>(maxIdleTime, 10 * 60 * 1000000);
 		} else {
 			sleepTime = nextGcRunTime - now;
 		}
@@ -971,6 +982,7 @@ public:
 						xml << "Group: <group>";
 						group->inspectXml(xml, false);
 						xml << "</group>";
+						logEntries.push_back(entry);
 					}
 				}
 			}
@@ -1016,6 +1028,7 @@ public:
 			options);
 		superGroup->initialize();
 		superGroups.set(options.getAppGroupName(), superGroup);
+		garbageCollectionCond.notify_all();
 		return superGroup;
 	}
 	
@@ -1203,6 +1216,7 @@ public:
 				superGroup = make_shared<SuperGroup>(shared_from_this(), options);
 				superGroup->initialize();
 				superGroups.set(options.getAppGroupName(), superGroup);
+				garbageCollectionCond.notify_all();
 				SessionPtr session = superGroup->get(options, callback);
 				/* The SuperGroup is still initializing so the callback
 				 * should now have been put on the wait list,
@@ -1599,6 +1613,7 @@ public:
 				inspectProcessList(options, result, group->enabledProcesses);
 				inspectProcessList(options, result, group->disablingProcesses);
 				inspectProcessList(options, result, group->disabledProcesses);
+				inspectProcessList(options, result, group->detachedProcesses);
 				result << endl;
 			}
 		}

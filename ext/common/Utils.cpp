@@ -25,6 +25,10 @@
 #include <limits.h>
 #include <unistd.h>
 #include <signal.h>
+#ifdef __linux__
+	#include <sys/syscall.h>
+	#include <features.h>
+#endif
 #include <vector>
 #include <FileDescriptor.h>
 #include <MessageServer.h>
@@ -691,7 +695,9 @@ verifyWSGIDir(const string &dir, CachedFileStat *cstat, unsigned int throttleRat
 }
 
 void
-prestartWebApps(const ResourceLocator &locator, const string &serializedprestartURLs) {
+prestartWebApps(const ResourceLocator &locator, const string &ruby,
+	const string &serializedprestartURLs)
+{
 	/* Apache calls the initialization routines twice during startup, and
 	 * as a result it starts two helper servers, where the first one exits
 	 * after a short idle period. We want any prespawning requests to reach
@@ -727,7 +733,8 @@ prestartWebApps(const ResourceLocator &locator, const string &serializedprestart
 				syscalls::close(i);
 			}
 			
-			execlp(prespawnScript.c_str(),
+			execlp(ruby.c_str(),
+				ruby.c_str(),
 				prespawnScript.c_str(),
 				it->c_str(),
 				(char *) 0);
@@ -941,6 +948,17 @@ runShellCommand(const StaticString &command) {
 	}
 }
 
+// Async-signal safe way to fork().
+// http://sourceware.org/bugzilla/show_bug.cgi?id=4737
+pid_t
+asyncFork() {
+	#if defined(__linux__)
+		return (pid_t) syscall(SYS_fork);
+	#else
+		return fork();
+	#endif
+}
+
 // Async-signal safe way to get the current process's hard file descriptor limit.
 static int
 getFileDescriptorLimit() {
@@ -1020,7 +1038,7 @@ getHighestFileDescriptor() {
 	}
 	
 	do {
-		pid = fork();
+		pid = asyncFork();
 	} while (pid == -1 && errno == EINTR);
 	
 	if (pid == 0) {
