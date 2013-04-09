@@ -522,6 +522,7 @@ class RequestHandler {
 public:
 	enum BenchmarkPoint {
 		BP_NONE,
+		BP_AFTER_ACCEPT,
 		BP_AFTER_CHECK_CONNECT_PASSWORD,
 		BP_AFTER_PARSING_HEADER,
 		BP_BEFORE_CHECKOUT_SESSION
@@ -589,6 +590,17 @@ private:
 		disconnect(client);
 	}
 
+	template<typename Number>
+	static Number clamp(Number n, Number min, Number max) {
+		if (n < min) {
+			return min;
+		} else if (n > max) {
+			return max;
+		} else {
+			return n;
+		}
+	}
+
 	// GDB helper function, implemented in .cpp file to prevent inlining.
 	Client *getClientPointer(const ClientPtr &client);
 
@@ -605,7 +617,7 @@ private:
 		}
 	}
 
-	static long long getLongLongOption(const ClientPtr &client, const StaticString &name, long long defaultValue = -1) {
+	static long long getULongLongOption(const ClientPtr &client, const StaticString &name, long long defaultValue = -1) {
 		ScgiRequestParser::const_iterator it = client->scgiParser.getHeaderIterator(name);
 		if (it != client->scgiParser.end()) {
 			long long result = stringToULL(it->second);
@@ -730,6 +742,8 @@ private:
 		const char *val = getenv("PASSENGER_REQUEST_HANDLER_BENCHMARK_POINT");
 		if (val == NULL || *val == '\0') {
 			return BP_NONE;
+		} else if (strcmp(val, "after_accept") == 0) {
+			return BP_AFTER_ACCEPT;
 		} else if (strcmp(val, "after_check_connect_password") == 0) {
 			return BP_AFTER_CHECK_CONNECT_PASSWORD;
 		} else if (strcmp(val, "after_parsing_header") == 0) {
@@ -837,10 +851,16 @@ private:
 	}
 
 	bool addStatusHeaderFromStatusLine(const ClientPtr &client, string &headerData) {
-		string::size_type begin = headerData.find(' ');
-		string::size_type end = headerData.find("\r\n");
+		string::size_type begin, end;
+
+		begin = headerData.find(' ');
+		if (begin != string::npos) {
+			end = headerData.find("\r\n", begin + 1);
+		} else {
+			end = string::npos;
+		}
 		if (begin != string::npos && end != string::npos) {
-			StaticString statusValue(headerData.data() + begin, end - begin);
+			StaticString statusValue(headerData.data() + begin + 1, end - begin);
 			char header[statusValue.size() + 20];
 			char *pos = header;
 			const char *end = header + statusValue.size() + 20;
@@ -848,7 +868,7 @@ private:
 			pos = appendData(pos, end, "Status: ");
 			pos = appendData(pos, end, statusValue);
 			pos = appendData(pos, end, "\r\n");
-			headerData.append(header);
+			headerData.append(StaticString(header, pos - header));
 			return true;
 		} else {
 			disconnectWithError(client, "application sent malformed response: the HTTP status line is invalid.");
@@ -915,7 +935,7 @@ private:
 		const StaticString &origHeaderData)
 	{
 		string headerData;
-		headerData.reserve(origHeaderData.size() + 100);
+		headerData.reserve(origHeaderData.size() + 150);
 		// Strip trailing CRLF.
 		headerData.append(origHeaderData.data(), origHeaderData.size() - 2);
 		
@@ -1226,8 +1246,10 @@ private:
 	void onAcceptable(ev::io &io, int revents) {
 		bool endReached = false;
 		unsigned int count = 0;
+		unsigned int maxAcceptTries = clamp<unsigned int>(clients.size(), 1, 10);
+		ClientPtr acceptedClients[10];
 
-		while (!endReached && count < 10) {
+		while (!endReached && count < maxAcceptTries) {
 			FileDescriptor fd = acceptNonBlockingSocket(requestSocket);
 			if (fd == -1) {
 				if (errno == EAGAIN || errno == EWOULDBLOCK) {
@@ -1242,13 +1264,26 @@ private:
 					resumeSocketWatcherTimer.start();
 					endReached = true;
 				}
+			} else if (benchmarkPoint == BP_AFTER_ACCEPT) {
+				writeExact(fd,
+					"HTTP/1.1 200 OK\r\n"
+					"Status: 200 OK\r\n"
+					"Content-Type: text/html\r\n"
+					"Connection: close\r\n"
+					"\r\n"
+					"Benchmark point: after_accept\n");
 			} else {
 				ClientPtr client = make_shared<Client>();
 				client->associate(this, fd);
 				clients.insert(make_pair<int, ClientPtr>(fd, client));
+				acceptedClients[count] = client;
 				count++;
 				RH_DEBUG(client, "New client accepted; new client count = " << clients.size());
 			}
+		}
+
+		for (unsigned int i = 0; i < count; i++) {
+			acceptedClients[i]->clientInput->readNow();
 		}
 
 		if (OXT_LIKELY(!clients.empty())) {
@@ -1332,6 +1367,7 @@ private:
 		if (errnoCode == ECONNRESET) {
 			// We might as well treat ECONNRESET like an EOF.
 			// http://stackoverflow.com/questions/2974021/what-does-econnreset-mean-in-the-context-of-an-af-local-socket
+			RH_TRACE(client, 3, "Client socket ECONNRESET error; treating it as EOF");
 			onClientEof(client);
 		} else {
 			stringstream message;
@@ -1699,7 +1735,7 @@ private:
 			 * onClientData exits.
 			 */
 			parser.rebuildData(modified);
-			client->contentLength = getLongLongOption(client, "CONTENT_LENGTH");
+			client->contentLength = getULongLongOption(client, "CONTENT_LENGTH");
 			fillPoolOptions(client);
 			if (!client->connected()) {
 				return consumed;
