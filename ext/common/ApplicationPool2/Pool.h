@@ -661,7 +661,7 @@ public:
 				// gdb can generate a backtrace.
 			}
 
-			ScopeGuard newProcessGuard(boost::bind(Process::maybeShutdown, newProcess));
+			ScopeGuard newProcessGuard(boost::bind(Process::forceTriggerShutdownAndCleanup, newProcess));
 			
 			if (debugSupport != NULL && debugSupport->rollingRestarting) {
 				this_thread::restore_interruption ri(di);
