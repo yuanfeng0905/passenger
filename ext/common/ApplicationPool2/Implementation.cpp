@@ -752,7 +752,7 @@ Group::spawnThreadRealMain(const SpawnerPtr &spawner, const Options &options, un
 			P_ERROR("Could not spawn process for group " << name <<
 				": " << exception->what() << "\n" <<
 				exception->backtrace());
-			if (!options.ignoreSpawnErrors) {
+			if (!options.ignoreSpawnErrors || enabledCount == 0) {
 				if (enabledCount == 0) {
 					enableAllDisablingProcesses(actions);
 				}

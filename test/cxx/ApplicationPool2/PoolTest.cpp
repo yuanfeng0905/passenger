@@ -1708,8 +1708,9 @@ namespace tut {
 
 	TEST_METHOD(83) {
 		// Test deployment error resistance. When ignoreSpawnErrors is set,
-		// and a spawn error is encountered, get() should never try to spawn
-		// another process until the group is restarted.
+		// and there are already processes, and a spawn error is encountered,
+		// then get() should never try to spawn another process until the group
+		// is restarted.
 		initPoolDebugging();
 		TempDirCopy c1("stub/wsgi", "tmp.wsgi");
 		Options options = createOptions();
@@ -1724,7 +1725,6 @@ namespace tut {
 		debug->messages->send("Proceed with spawn loop iteration 3");
 		
 		// Spawn a process.
-		Ticket ticket;
 		SessionPtr session1 = pool->get(options, &ticket);
 		pid_t session1Pid = session1->getPid();
 		
@@ -1770,6 +1770,32 @@ namespace tut {
 	}
 
 	TEST_METHOD(84) {
+		// Test deployment error resistance. When ignoreSpawnErrors is set,
+		// and the first process fails to spawn, it throws a SpawnException.
+		TempDirCopy c1("stub/wsgi", "tmp.wsgi");
+		Options options = createOptions();
+		options.appRoot = "tmp.wsgi";
+		options.appType = "wsgi";
+		options.spawnMethod = "direct";
+		options.ignoreSpawnErrors = true;
+		spawnerConfig->forwardStderr = false;
+
+		// Fubar the app.
+		writeFile("tmp.wsgi/passenger_wsgi.py",
+			"import sys\n"
+			"sys.stderr.write('an error\\n')\n"
+			"sys.exit(1)\n");
+		
+		try {
+			setLogLevel(LVL_CRIT);
+			pool->get(options, &ticket);
+			fail("SpawnException expected");
+		} catch (const SpawnException &e) {
+			// Success.
+		}
+	}
+
+	TEST_METHOD(85) {
 		// Upon encountering a spawn error, the rolling restarter thread should
 		// quit trying to restart that group.
 		initPoolDebugging();
@@ -1840,7 +1866,7 @@ namespace tut {
 		);
 	}
 
-	TEST_METHOD(85) {
+	TEST_METHOD(86) {
 		// Test that the maxProcesses option causes no more than the specified number
 		// of processes to be spawned per group.
 		Options options = createOptions();
