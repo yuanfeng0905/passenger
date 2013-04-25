@@ -112,7 +112,7 @@ class Process: public enable_shared_from_this<Process> {
 private:
 	friend class Group;
 	
-	/** A mutex to protect access to `m_shutDown`. */
+	/** A mutex to protect access to `lifeStatus`. */
 	mutable boost::mutex lifetimeSyncher;
 
 	/** Group inside the Pool that this Process belongs to.
@@ -184,9 +184,10 @@ public:
 	 * the admin socket need not be closed, etc.
 	 */
 	bool dummy;
-	/** Whether it is required that shutdown() must be called before destroying
-	 * this Process. Normally true, except for dummy Process objects created by
-	 * Pool::asyncGet() with options.noop == true.
+	/** Whether it is required that triggerShutdown() and cleanup() must be called
+	 * before destroying this Process. Normally true, except for dummy Process
+	 * objects created by Pool::asyncGet() with options.noop == true, because those
+	 * processes are never added to Group.enabledProcesses.
 	 */
 	bool requiresShutdown;
 	
@@ -208,19 +209,21 @@ public:
 	int sessions;
 	/** Number of sessions opened so far. */
 	unsigned int processed;
-	/** Do not access directly, always use `isAlive()`/`isShutDown()`/`getLifeStatus()` or
+	/** Do not access directly, always use `isAlive()`/`isDead()`/`getLifeStatus()` or
 	 * through `lifetimeSyncher`. */
 	enum LifeStatus {
 		/** Up and operational. */
 		ALIVE,
-		/** Being shut down. The containing Group has just detached this
-		 * Process and is now waiting for it to be shutdownable.
-		 */
-		SHUTTING_DOWN,
+		/** This process has been detached, and the detached processes checker has
+		 * verified that there are no active sessions left and has told the process
+		 * to shut down. In this state we're supposed to wait until the process
+		 * has actually shutdown, after which clean() must be called. */
+		SHUTDOWN_TRIGGERED,
 		/**
-		 * Shut down. Object no longer usable. No more sessions are active.
+		 * The process has exited and clean() has been called. In this state,
+		 * this object is no longer usable.
 		 */
-		SHUT_DOWN
+		DEAD
 	} lifeStatus;
 	enum EnabledStatus {
 		/** Up and operational. */
@@ -234,7 +237,14 @@ public:
 		 * requests. It *may* still handle some requests, e.g. by
 		 * the Out-of-Band-Work trigger.
 		 */
-		DISABLED
+		DISABLED,
+		/**
+		 * Process has been detached. It will be removed from the Group
+		 * as soon we have detected that the OS process has exited. Detached
+		 * processes are allowed to finish their requests, but are not
+		 * eligible for new requests.
+		 */
+		DETACHED
 	} enabled;
 	enum OobwStatus {
 		/** Process is not using out-of-band work. */
@@ -314,15 +324,19 @@ public:
 	}
 	
 	~Process() {
-		if (OXT_UNLIKELY(!isShutDown() && requiresShutdown)) {
-			P_BUG("You must call Process::shutdown() before actually "
+		if (OXT_UNLIKELY(!isDead() && requiresShutdown)) {
+			P_BUG("You must call Process::triggerShutdown() and Process::cleanup() before actually "
 				"destroying the Process object.");
 		}
 	}
 
-	static void maybeShutdown(ProcessPtr process) {
+	static void forceTriggerShutdownAndCleanup(ProcessPtr process) {
 		if (process != NULL) {
-			process->shutdown();
+			process->triggerShutdown();
+			// Pretend like the OS process has exited so
+			// that the canCleanup() precondition is true.
+			process->m_osProcessExists = false;
+			process->cleanup();
 		}
 	}
 
@@ -332,7 +346,7 @@ public:
 	 * @post result != NULL
 	 */
 	const GroupPtr getGroup() const {
-		assert(!isShutDown());
+		assert(!isDead());
 		return group.lock();
 	}
 	
@@ -343,7 +357,7 @@ public:
 
 	/**
 	 * Thread-safe.
-	 * @pre getLifeState() != SHUT_DOWN
+	 * @pre getLifeState() != DEAD
 	 * @post result != NULL
 	 */
 	SuperGroupPtr getSuperGroup() const;
@@ -355,9 +369,15 @@ public:
 	}
 
 	// Thread-safe.
-	bool isShutDown() const {
+	bool hasTriggeredShutdown() const {
 		lock_guard<boost::mutex> lock(lifetimeSyncher);
-		return lifeStatus == SHUT_DOWN;
+		return lifeStatus == SHUTDOWN_TRIGGERED;
+	}
+
+	// Thread-safe.
+	bool isDead() const {
+		lock_guard<boost::mutex> lock(lifetimeSyncher);
+		return lifeStatus == DEAD;
 	}
 
 	// Thread-safe.
@@ -366,32 +386,30 @@ public:
 		return lifeStatus;
 	}
 
-	void setShuttingDown() {
+	bool canTriggerShutdown() const {
+		return getLifeStatus() == ALIVE && sessions == 0;
+	}
+
+	void triggerShutdown() {
+		assert(canTriggerShutdown());
 		{
 			lock_guard<boost::mutex> lock(lifetimeSyncher);
 			assert(lifeStatus == ALIVE);
-			lifeStatus = SHUTTING_DOWN;
+			lifeStatus = SHUTDOWN_TRIGGERED;
 		}
 		if (!dummy) {
 			syscalls::shutdown(adminSocket, SHUT_WR);
 		}
 	}
 
-	void shutdown() {
-		LifeStatus ls = getLifeStatus();
-		if (ls == SHUT_DOWN || !requiresShutdown) {
-			// Some code have guards that call process->shutdown().
-			// Returning instead of enforcing !isShutdown() makes things easier.
-			return;
-		}
+	bool canCleanup() const {
+		return getLifeStatus() == SHUTDOWN_TRIGGERED && !osProcessExists();
+	}
 
-		assert(sessions == 0);
+	void cleanup() {
+		assert(canCleanup());
 
-		if (ls == ALIVE) {
-			setShuttingDown();
-		}
-
-		P_TRACE(2, "Shutting down Process object " << inspect());
+		P_TRACE(2, "Cleaning up process " << inspect());
 		if (!dummy) {
 			if (OXT_LIKELY(sockets != NULL)) {
 				SocketList::const_iterator it, end = sockets->end();
@@ -405,11 +423,7 @@ public:
 		}
 
 		lock_guard<boost::mutex> lock(lifetimeSyncher);
-		lifeStatus = SHUT_DOWN;
-	}
-
-	bool canBeShutDown() const {
-		return sessions == 0 && !osProcessExists();
+		lifeStatus = DEAD;
 	}
 
 	/** Checks whether the OS process exists.
@@ -519,11 +533,11 @@ public:
 		case ALIVE:
 			stream << "<life_status>ALIVE</life_status>";
 			break;
-		case SHUTTING_DOWN:
-			stream << "<life_status>SHUTTING_DOWN</life_status>";
+		case SHUTDOWN_TRIGGERED:
+			stream << "<life_status>SHUTDOWN_TRIGGERED</life_status>";
 			break;
-		case SHUT_DOWN:
-			stream << "<life_status>SHUT_DOWN</life_status>";
+		case DEAD:
+			stream << "<life_status>DEAD</life_status>";
 			break;
 		default:
 			P_BUG("Unknown 'lifeStatus' state " << (int) lifeStatus);
@@ -537,6 +551,9 @@ public:
 			break;
 		case DISABLED:
 			stream << "<enabled>DISABLED</enabled>";
+			break;
+		case DETACHED:
+			stream << "<enabled>DETACHED</enabled>";
 			break;
 		default:
 			P_BUG("Unknown 'enabled' state " << (int) enabled);

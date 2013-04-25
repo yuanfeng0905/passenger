@@ -47,17 +47,7 @@ startBackgroundLoop(BackgroundEventLoop *bg) {
 
 BackgroundEventLoop::BackgroundEventLoop(bool scalable) {
 	TRACE_POINT();
-	loop = ev_loop_new(EVBACKEND_EPOLL);
-	if (loop == NULL) {
-		loop = ev_loop_new(EVBACKEND_KQUEUE);
-	}
-	if (loop == NULL) {
-		loop = ev_loop_new(0);
-	}
-	if (loop == NULL) {
-		throw RuntimeException("Cannot create an event loop");
-	}
-
+	
 	if (scalable) {
 		loop = ev_loop_new(EVBACKEND_KQUEUE);
 		if (loop == NULL) {
@@ -69,6 +59,10 @@ BackgroundEventLoop::BackgroundEventLoop(bool scalable) {
 	} else {
 		loop = ev_loop_new(EVBACKEND_POLL);
 	}
+	if (loop == NULL) {
+		throw RuntimeException("Cannot create an event loop");
+	}
+
 	async = (ev_async *) malloc(sizeof(ev_async));
 	async->data = this;
 	ev_async_init(async, signalBackgroundEventLoopExit);
