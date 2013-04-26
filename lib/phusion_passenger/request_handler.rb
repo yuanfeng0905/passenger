@@ -690,8 +690,9 @@ private
 	def stop_async_irb_server
 		if @async_irb_worker_threads
 			@async_irb_thread.join
-			threads = @async_irb_worker_threads
+			threads = nil
 			@async_irb_mutex.synchronize do
+				threads = @async_irb_worker_threads
 				@async_irb_worker_threads = []
 			end
 			threads.each do |thread|
