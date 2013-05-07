@@ -21,8 +21,7 @@ module Packaging
 		'passenger',
 		'passenger-install-apache2-module',
 		'passenger-install-nginx-module',
-		'passenger-config',
-		'passenger-show-backtrace'
+		'passenger-config'
 	]
 	
 	SUPER_USER_EXECUTABLES = [
