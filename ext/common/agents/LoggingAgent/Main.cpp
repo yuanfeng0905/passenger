@@ -25,7 +25,6 @@
 
 #include <AccountsDatabase.h>
 #include <Account.h>
-#include <ServerInstanceDir.h>
 #include <Exceptions.h>
 #include <Utils.h>
 #include <Utils/IOUtils.h>

@@ -31,7 +31,7 @@ APACHE2_MODULE_INPUT_FILES = {
 		ext/apache2/Configuration.hpp
 		ext/apache2/Bucket.h
 		ext/apache2/DirectoryMapper.h
-		ext/common/AgentsStarter.hpp
+		ext/common/AgentsStarter.h
 		ext/common/Exceptions.h
 		ext/common/Logging.h
 		ext/common/RandomGenerator.h

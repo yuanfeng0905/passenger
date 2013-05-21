@@ -9,10 +9,11 @@
 #ifndef _PASSENGER_CONFIGURATION_HPP_
 #define _PASSENGER_CONFIGURATION_HPP_
 
-#include "Utils.h"
-#include "Logging.h"
-#include "ServerInstanceDir.h"
-#include "Constants.h"
+#include <Logging.h>
+#include <ServerInstanceDir.h>
+#include <Constants.h>
+#include <Utils.h>
+#include <Utils/VariantMap.h>
 
 /* The APR headers must come after the Passenger headers. See Hooks.cpp
  * to learn why.
@@ -413,6 +414,8 @@ struct DirConfig {
 struct ServerConfig {
 	/** The Passenger root folder. */
 	const char *root;
+
+	VariantMap ctl;
 
 	/** The default Ruby interpreter to use. */
 	const char *defaultRuby;
