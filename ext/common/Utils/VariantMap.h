@@ -158,19 +158,26 @@ public:
 	}
 	
 	VariantMap &set(const string &name, const string &value) {
-		store[name] = value;
+		if (value.empty()) {
+			map<string, string>::iterator it = store.find(name);
+			if (it != store.end()) {
+				store.erase(it);
+			}
+		} else {
+			store[name] = value;
+		}
 		return *this;
 	}
 
 	VariantMap &setDefault(const string &name, const string &value) {
 		if (store.find(name) == store.end()) {
-			store[name] = value;
+			set(name, value);
 		}
 		return *this;
 	}
 	
 	VariantMap &setInt(const string &name, int value) {
-		store[name] = toString(value);
+		set(name, toString(value));
 		return *this;
 	}
 
@@ -182,7 +189,7 @@ public:
 	}
 	
 	VariantMap &setULL(const string &name, unsigned long long value) {
-		store[name] = toString(value);
+		set(name, toString(value));
 		return *this;
 	}
 
@@ -194,7 +201,7 @@ public:
 	}
 	
 	VariantMap &setPid(const string &name, pid_t value) {
-		store[name] = toString((unsigned long long) value);
+		set(name, toString((unsigned long long) value));
 		return *this;
 	}
 
@@ -206,7 +213,7 @@ public:
 	}
 	
 	VariantMap &setUid(const string &name, uid_t value) {
-		store[name] = toString((long long) value);
+		set(name, toString((long long) value));
 		return *this;
 	}
 
@@ -218,7 +225,7 @@ public:
 	}
 	
 	VariantMap &setGid(const string &name, gid_t value) {
-		store[name] = toString((long long) value);
+		set(name, toString((long long) value));
 		return *this;
 	}
 
@@ -230,7 +237,7 @@ public:
 	}
 	
 	VariantMap &setBool(const string &name, bool value) {
-		store[name] = value ? "true" : "false";
+		set(name, value ? "true" : "false");
 		return *this;
 	}
 
@@ -249,7 +256,7 @@ public:
 			result.append(*it);
 			result.append(1, '\0');
 		}
-		store[name] = Base64::encode(result);
+		set(name, Base64::encode(result));
 		return *this;
 	}
 
