@@ -32,7 +32,7 @@ class Installer < PhusionPassenger::AbstractInstaller
 			'gcc',
 			'g++',
 			'download-tool',
-			'ruby-dev',
+			PlatformInfo.passenger_needs_ruby_dev_header? ? 'ruby-dev' : nil,
 			'ruby-openssl',
 			'rubygems',
 			'rake',
@@ -40,7 +40,7 @@ class Installer < PhusionPassenger::AbstractInstaller
 			'libcurl-dev',
 			'openssl-dev',
 			'zlib-dev'
-		]
+		].compact
 		return [specs, ids]
 	end
 	
