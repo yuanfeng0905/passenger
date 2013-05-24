@@ -40,9 +40,10 @@ class ThreadHandler
 	GC_SUPPORTS_TIME        = GC.respond_to?(:time)
 	GC_SUPPORTS_CLEAR_STATS = GC.respond_to?(:clear_stats)
 
+	attr_reader :thread
 	attr_reader :stats_mutex
-	attr_reader :iterations
-	attr_reader :processed_requests
+	attr_reader :interruptable
+	attr_reader :iteration
 
 	def initialize(request_handler, options = {})
 		@request_handler   = request_handler
@@ -56,9 +57,9 @@ class ThreadHandler
 			:connect_password
 		)
 
-		@stats_mutex = Mutex.new
-		@iterations = 0
-		@processed_requests = 0
+		@stats_mutex   = Mutex.new
+		@interruptable = false
+		@iteration     = 0
 
 		if @protocol == :session
 			metaclass = class << self; self; end
@@ -76,6 +77,7 @@ class ThreadHandler
 	end
 
 	def install
+		@thread = Thread.current
 		Thread.current[:passenger_thread_handler] = self
 		PhusionPassenger.call_event(:starting_request_handler_thread)
 	end
@@ -88,7 +90,7 @@ class ThreadHandler
 		
 		begin
 			finish_callback.call
-			while !stats_mutex.synchronize { @interrupted }
+			while true
 				hijacked = accept_and_process_next_request(socket_wrapper, channel, buffer)
 				socket_wrapper = Utils::UnseekableSocket.new if hijacked
 			end
@@ -96,24 +98,20 @@ class ThreadHandler
 			# Do nothing.
 		end
 		debug("Thread handler main loop exited normally")
-	end
-
-	def set_interrupted!
-		@stats_mutex.synchronize { @interrupted = true }
-	end
-
-	def idle?
-		@stats_mutex.synchronize { return !@processing }
+	ensure
+		@stats_mutex.synchronize { @interruptable = true }
 	end
 
 private
 	# Returns true if the socket has been hijacked, false otherwise.
 	def accept_and_process_next_request(socket_wrapper, channel, buffer)
-		@stats_mutex.synchronize { @iterations += 1 }
+		@stats_mutex.synchronize do
+			@interruptable = true
+		end
 		connection = socket_wrapper.wrap(@server_socket.accept)
 		@stats_mutex.synchronize do
-			raise Interrupted if @interrupted
-			@processing = true
+			@interruptable = false
+			@iteration    += 1
 		end
 		trace(3, "Accepted new request on socket #{@socket_name}")
 		channel.io = connection
@@ -142,6 +140,8 @@ private
 		else
 			trace(2, "No headers parsed; disconnecting client.")
 		end
+	rescue Interrupted
+		raise
 	rescue => e
 		if socket_wrapper && socket_wrapper.source_of_exception?(e)
 			# EPIPE is harmless, it just means that the client closed the connection.
@@ -169,10 +169,6 @@ private
 				connection.close
 			rescue SystemCallError
 			end
-		end
-		@stats_mutex.synchronize do
-			@processed_requests += 1
-			@processing = false
 		end
 	end
 
