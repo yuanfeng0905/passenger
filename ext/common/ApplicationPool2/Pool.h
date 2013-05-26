@@ -691,7 +691,6 @@ public:
 				 */
 				oldProcess = findProcessNeedingRollingRestart(group);
 			}
-			assert(oldProcess->isAlive());
 
 			vector<Callback> actions;
 			// TODO: respect maxInstances and maxPoolSize
@@ -711,6 +710,7 @@ public:
 				}
 			} else {
 				UPDATE_TRACE_POINT();
+				assert(oldProcess->isAlive());
 				group->detach(oldProcess, actions);
 				group->attach(newProcess, actions);
 				newProcessGuard.clear();
@@ -728,8 +728,11 @@ public:
 			fullVerifyInvariants();
 
 			if (!actions.empty()) {
+				UPDATE_TRACE_POINT();
 				l.unlock();
 				runAllActions(actions);
+				actions.clear();
+				UPDATE_TRACE_POINT();
 				l.lock();
 				fullVerifyInvariants();
 			}
