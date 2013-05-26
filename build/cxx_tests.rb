@@ -225,6 +225,7 @@ dependencies = [
 	LIBEIO_TARGET,
 	TEST_BOOST_OXT_LIBRARY,
 	TEST_COMMON_LIBRARY.link_objects,
+	'ext/common/Constants.h',
 	'ext/common/MultiLibeio.cpp'
 ].flatten.compact
 file 'test/cxx/CxxTestMain' => dependencies.flatten do
@@ -237,6 +238,7 @@ deps = [
 	'test/tut/tut.h',
 	'ext/oxt/thread.hpp',
 	'ext/oxt/tracable_exception.hpp',
+	'ext/common/Constants.h',
 	'ext/common/ServerInstanceDir.h',
 	'ext/common/Exceptions.h',
 	'ext/common/Utils.h',
@@ -247,7 +249,8 @@ file 'test/cxx/TestSupport.h.gch' => deps do
 end
 
 TEST_CXX_OBJECTS.each_pair do |target, sources|
-	file(target => sources + ['test/cxx/TestSupport.h', 'test/cxx/TestSupport.h.gch']) do
+	extra_deps = ['test/cxx/TestSupport.h', 'test/cxx/TestSupport.h.gch', 'ext/common/Constants.h']
+	file(target => sources + extra_deps) do
 		# To use precompiled headers in Clang, we must -include them on them command line.
 		compile_cxx sources[0], "-o #{target} -include test/cxx/TestSupport.h #{TEST_CXX_CFLAGS}"
 	end
