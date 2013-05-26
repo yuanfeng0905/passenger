@@ -49,6 +49,7 @@ module PhusionPassenger
 
 		# Misc
 		FEEDBACK_FD = 3
+		PASSENGER_IS_ENTERPRISE = true
 	end
 
 	include SharedConstants
