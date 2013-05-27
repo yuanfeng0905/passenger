@@ -62,7 +62,7 @@
 
 	#define FEEDBACK_FD 3
 
-	#define PASSENGER_IS_ENTERPRISE true
+	#define PASSENGER_IS_ENTERPRISE 1
 
 
 #endif /* _PASSENGER_CONSTANTS_H */
