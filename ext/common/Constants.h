@@ -11,6 +11,10 @@
 
 /* Constants.h is automatically generated from Constants.h.template by the build system.
  * Most constants are derived from lib/phusion_passenger/constants.rb.
+ *
+ * To force regenerating this file:
+ *   rm -f ext/common/Constants.h
+ *   rake ext/common/Constants.h
  */
 
 #define DEFAULT_BACKEND_ACCOUNT_RIGHTS Account::DETACH
