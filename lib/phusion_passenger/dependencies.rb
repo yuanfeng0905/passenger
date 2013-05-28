@@ -6,6 +6,7 @@
 #  See LICENSE file for license information.
 
 require 'rbconfig'
+require 'tmpdir'
 require 'phusion_passenger'
 require 'phusion_passenger/packaging'
 require 'phusion_passenger/platform_info'
@@ -98,6 +99,12 @@ module Dependencies # :nodoc: all
 	def self.mizuho_required?
 		return Packaging::ASCII_DOCS.any? do |fn|
 			!File.exist?("#{SOURCE_ROOT}/#{fn}")
+		end
+	end
+
+	def self.create_temp_files(name1, name2, dir = PlatformInfo.tmpexedir)
+		Dir.mktmpdir("passenger.", dir) do |subdir|
+			yield "#{subdir}/#{name1}", "#{subdir}/#{name2}"
 		end
 	end
 
@@ -440,9 +447,7 @@ module Dependencies # :nodoc: all
 	Curl_Dev = Dependency.new do |dep|
 		dep.name = "Curl development headers with SSL support"
 		dep.define_checker do |result|
-			source_file = "#{PlatformInfo.tmpexedir}/passenger-curl-check.c"
-			output_file = "#{PlatformInfo.tmpexedir}/passenger-curl-check"
-			begin
+			Dependencies.create_temp_files("check.c", "check") do |source_file, output_file|
 				found = true
 				File.open(source_file, 'w') do |f|
 					f.puts("#include <curl/curl.h>")
@@ -466,9 +471,6 @@ module Dependencies # :nodoc: all
 					found = false
 				end
 				result.found(found)
-			ensure
-				File.unlink(source_file) rescue nil
-				File.unlink(output_file) rescue nil
 			end
 		end
 		dep.install_instructions = "Please download Curl from <b>http://curl.haxx.se/libcurl</b> " +
@@ -498,22 +500,17 @@ module Dependencies # :nodoc: all
 	OpenSSL_Dev = Dependency.new do |dep|
 		dep.name = "OpenSSL development headers"
 		dep.define_checker do |result|
-			source_file = "#{PlatformInfo.tmpexedir}/passenger-openssl-check.c"
-			object_file = "#{PlatformInfo.tmpexedir}/passenger-openssl-check.o"
-			begin
+			Dependencies.create_temp_files("check.c", "check.o") do |source_file, output_file|
 				File.open(source_file, 'w') do |f|
 					f.write("#include <openssl/ssl.h>")
 				end
 				Dir.chdir(File.dirname(source_file)) do
-					if system("(gcc #{ENV['CFLAGS']} -c '#{source_file}') >/dev/null 2>/dev/null")
+					if system("(gcc #{ENV['CFLAGS']} -c '#{source_file}' -o '#{output_file}') >/dev/null 2>/dev/null")
 						result.found
 					else
 						result.not_found
 					end
 				end
-			ensure
-				File.unlink(source_file) rescue nil
-				File.unlink(object_file) rescue nil
 			end
 		end
 		if RUBY_PLATFORM =~ /linux/
@@ -530,22 +527,17 @@ module Dependencies # :nodoc: all
 	Zlib_Dev = Dependency.new do |dep|
 		dep.name = "Zlib development headers"
 		dep.define_checker do |result|
-			source_file = "#{PlatformInfo.tmpexedir}/zlib-check.c"
-			object_file = "#{PlatformInfo.tmpexedir}/zlib-check.o"
-			begin
+			Dependencies.create_temp_files("check.c", "check.o") do |source_file, output_file|
 				File.open(source_file, 'w') do |f|
 					f.write("#include <zlib.h>")
 				end
 				Dir.chdir(File.dirname(source_file)) do
-					if system("(g++ -c zlib-check.c) >/dev/null 2>/dev/null")
+					if system("(g++ -c '#{source_file}' -o '#{output_file}') >/dev/null 2>/dev/null")
 						result.found
 					else
 						result.not_found
 					end
 				end
-			ensure
-				File.unlink(source_file) rescue nil
-				File.unlink(object_file) rescue nil
 			end
 		end
 		if RUBY_PLATFORM =~ /linux/
