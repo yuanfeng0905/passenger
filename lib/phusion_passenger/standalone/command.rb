@@ -1,11 +1,12 @@
 #  Phusion Passenger - https://www.phusionpassenger.com/
-#  Copyright (c) 2010-2012 Phusion
+#  Copyright (c) 2010-2013 Phusion
 #
 #  "Phusion Passenger" is a trademark of Hongli Lai & Ninh Bui.
 #
 #  See LICENSE file for license information.
 require 'optparse'
 require 'phusion_passenger'
+require 'phusion_passenger/constants'
 require 'phusion_passenger/standalone/utils'
 
 module PhusionPassenger
@@ -174,8 +175,10 @@ private
 			else
 				f.puts "agents=#{@runtime_dirs[:support_dir]}"
 			end
+			f.puts "libdir=#{PhusionPassenger.lib_dir}"
 			f.puts "helper_scripts=#{PhusionPassenger.helper_scripts_dir}"
 			f.puts "resources=#{PhusionPassenger.resources_dir}"
+			f.puts "includedir=#{PhusionPassenger.include_dir}"
 			f.puts "doc=#{PhusionPassenger.doc_dir}"
 			f.puts "rubylib=#{PhusionPassenger.ruby_libdir}"
 			f.puts "apache2_module=#{PhusionPassenger.apache2_module_path}"
@@ -189,6 +192,7 @@ private
 				"templates", "standalone", "config.erb")
 			require_erb
 			erb = ERB.new(File.read(template_filename))
+			current_user = Etc.getpwuid(Process.uid).name
 			
 			# The template requires some helper methods which are defined in start_command.rb.
 			output = erb.result(binding)
@@ -218,7 +222,7 @@ private
 	def create_nginx_controller(extra_options = {})
 		require_daemon_controller
 		require 'socket' unless defined?(UNIXSocket)
-		@temp_dir        = "/tmp/passenger-standalone.#{$$}"
+		@temp_dir        = "/tmp/passenger.#{SERVER_INSTANCE_DIR_STRUCTURE_MAJOR_VERSION}.#{SERVER_INSTANCE_DIR_STRUCTURE_MINOR_VERSION}.#{$$}"
 		@config_filename = "#{@temp_dir}/config"
 		@location_config_filename = "#{@temp_dir}/locations.ini"
 		if @options[:socket_file]

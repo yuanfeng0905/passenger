@@ -83,6 +83,7 @@ public:
 		bool restarting;
 		bool spawning;
 		bool superGroup;
+		bool oobw;
 		bool rollingRestarting;
 
 		// The following fields may only be accessed by Pool.
@@ -96,6 +97,7 @@ public:
 			restarting = true;
 			spawning   = true;
 			superGroup = false;
+			oobw       = false;
 			rollingRestarting = false;
 			spawnLoopIteration = 0;
 			spawnErrors = 0;
@@ -417,25 +419,36 @@ public:
 	}
 	
 	void inspectProcessList(const InspectOptions &options, stringstream &result,
-		const ProcessList &processes) const
+		const Group *group, const ProcessList &processes) const
 	{
 		ProcessList::const_iterator p_it;
 		for (p_it = processes.begin(); p_it != processes.end(); p_it++) {
 			const ProcessPtr &process = *p_it;
 			char buf[128];
+			char cpubuf[10];
+			char membuf[10];
 			
+			snprintf(cpubuf, sizeof(cpubuf), "%d%%", (int) process->metrics.cpu);
+			snprintf(membuf, sizeof(membuf), "%ldM",
+				(unsigned long) (process->metrics.realMemory() / 1024));
 			snprintf(buf, sizeof(buf),
-					"* PID: %-5lu   Sessions: %-2u   Processed: %-5u   Uptime: %s",
+					"  * PID: %-5lu   Sessions: %-2u      Processed: %-5u   Uptime: %s\n"
+					"    CPU: %-5s   Memory  : %-5s   Last used: %s ago",
 					(unsigned long) process->pid,
 					process->sessions,
 					process->processed,
-					process->uptime().c_str());
-			result << "  " << buf << endl;
+					process->uptime().c_str(),
+					cpubuf,
+					membuf,
+					distanceOfTimeInWords(process->lastUsed / 1000000).c_str());
+			result << buf << endl;
 
 			if (process->enabled == Process::DISABLING) {
 				result << "    Disabling..." << endl;
 			} else if (process->enabled == Process::DISABLED) {
 				result << "    DISABLED" << endl;
+			} else if (process->enabled == Process::DETACHED) {
+				result << "    Shutting down..." << endl;
 			}
 
 			const Socket *socket;
@@ -651,7 +664,7 @@ public:
 				// gdb can generate a backtrace.
 			}
 
-			ScopeGuard newProcessGuard(boost::bind(Process::maybeShutdown, newProcess));
+			ScopeGuard newProcessGuard(boost::bind(Process::forceTriggerShutdownAndCleanup, newProcess));
 			
 			if (debugSupport != NULL && debugSupport->rollingRestarting) {
 				this_thread::restore_interruption ri(di);
@@ -678,7 +691,6 @@ public:
 				 */
 				oldProcess = findProcessNeedingRollingRestart(group);
 			}
-			assert(oldProcess->isAlive());
 
 			vector<Callback> actions;
 			// TODO: respect maxInstances and maxPoolSize
@@ -698,25 +710,31 @@ public:
 				}
 			} else {
 				UPDATE_TRACE_POINT();
+				assert(oldProcess->isAlive());
 				group->detach(oldProcess, actions);
 				group->attach(newProcess, actions);
 				newProcessGuard.clear();
 			}
 
 			UPDATE_TRACE_POINT();
-			if (group->getWaitlist.empty()) {
+			if (!group->getWaitlist.empty()) {
 				group->assignSessionsToGetWaiters(actions);
-			} else {
-				assignSessionsToGetWaiters(actions);
-				possiblySpawnMoreProcessesForExistingGroups();
 			}
+			assignSessionsToGetWaiters(actions);
+			// Because the rolling restarter aborted any concurrent process
+			// spawning threads, we check whether we need to spawn after
+			// we're done.
+			possiblySpawnMoreProcessesForExistingGroups();
 
 			UPDATE_TRACE_POINT();
 			fullVerifyInvariants();
 
 			if (!actions.empty()) {
+				UPDATE_TRACE_POINT();
 				l.unlock();
 				runAllActions(actions);
+				actions.clear();
+				UPDATE_TRACE_POINT();
 				l.lock();
 				fullVerifyInvariants();
 			}
@@ -725,6 +743,12 @@ public:
 		UPDATE_TRACE_POINT();
 		verifyInvariants();
 		verifyExpensiveInvariants();
+
+		if (debugSupport != NULL && debugSupport->rollingRestarting) {
+			this_thread::restore_interruption ri(di);
+			this_thread::restore_syscall_interruption rsi(dsi);
+			debugSupport->debugger->send("Done rolling restarting");
+		}
 	}
 
 	static void garbageCollect(PoolPtr self) {
@@ -820,7 +844,11 @@ public:
 		// Schedule next garbage collection run.
 		unsigned long long sleepTime;
 		if (nextGcRunTime == 0 || nextGcRunTime <= now) {
-			sleepTime = maxIdleTime;
+			if (maxIdleTime == 0) {
+				sleepTime = 10 * 60 * 1000000;
+			} else {
+				sleepTime = maxIdleTime;
+			}
 		} else {
 			sleepTime = nextGcRunTime - now;
 		}
@@ -971,6 +999,7 @@ public:
 						xml << "Group: <group>";
 						group->inspectXml(xml, false);
 						xml << "</group>";
+						logEntries.push_back(entry);
 					}
 				}
 			}
@@ -1016,6 +1045,7 @@ public:
 			options);
 		superGroup->initialize();
 		superGroups.set(options.getAppGroupName(), superGroup);
+		garbageCollectionCond.notify_all();
 		return superGroup;
 	}
 	
@@ -1203,6 +1233,7 @@ public:
 				superGroup = make_shared<SuperGroup>(shared_from_this(), options);
 				superGroup->initialize();
 				superGroups.set(options.getAppGroupName(), superGroup);
+				garbageCollectionCond.notify_all();
 				SessionPtr session = superGroup->get(options, callback);
 				/* The SuperGroup is still initializing so the callback
 				 * should now have been put on the wait list,
@@ -1596,9 +1627,10 @@ public:
 					result << "  (spawning new process...)" << endl;
 				}
 				result << "  Requests in queue: " << group->getWaitlist.size() << endl;
-				inspectProcessList(options, result, group->enabledProcesses);
-				inspectProcessList(options, result, group->disablingProcesses);
-				inspectProcessList(options, result, group->disabledProcesses);
+				inspectProcessList(options, result, group, group->enabledProcesses);
+				inspectProcessList(options, result, group, group->disablingProcesses);
+				inspectProcessList(options, result, group, group->disabledProcesses);
+				inspectProcessList(options, result, group, group->detachedProcesses);
 				result << endl;
 			}
 		}

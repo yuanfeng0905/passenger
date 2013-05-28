@@ -79,7 +79,7 @@ protected
 			'g++',
 			'gmake',
 			'download-tool',
-			'ruby-dev',
+			PlatformInfo.passenger_needs_ruby_dev_header? ? 'ruby-dev' : nil,
 			'ruby-openssl',
 			'rubygems',
 			'rake',
@@ -89,7 +89,7 @@ protected
 			'zlib-dev',
 			'pcre-dev',
 			'daemon_controller >= 1.1.0'
-		]
+		].compact
 		return [specs, ids]
 	end
 	
@@ -183,7 +183,7 @@ protected
 	def before_install
 		super
 		@plugin.call_hook(:runtime_installer_start, self) if @plugin
-		@working_dir = "/tmp/#{myself}-passenger-standalone-#{Process.pid}"
+		@working_dir = "#{PlatformInfo.tmpexedir}/#{myself}-passenger-standalone-#{Process.pid}"
 		FileUtils.rm_rf(@working_dir)
 		FileUtils.mkdir_p(@working_dir)
 		@download_binaries = true if !defined?(@download_binaries)
@@ -513,7 +513,8 @@ private
 				nginx_libs = COMMON_LIBRARY.only(*NGINX_LIBS_SELECTOR).
 					set_output_dir(output_dir).
 					link_objects_as_string
-				command << "env PASSENGER_LIBS='#{nginx_libs} #{output_dir}/../libboost_oxt.a' "
+				command << "env PASSENGER_INCLUDEDIR='#{PhusionPassenger.include_dir}'" <<
+					" PASSENGER_LIBS='#{nginx_libs} #{output_dir}/../libboost_oxt.a' "
 			end
 			# RPM thinks it's being smart by scanning binaries for
 			# paths and refusing to create package if it detects any
@@ -529,6 +530,7 @@ private
 				"--without-http_scgi_module " <<
 				"--without-http_uwsgi_module " <<
 				"--with-http_gzip_static_module " <<
+				"--with-http_stub_status_module " <<
 				"'--add-module=#{PhusionPassenger.source_root}/ext/nginx'"
 			run_command_with_throbber(command, "Preparing Nginx...") do |status_text|
 				yield(0, 1, status_text)

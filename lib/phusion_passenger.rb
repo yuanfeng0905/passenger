@@ -13,12 +13,14 @@ module PhusionPassenger
 	###### Version numbers ######
 	
 	PACKAGE_NAME = 'passenger-enterprise-server'
+	VERSION_STRING = '4.0.4'
 	
-	# Phusion Passenger version number. Don't forget to edit ext/common/Constants.h too.
-	VERSION_STRING = '3.9.5.rc3'
-	
-	PREFERRED_NGINX_VERSION = '1.2.7'
-	PREFERRED_PCRE_VERSION  = '8.31'
+	PREFERRED_NGINX_VERSION = '1.4.1'
+	NGINX_SHA256_CHECKSUM = 'bca5d1e89751ba29406185e1736c390412603a7e6b604f5b4575281f6565d119'
+
+	PREFERRED_PCRE_VERSION  = '8.32'
+	PCRE_SHA256_CHECKSUM = 'd5d8634b36baf3d08be442a627001099583b397f456bc795304a013383b6423a'
+
 	STANDALONE_INTERFACE_VERSION  = 1
 	
 	ENTERPRISE_SERVER = true
@@ -43,15 +45,6 @@ module PhusionPassenger
 	
 	# System-wide directory for storing Phusion Passenger Standalone runtime files.
 	GLOBAL_STANDALONE_RESOURCE_DIR = "/var/lib/#{GLOBAL_STANDALONE_NAMESPACE_DIRNAME}".freeze
-	
-	NATIVELY_PACKAGED_BIN_DIR                = "/usr/bin".freeze
-	NATIVELY_PACKAGED_AGENTS_DIR             = "/usr/lib/#{GLOBAL_NAMESPACE_DIRNAME}/agents".freeze
-	NATIVELY_PACKAGED_HELPER_SCRIPTS_DIR     = "/usr/share/#{GLOBAL_NAMESPACE_DIRNAME}/helper-scripts".freeze
-	NATIVELY_PACKAGED_RESOURCES_DIR          = "/usr/share/#{GLOBAL_NAMESPACE_DIRNAME}".freeze
-	NATIVELY_PACKAGED_DOC_DIR                = "/usr/share/doc/#{GLOBAL_NAMESPACE_DIRNAME}".freeze
-	NATIVELY_PACKAGED_RUNTIME_LIBDIR         = "/usr/lib/#{GLOBAL_NAMESPACE_DIRNAME}".freeze
-	NATIVELY_PACKAGED_HEADER_DIR             = "/usr/include/#{GLOBAL_NAMESPACE_DIRNAME}".freeze
-	NATIVELY_PACKAGED_APACHE2_MODULE         = "/usr/lib/apache2/modules/mod_passenger.so".freeze
 	
 	# Follows the logic of ext/common/ResourceLocator.h, so don't forget to modify that too.
 	def self.locate_directories(source_root_or_location_configuration_file = nil)
@@ -79,8 +72,10 @@ module PhusionPassenger
 			@natively_packaged     = get_bool_option(filename, options, 'natively_packaged')
 			@bin_dir               = get_option(filename, options, 'bin').freeze
 			@agents_dir            = get_option(filename, options, 'agents').freeze
+			@lib_dir               = get_option(filename, options, 'libdir').freeze
 			@helper_scripts_dir    = get_option(filename, options, 'helper_scripts').freeze
 			@resources_dir         = get_option(filename, options, 'resources').freeze
+			@include_dir           = get_option(filename, options, 'includedir').freeze
 			@doc_dir               = get_option(filename, options, 'doc').freeze
 			@apache2_module_path   = get_option(filename, options, 'apache2_module').freeze
 			@ruby_extension_source_dir = get_option(filename, options, 'ruby_extension_source').freeze
@@ -89,8 +84,10 @@ module PhusionPassenger
 			@natively_packaged     = false
 			@bin_dir               = "#{@source_root}/bin".freeze
 			@agents_dir            = "#{@source_root}/agents".freeze
+			@lib_dir               = "#{@source_root}/libout".freeze
 			@helper_scripts_dir    = "#{@source_root}/helper-scripts".freeze
 			@resources_dir         = "#{@source_root}/resources".freeze
+			@include_dir           = "#{@source_root}/ext".freeze
 			@doc_dir               = "#{@source_root}/doc".freeze
 			@apache2_module_path   = "#{@source_root}/libout/apache2/mod_passenger.so".freeze
 			@ruby_extension_source_dir = "#{@source_root}/ext/ruby"
@@ -120,6 +117,10 @@ module PhusionPassenger
 	def self.agents_dir
 		return @agents_dir
 	end
+
+	def self.lib_dir
+		return @lib_dir
+	end
 	
 	def self.helper_scripts_dir
 		return @helper_scripts_dir
@@ -127,6 +128,10 @@ module PhusionPassenger
 	
 	def self.resources_dir
 		return @resources_dir
+	end
+
+	def self.include_dir
+		return @include_dir
 	end
 	
 	def self.doc_dir

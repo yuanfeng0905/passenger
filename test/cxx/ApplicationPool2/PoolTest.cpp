@@ -733,7 +733,7 @@ namespace tut {
 		SessionPtr session3 = pool->get(options, &ticket);
 		{
 			LockGuard l(pool->syncher);
-			ensure("(4)", !session1->getProcess()->isAlive());
+			ensure("(4)", session1->getProcess()->enabled == Process::DETACHED);
 			ensure_equals("(6)", fooGroup->getWaitlist.size(), 1u);
 			ensure_equals("(7)", pool->getWaitlist.size(), 0u);
 		}
@@ -764,9 +764,16 @@ namespace tut {
 
 		ProcessPtr process = currentSession->getProcess();
 		pool->detachProcess(currentSession->getProcess());
-		ensure(!process->isAlive());
+		{
+			LockGuard l(pool->syncher);
+			ensure(process->enabled == Process::DETACHED);
+		}
 		EVENTUALLY(5,
 			result = pool->getProcessCount() == 2;
+		);
+		currentSession.reset();
+		EVENTUALLY(5,
+			result = process->isDead();
 		);
 	}
 	
@@ -865,6 +872,72 @@ namespace tut {
 		ensure_equals(pool->superGroups.size(), 1u);
 		ensure(superGroup->isAlive());
 		ensure(!superGroup->garbageCollectable());
+	}
+
+	TEST_METHOD(34) {
+		// When detaching a process, it waits until all sessions have
+		// finished before telling the process to shut down.
+		Options options = createOptions();
+		options.spawnMethod = "direct";
+		options.minProcesses = 0;
+		SessionPtr session = pool->get(options, &ticket);
+		ProcessPtr process = session->getProcess();
+
+		ensure(pool->detachProcess(process));
+		{
+			LockGuard l(pool->syncher);
+			ensure_equals(process->enabled, Process::DETACHED);
+		}
+		SHOULD_NEVER_HAPPEN(100,
+			LockGuard l(pool->syncher);
+			result = !process->isAlive()
+				|| !process->osProcessExists();
+		);
+
+		session.reset();
+		EVENTUALLY(1,
+			LockGuard l(pool->syncher);
+			result = process->enabled == Process::DETACHED
+				&& !process->osProcessExists()
+				&& process->isDead();
+		);
+	}
+
+	TEST_METHOD(35) {
+		// When detaching a process, it waits until the OS processes
+		// have exited before cleaning up the in-memory data structures.
+		Options options = createOptions();
+		options.spawnMethod = "direct";
+		options.minProcesses = 0;
+		ProcessPtr process = pool->get(options, &ticket)->getProcess();
+
+		ScopeGuard g(boost::bind(::kill, process->pid, SIGCONT));
+		kill(process->pid, SIGSTOP);
+
+		ensure(pool->detachProcess(process));
+		{
+			LockGuard l(pool->syncher);
+			ensure_equals(process->enabled, Process::DETACHED);
+		}
+		EVENTUALLY(1,
+			result = process->getLifeStatus() == Process::SHUTDOWN_TRIGGERED;
+		);
+
+		SHOULD_NEVER_HAPPEN(100,
+			LockGuard l(pool->syncher);
+			result = process->isDead()
+				|| !process->osProcessExists();
+		);
+
+		kill(process->pid, SIGCONT);
+		g.clear();
+
+		EVENTUALLY(1,
+			LockGuard l(pool->syncher);
+			result = process->enabled == Process::DETACHED
+				&& !process->osProcessExists()
+				&& process->isDead();
+		);
 	}
 
 	
@@ -1117,18 +1190,13 @@ namespace tut {
 	TEST_METHOD(64) {
 		// Test process idle cleaning.
 		Options options = createOptions();
-		retainSessions = true;
 		pool->setMaxIdleTime(50000);
-		pool->asyncGet(options, callback);
-		pool->asyncGet(options, callback);
-		EVENTUALLY(2,
-			result = number == 2;
-		);
+		SessionPtr session1 = pool->get(options, &ticket);
+		SessionPtr session2 = pool->get(options, &ticket);
 		ensure_equals(pool->getProcessCount(), 2u);
-		
-		currentSession.reset();
-		sessions.pop_back();
 
+		session2.reset();
+		
 		// One of the processes still has a session open and should
 		// not be idle cleaned.
 		EVENTUALLY(2,
@@ -1610,6 +1678,76 @@ namespace tut {
 	}
 
 	TEST_METHOD(82) {
+		// Test rolling restarting a group that's currently spawning a process.
+		TempDirCopy dir("stub/wsgi", "tmp.wsgi");
+		initPoolDebugging();
+		debug->restarting = false;
+		debug->spawning = true;
+		debug->rollingRestarting = true;
+
+		Options options = createOptions();
+		options.appRoot = "tmp.wsgi";
+		options.appType = "wsgi";
+		options.spawnMethod = "direct";
+		options.minProcesses = 2;
+		options.rollingRestart = true;
+
+		// Initiate spawning of 2 processes, then freeze it
+		// at a point where the second one is being spawned.
+		retainSessions = true;
+		pool->asyncGet(options, callback);
+		pool->asyncGet(options, callback);
+		debug->messages->send("Proceed with spawn loop iteration 1");
+		debug->debugger->recv("Begin spawn loop iteration 1");
+		debug->debugger->recv("Begin spawn loop iteration 2");
+		EVENTUALLY(2,
+			result = pool->getProcessCount() == 1u;
+		);
+		EVENTUALLY(2,
+			LockGuard l(pool->syncher);
+			result = pool->getSuperGroup("tmp.wsgi")->defaultGroup->getWaitlist.size() == 1;
+		);
+
+		// The first asyncGet() should have succeeded.
+		ensure_equals((int) number, 1);
+		SessionPtr session1 = currentSession;
+		ensure(session1 != NULL);
+		sessions.clear();
+		currentSession.reset();
+
+		// Now initiate a rolling restart.
+		vector<ProcessPtr> processes = pool->getProcesses();
+		touchFile("tmp.wsgi/tmp/restart.txt");
+		pool->asyncGet(options, callback);
+		debug->debugger->recv("About to attach rolling restarted process");
+		debug->messages->send("Proceed with attaching rolling restarted process");
+		debug->debugger->recv("Done rolling restarting");
+
+		// Test that the first process has been restarted.
+		vector<ProcessPtr> processes2 = pool->getProcesses();
+		ensure_equals(processes2.size(), 1u);
+		ensure(processes2[0]->pid != processes[0]->pid);
+
+		// The second asyncGet() should eventually be processed by
+		// the newly spawned process.
+		EVENTUALLY(2,
+			result = number == 2;
+		);
+		SessionPtr session2 = currentSession;
+		ensure(session2 != NULL);
+		sessions.clear();
+		currentSession.reset();
+		
+		// Cleanup.
+		debug->messages->send("Proceed with spawn loop iteration 2");
+		session1.reset();
+		session2.reset();
+		EVENTUALLY(2,
+			result = number == 3;
+		);
+	}
+
+	TEST_METHOD(83) {
 		// Test detaching a group after the rolling restarter thread has spawned
 		// a new process, but before it has attached the new process to the group.
 		initPoolDebugging();
@@ -1638,10 +1776,11 @@ namespace tut {
 		ensure_equals(pool->getProcessCount(), 0u);
 	}
 
-	TEST_METHOD(83) {
+	TEST_METHOD(84) {
 		// Test deployment error resistance. When ignoreSpawnErrors is set,
-		// and a spawn error is encountered, get() should never try to spawn
-		// another process until the group is restarted.
+		// and there are already processes, and a spawn error is encountered,
+		// then get() should never try to spawn another process until the group
+		// is restarted.
 		initPoolDebugging();
 		TempDirCopy c1("stub/wsgi", "tmp.wsgi");
 		Options options = createOptions();
@@ -1656,7 +1795,6 @@ namespace tut {
 		debug->messages->send("Proceed with spawn loop iteration 3");
 		
 		// Spawn a process.
-		Ticket ticket;
 		SessionPtr session1 = pool->get(options, &ticket);
 		pid_t session1Pid = session1->getPid();
 		
@@ -1701,7 +1839,33 @@ namespace tut {
 		ensure_equals("(4)", pool->getProcessCount(), 1u);
 	}
 
-	TEST_METHOD(84) {
+	TEST_METHOD(85) {
+		// Test deployment error resistance. When ignoreSpawnErrors is set,
+		// and the first process fails to spawn, it throws a SpawnException.
+		TempDirCopy c1("stub/wsgi", "tmp.wsgi");
+		Options options = createOptions();
+		options.appRoot = "tmp.wsgi";
+		options.appType = "wsgi";
+		options.spawnMethod = "direct";
+		options.ignoreSpawnErrors = true;
+		spawnerConfig->forwardStderr = false;
+
+		// Fubar the app.
+		writeFile("tmp.wsgi/passenger_wsgi.py",
+			"import sys\n"
+			"sys.stderr.write('an error\\n')\n"
+			"sys.exit(1)\n");
+		
+		try {
+			setLogLevel(LVL_CRIT);
+			pool->get(options, &ticket);
+			fail("SpawnException expected");
+		} catch (const SpawnException &e) {
+			// Success.
+		}
+	}
+
+	TEST_METHOD(86) {
 		// Upon encountering a spawn error, the rolling restarter thread should
 		// quit trying to restart that group.
 		initPoolDebugging();
@@ -1772,7 +1936,7 @@ namespace tut {
 		);
 	}
 
-	TEST_METHOD(85) {
+	TEST_METHOD(87) {
 		// Test that the maxProcesses option causes no more than the specified number
 		// of processes to be spawned per group.
 		Options options = createOptions();

@@ -8,6 +8,11 @@
 watchdog_libs = COMMON_LIBRARY.only(:base, 'AgentsBase.o', 'Utils/Base64.o')
 dependencies = [
 	'ext/common/agents/Watchdog/Main.cpp',
+	'ext/common/agents/Watchdog/AgentWatcher.cpp',
+	'ext/common/agents/Watchdog/HelperAgentWatcher.cpp',
+	'ext/common/agents/Watchdog/LoggingAgentWatcher.cpp',
+	'ext/common/agents/Watchdog/ServerInstanceDirToucher.cpp',
+	'ext/common/Constants.h',
 	'ext/common/ServerInstanceDir.h',
 	'ext/common/ResourceLocator.h',
 	'ext/common/Utils/VariantMap.h',
@@ -40,6 +45,7 @@ dependencies = [
 	'ext/common/agents/HelperAgent/RequestHandler.cpp',
 	'ext/common/agents/HelperAgent/ScgiRequestParser.h',
 	'ext/common/agents/HelperAgent/BacktracesServer.h',
+	'ext/common/Constants.h',
 	'ext/common/StaticString.h',
 	'ext/common/Account.h',
 	'ext/common/AccountsDatabase.h',
@@ -95,6 +101,7 @@ dependencies = [
 	'ext/common/agents/LoggingAgent/RemoteSender.h',
 	'ext/common/agents/LoggingAgent/DataStoreId.h',
 	'ext/common/agents/LoggingAgent/FilterSupport.h',
+	'ext/common/Constants.h',
 	'ext/common/ServerInstanceDir.h',
 	'ext/common/Logging.h',
 	'ext/common/EventedServer.h',

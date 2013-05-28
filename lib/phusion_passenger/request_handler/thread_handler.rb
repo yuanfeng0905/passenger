@@ -10,7 +10,6 @@ require 'phusion_passenger/debug_logging'
 require 'phusion_passenger/message_channel'
 require 'phusion_passenger/utils'
 require 'phusion_passenger/utils/unseekable_socket'
-require 'phusion_passenger/utils/robust_interruption'
 require 'phusion_passenger/native_support'
 
 module PhusionPassenger
@@ -20,13 +19,18 @@ class RequestHandler
 # This class encapsulates the logic of a single RequestHandler thread.
 class ThreadHandler
 	include DebugLogging
-	include Utils::RobustInterruption
+	include Utils
+
+	class Interrupted < StandardError
+	end
 
 	REQUEST_METHOD = 'REQUEST_METHOD'.freeze
 	PING           = 'PING'.freeze
 	OOBW           = 'OOBW'.freeze
 	PASSENGER_CONNECT_PASSWORD  = 'PASSENGER_CONNECT_PASSWORD'.freeze
 	MAX_REQUEST_TIME            = 'PASSENGER_MAX_REQUEST_TIME'.freeze
+	CONTENT_LENGTH = 'CONTENT_LENGTH'.freeze
+	TRANSFER_ENCODING = 'TRANSFER_ENCODING'.freeze
 
 	MAX_HEADER_SIZE = 128 * 1024
 
@@ -36,9 +40,10 @@ class ThreadHandler
 	GC_SUPPORTS_TIME        = GC.respond_to?(:time)
 	GC_SUPPORTS_CLEAR_STATS = GC.respond_to?(:clear_stats)
 
+	attr_reader :thread
 	attr_reader :stats_mutex
-	attr_reader :iterations
-	attr_reader :processed_requests
+	attr_reader :interruptable
+	attr_reader :iteration
 
 	def initialize(request_handler, options = {})
 		@request_handler   = request_handler
@@ -52,9 +57,9 @@ class ThreadHandler
 			:connect_password
 		)
 
-		@stats_mutex = Mutex.new
-		@iterations = 0
-		@processed_requests = 0
+		@stats_mutex   = Mutex.new
+		@interruptable = false
+		@iteration     = 0
 
 		if @protocol == :session
 			metaclass = class << self; self; end
@@ -72,8 +77,8 @@ class ThreadHandler
 	end
 
 	def install
-		Thread.current[:handler] = self
-		install_robust_interruption
+		@thread = Thread.current
+		Thread.current[:passenger_thread_handler] = self
 		PhusionPassenger.call_event(:starting_request_handler_thread)
 	end
 
@@ -85,37 +90,40 @@ class ThreadHandler
 		
 		begin
 			finish_callback.call
-			while !Utils::RobustInterruption.interrupted?
+			while true
 				hijacked = accept_and_process_next_request(socket_wrapper, channel, buffer)
 				socket_wrapper = Utils::UnseekableSocket.new if hijacked
 			end
-		rescue Utils::RobustInterruption::Interrupted
+		rescue Interrupted
 			# Do nothing.
 		end
 		debug("Thread handler main loop exited normally")
-	end
-
-	def idle?
-		@stats_mutex.synchronize { return !@processing }
+	ensure
+		@stats_mutex.synchronize { @interruptable = true }
 	end
 
 private
 	# Returns true if the socket has been hijacked, false otherwise.
 	def accept_and_process_next_request(socket_wrapper, channel, buffer)
-		@stats_mutex.synchronize { @iterations += 1 }
-		connection = enable_interruptions { socket_wrapper.wrap(@server_socket.accept) }
-		@stats_mutex.synchronize { @processing = true }
+		@stats_mutex.synchronize do
+			@interruptable = true
+		end
+		connection = socket_wrapper.wrap(@server_socket.accept)
+		@stats_mutex.synchronize do
+			@interruptable = false
+			@iteration    += 1
+		end
 		trace(3, "Accepted new request on socket #{@socket_name}")
 		channel.io = connection
 		if headers = parse_request(connection, channel, buffer)
-			prepare_request(headers)
+			prepare_request(connection, headers)
 			begin
 				if headers[REQUEST_METHOD] == PING
 					process_ping(headers, connection)
 				elsif headers[REQUEST_METHOD] == OOBW
 					process_oobw(headers, connection)
 				else
-					process_request(headers, connection, @protocol == :http)
+					process_request(headers, connection, socket_wrapper, @protocol == :http)
 				end
 			rescue Exception
 				has_error = true
@@ -126,19 +134,21 @@ private
 					connection = nil
 					channel = nil
 				end
-				finalize_request(headers, has_error)
+				finalize_request(connection, headers, has_error)
 				trace(3, "Request done.")
 			end
 		else
 			trace(2, "No headers parsed; disconnecting client.")
 		end
+	rescue Interrupted
+		raise
 	rescue => e
 		if socket_wrapper && socket_wrapper.source_of_exception?(e)
 			# EPIPE is harmless, it just means that the client closed the connection.
 			# Other errors might indicate a problem so we print them, but they're
 			# probably not bad enough to warrant stopping the request handler.
 			if !e.is_a?(Errno::EPIPE)
-				Utils.print_exception("Passenger RequestHandler's client socket", e)
+				print_exception("Passenger RequestHandler's client socket", e)
 			end
 		else
 			if @analytics_logger && headers && headers[PASSENGER_TXN_ID]
@@ -159,10 +169,6 @@ private
 				connection.close
 			rescue SystemCallError
 			end
-		end
-		@stats_mutex.synchronize do
-			@processed_requests += 1
-			@processing = false
 		end
 	end
 
@@ -222,7 +228,7 @@ private
 				header, value = line.split(/\s*:\s*/, 2)
 				header.upcase!            # "Foo-Bar" => "FOO-BAR"
 				header.gsub!("-", "_")    #           => "FOO_BAR"
-				if header == "CONTENT_LENGTH" || header == "CONTENT_TYPE"
+				if header == CONTENT_LENGTH || header == "CONTENT_TYPE"
 					headers[header] = value
 				else
 					headers["HTTP_#{header}"] = value
@@ -250,11 +256,16 @@ private
 		connection.write("oobw done")
 	end
 
-#	def process_request(env, connection, full_http_response)
+#	def process_request(env, connection, socket_wrapper, full_http_response)
 #		raise NotImplementedError, "Override with your own implementation!"
 #	end
 
-	def prepare_request(headers)
+	def prepare_request(connection, headers)
+		if (!headers.has_key?(CONTENT_LENGTH) && !headers.has_key?(TRANSFER_ENCODING)) ||
+		  headers[CONTENT_LENGTH] == 0
+			connection.simulate_eof!
+		end
+
 		if @analytics_logger && headers[PASSENGER_TXN_ID]
 			txn_id = headers[PASSENGER_TXN_ID]
 			union_station_key = headers[PASSENGER_UNION_STATION_KEY]
@@ -289,7 +300,11 @@ private
 		end
 	end
 	
-	def finalize_request(headers, has_error)
+	def finalize_request(connection, headers, has_error)
+		if connection
+			connection.stop_simulating_eof!
+		end
+
 		log = headers[PASSENGER_ANALYTICS_WEB_LOG]
 		if log && !log.closed?
 			exception_occurred = false
@@ -370,6 +385,14 @@ private
 	def should_reraise_error?(e)
 		# Stubable by unit tests.
 		return true
+	end
+
+	def should_reraise_app_error?(e, socket_wrapper)
+		return false
+	end
+
+	def should_swallow_app_error?(e, socket_wrapper)
+		return socket_wrapper && socket_wrapper.source_of_exception?(e) && e.is_a?(Errno::EPIPE)
 	end
 end
 

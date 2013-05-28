@@ -1,6 +1,6 @@
 /*
  *  Phusion Passenger - https://www.phusionpassenger.com/
- *  Copyright (c) 2010 Phusion
+ *  Copyright (c) 2010-2013 Phusion
  *
  *  "Phusion Passenger" is a trademark of Hongli Lai & Ninh Bui.
  *
@@ -22,9 +22,10 @@
 #include <cstring>
 #include <string>
 
-#include "Exceptions.h"
-#include "Utils.h"
-#include "Utils/StrIntUtils.h"
+#include <Constants.h>
+#include <Exceptions.h>
+#include <Utils.h>
+#include <Utils/StrIntUtils.h>
 
 namespace Passenger {
 
@@ -33,12 +34,6 @@ using namespace boost;
 
 class ServerInstanceDir: public noncopyable {
 public:
-	// Don't forget to update lib/phusion_passenger/admin_tools/server_instance.rb too.
-	static const int DIR_STRUCTURE_MAJOR_VERSION = 1;
-	static const int DIR_STRUCTURE_MINOR_VERSION = 0;
-	static const int GENERATION_STRUCTURE_MAJOR_VERSION = 1;
-	static const int GENERATION_STRUCTURE_MINOR_VERSION = 0;
-	
 	class Generation: public noncopyable {
 	private:
 		friend class ServerInstanceDir;
@@ -86,8 +81,8 @@ public:
 			/* Write structure version file. */
 			string structureVersionFile = path + "/structure_version.txt";
 			createFile(structureVersionFile,
-				toString(GENERATION_STRUCTURE_MAJOR_VERSION) + "." +
-				toString(GENERATION_STRUCTURE_MINOR_VERSION),
+				toString(SERVER_INSTANCE_DIR_GENERATION_STRUCTURE_MAJOR_VERSION) + "." +
+				toString(SERVER_INSTANCE_DIR_GENERATION_STRUCTURE_MINOR_VERSION),
 				S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
 			
 			
@@ -163,7 +158,9 @@ public:
 			return number;
 		}
 		
-		string getPath() const {
+		// The 'const strng &' here is on purpose. The AgentsStarter C
+		// functions return the string pointer directly.
+		const string &getPath() const {
 			return path;
 		}
 		
@@ -220,28 +217,6 @@ private:
 	}
 	
 public:
-	ServerInstanceDir(pid_t webServerPid, const string &parentDir = "", bool owner = true) {
-		string theParentDir;
-		
-		if (parentDir.empty()) {
-			theParentDir = getSystemTempDir();
-		} else {
-			theParentDir = parentDir;
-		}
-		
-		/* We embed the super structure version in the server instance directory name
-		 * because it's possible to upgrade Phusion Passenger without changing the
-		 * web server's PID. This way each incompatible upgrade will use its own
-		 * server instance directory.
-		 */
-		initialize(theParentDir + "/passenger." +
-			toString(DIR_STRUCTURE_MAJOR_VERSION) + "." +
-			toString(DIR_STRUCTURE_MINOR_VERSION) + "." +
-			toString<unsigned long long>(webServerPid),
-			owner);
-		
-	}
-	
 	ServerInstanceDir(const string &path, bool owner = true) {
 		initialize(path, owner);
 	}
@@ -264,7 +239,9 @@ public:
 		}
 	}
 	
-	string getPath() const {
+	// The 'const strng &' here is on purpose. The AgentsStarter C
+	// functions return the string pointer directly.
+	const string &getPath() const {
 		return path;
 	}
 	
@@ -291,6 +268,8 @@ public:
 	}
 	
 	GenerationPtr getGeneration(unsigned int number) const {
+		// Must not used make_shared() here because Watchdog.cpp
+		// deletes the raw pointer in cleanupAgentsInBackground().
 		return ptr(new Generation(path, number));
 	}
 	

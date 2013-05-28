@@ -33,7 +33,6 @@
 
 typedef struct {
     ngx_http_upstream_conf_t upstream_config;
-    ngx_str_t    index;
     ngx_array_t *flushes;
     ngx_array_t *vars_len;
     ngx_array_t *vars;
@@ -77,6 +76,8 @@ typedef struct {
 
 typedef struct {
     ngx_str_t    root_dir;
+    ngx_array_t *ctl;
+    ngx_str_t    default_ruby;
     ngx_int_t    log_level;
     ngx_str_t    debug_log_file;
     ngx_str_t    temp_dir;

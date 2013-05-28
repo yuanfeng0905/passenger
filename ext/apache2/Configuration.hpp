@@ -9,10 +9,11 @@
 #ifndef _PASSENGER_CONFIGURATION_HPP_
 #define _PASSENGER_CONFIGURATION_HPP_
 
-#include "Utils.h"
-#include "Logging.h"
-#include "ServerInstanceDir.h"
-#include "Constants.h"
+#include <Logging.h>
+#include <ServerInstanceDir.h>
+#include <Constants.h>
+#include <Utils.h>
+#include <Utils/VariantMap.h>
 
 /* The APR headers must come after the Passenger headers. See Hooks.cpp
  * to learn why.
@@ -49,8 +50,7 @@ struct DirConfig {
 	
 	Threeway enabled;
 	
-	std::set<std::string> railsBaseURIs;
-	std::set<std::string> rackBaseURIs;
+	std::set<std::string> baseURIs;
 	
 	/** The Ruby interpreter to use. */
 	const char *ruby;
@@ -68,10 +68,6 @@ struct DirConfig {
 	 * autodetected path will be used.
 	 */
 	const char *appRoot;
-	
-	/** The environment (i.e. value for RACK_ENV) under which
-	 * Rack applications should operate. */
-	const char *rackEnv;
 	
 	string appGroupName;
 	
@@ -218,18 +214,6 @@ struct DirConfig {
 	
 	bool isEnabled() const {
 		return enabled != DISABLED;
-	}
-	
-	string getAppRoot(const StaticString &documentRoot) const {
-		if (appRoot == NULL) {
-			if (resolveSymlinksInDocRoot == DirConfig::ENABLED) {
-				return extractDirName(resolveSymlink(documentRoot));
-			} else {
-				return extractDirName(documentRoot);
-			}
-		} else {
-			return appRoot;
-		}
 	}
 	
 	StaticString getUser() const {
@@ -417,6 +401,11 @@ struct DirConfig {
 struct ServerConfig {
 	/** The Passenger root folder. */
 	const char *root;
+
+	VariantMap ctl;
+
+	/** The default Ruby interpreter to use. */
+	const char *defaultRuby;
 	
 	/** The log verbosity. */
 	int logLevel;
@@ -460,6 +449,7 @@ struct ServerConfig {
 	
 	ServerConfig() {
 		root               = NULL;
+		defaultRuby        = DEFAULT_RUBY;
 		logLevel           = DEFAULT_LOG_LEVEL;
 		debugLogFile       = NULL;
 		maxPoolSize        = DEFAULT_MAX_POOL_SIZE;

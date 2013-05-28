@@ -5,6 +5,7 @@
 #
 #  See LICENSE file for license information.
 
+require 'phusion_passenger/platform_info/compiler'
 require 'phusion_passenger/platform_info/cxx_portability'
 
 ########## Phusion Passenger common library ##########
@@ -135,6 +136,9 @@ else
 	task :libev  # do nothing
 end
 
+# Apple Clang 4.2 complains about ambiguous member templates in ev++.h.
+LIBEV_CFLAGS << " -Wno-ambiguous-member-template" if PlatformInfo.compiler_supports_wno_ambiguous_member_template?
+
 
 ########## libeio ##########
 
@@ -176,6 +180,21 @@ else
 	LIBEIO_LIBS   = string_option('LIBEIO_LIBS', '-leio')
 	LIBEIO_TARGET = nil
 	task :libeio  # do nothing
+end
+
+
+########## Shared definitions ##########
+# Shared definition files should be in source control so that they don't
+# have to be built by users. Users may not have write access to the source
+# root, for example as is the case with Passenger Standalone.
+#
+# If you add a new shared definition file, don't forget to update
+# lib/phusion_passenger/packaging.rb!
+
+file 'ext/common/Constants.h' => ['ext/common/Constants.h.erb', 'lib/phusion_passenger/constants.rb'] do
+	require 'phusion_passenger/constants'
+	template = TemplateRenderer.new('ext/common/Constants.h.erb')
+	template.render_to('ext/common/Constants.h')
 end
 
 

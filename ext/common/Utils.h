@@ -349,7 +349,8 @@ bool verifyRackDir(const string &dir, CachedFileStat *cstat = 0,
 bool verifyWSGIDir(const string &dir, CachedFileStat *cstat = 0,
                    unsigned int throttleRate = 0);
 
-void prestartWebApps(const ResourceLocator &locator, const string &serializedprestartURLs);
+void prestartWebApps(const ResourceLocator &locator, const string &ruby,
+	const vector<string> &prestartURLs);
 
 /**
  * Runs the given function and catches any tracable_exceptions. Upon catching such an exception,
@@ -393,6 +394,12 @@ void disableMallocDebugging();
  * _command_ must be null-terminated.
  */
 int runShellCommand(const StaticString &command);
+
+/**
+ * Async-signal safe way to fork().
+ * http://sourceware.org/bugzilla/show_bug.cgi?id=4737
+ */
+pid_t asyncFork();
 
 /**
  * Close all file descriptors that are higher than <em>lastToKeepOpen</em>.

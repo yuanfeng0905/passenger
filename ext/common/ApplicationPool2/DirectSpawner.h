@@ -93,9 +93,10 @@ private:
 		startBackgroundThread(detachProcessMain, (void *) (long) pid);
 	}
 	
-	vector<string> createCommand(const Options &options, shared_array<const char *> &args) const {
+	vector<string> createCommand(const Options &options, const SpawnPreparationInfo &preparation,
+		shared_array<const char *> &args) const
+	{
 		vector<string> startCommandArgs;
-		string processTitle;
 		string agentsDir = resourceLocator.getAgentsDir();
 		vector<string> command;
 		
@@ -103,12 +104,7 @@ private:
 		if (startCommandArgs.empty()) {
 			throw RuntimeException("No startCommand given");
 		}
-		if (options.getProcessTitle().empty()) {
-			processTitle = startCommandArgs[0];
-		} else {
-			processTitle = options.getProcessTitle() + ": " + options.appRoot;
-		}
-		
+
 		if (options.loadShellEnvvars) {
 			command.push_back("bash");
 			command.push_back("bash");
@@ -119,9 +115,12 @@ private:
 			command.push_back(agentsDir + "/SpawnPreparer");
 		}
 		command.push_back(agentsDir + "/SpawnPreparer");
+		command.push_back(preparation.appRoot);
 		command.push_back(serializeEnvvarsFromPoolOptions(options));
 		command.push_back(startCommandArgs[0]);
-		command.push_back(processTitle);
+		// Note: do not try to set a process title here.
+		// https://code.google.com/p/phusion-passenger/issues/detail?id=855
+		command.push_back(startCommandArgs[0]);
 		for (unsigned int i = 1; i < startCommandArgs.size(); i++) {
 			command.push_back(startCommandArgs[i]);
 		}
@@ -154,8 +153,8 @@ public:
 		possiblyRaiseInternalError(options);
 
 		shared_array<const char *> args;
-		vector<string> command = createCommand(options, args);
 		SpawnPreparationInfo preparation = prepareSpawn(options);
+		vector<string> command = createCommand(options, preparation, args);
 		SocketPair adminSocket = createUnixSocketPair();
 		Pipe errorPipe = createPipe();
 		DebugDirPtr debugDir = make_shared<DebugDir>(preparation.uid, preparation.gid);

@@ -28,6 +28,26 @@ require 'build/cplusplus_support'
 
 #################################################
 
+class TemplateRenderer
+	def initialize(filename)
+		require 'erb' if !defined?(ERB)
+		@erb = ERB.new(File.read(filename))
+		@erb.filename = filename
+	end
+
+	def render
+		return @erb.result(binding)
+	end
+
+	def render_to(filename)
+		puts "Creating #{filename}"
+		text = render
+		File.open(filename, 'w') do |f|
+			f.write(text)
+		end
+	end
+end
+
 def string_option(name, default_value = nil)
 	value = ENV[name]
 	if value.nil? || value.empty?
@@ -82,8 +102,9 @@ LIBEXT   = PlatformInfo.library_extension
 USE_DMALLOC = boolean_option('USE_DMALLOC')
 USE_EFENCE  = boolean_option('USE_EFENCE')
 USE_ASAN    = boolean_option('USE_ASAN')
-OPTIMIZATION_FLAGS = "#{PlatformInfo.debugging_cflags} -feliminate-unused-debug-symbols -feliminate-unused-debug-types -DPASSENGER_DEBUG -DBOOST_DISABLE_ASSERTS -fcommon".strip
+OPTIMIZATION_FLAGS = "#{PlatformInfo.debugging_cflags} -DPASSENGER_DEBUG -DBOOST_DISABLE_ASSERTS -fcommon".strip
 OPTIMIZATION_FLAGS << " -O" if OPTIMIZE
+OPTIMIZATION_FLAGS << " -feliminate-unused-debug-symbols -feliminate-unused-debug-types" if PlatformInfo.compiler_supports_feliminate_unused_debug?
 OPTIMIZATION_FLAGS << " -fvisibility=hidden -DVISIBILITY_ATTRIBUTE_SUPPORTED" if PlatformInfo.compiler_supports_visibility_flag?
 OPTIMIZATION_FLAGS << " -Wno-attributes" if PlatformInfo.compiler_supports_visibility_flag? &&
 	PlatformInfo.compiler_visibility_flag_generates_warnings? &&

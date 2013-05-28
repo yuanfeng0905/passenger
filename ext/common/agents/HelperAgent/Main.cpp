@@ -356,7 +356,7 @@ public:
 	Server(FileDescriptor feedbackFd, const AgentOptions &_options)
 		: options(_options),
 		  requestLoop(true),
-		  serverInstanceDir(options.webServerPid, options.tempDir, false),
+		  serverInstanceDir(_options.serverInstanceDir, false),
 		  resourceLocator(options.passengerRoot)
 	{
 		TRACE_POINT();
@@ -367,8 +367,9 @@ public:
 		startListening();
 		accountsDatabase = AccountsDatabase::createDefault(generation,
 			options.userSwitching, options.defaultUser, options.defaultGroup);
-		accountsDatabase->add("_web_server", options.messageSocketPassword, false, Account::EXIT);
-		messageServer = ptr(new MessageServer(generation->getPath() + "/socket", accountsDatabase));
+		accountsDatabase->add("_web_server", options.exitPassword, false, Account::EXIT);
+		messageServer = make_shared<MessageServer>(
+			parseUnixSocketAddress(options.adminSocketAddress), accountsDatabase);
 		
 		createFile(generation->getPath() + "/helper_agent.pid",
 			toString(getpid()), S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
@@ -419,6 +420,7 @@ public:
 		
 		function<void ()> func = boost::bind(prestartWebApps,
 			resourceLocator,
+			options.defaultRubyCommand,
 			options.prestartUrls
 		);
 		prestarterThread = ptr(new oxt::thread(
@@ -513,7 +515,7 @@ public:
 	}
 
 	string getRequestSocketFilename() const {
-		return generation->getPath() + "/request.socket";
+		return options.requestSocketFilename;
 	}
 };
 

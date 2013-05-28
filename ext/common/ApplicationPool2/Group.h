@@ -166,6 +166,7 @@ private:
 		vector<Callback> postLockActions);
 	void startCheckingDetachedProcesses(bool immediately);
 	void detachedProcessesCheckerMain(GroupPtr self);
+	void wakeUpGarbageCollector();
 	bool poolAtFullCapacity() const;
 	bool anotherGroupIsWaitingForCapacity() const;
 
@@ -182,8 +183,8 @@ private:
 		assert((lifeStatus == ALIVE) == (spawner != NULL));
 
 		// Verify getWaitlist invariants.
-		assert(!( !getWaitlist.empty() ) || ( enabledProcesses.empty() || pqueue.top()->atFullCapacity() ));
-		assert(!( !enabledProcesses.empty() && !pqueue.top()->atFullCapacity() ) || ( getWaitlist.empty() ));
+		assert(!( !getWaitlist.empty() ) || ( enabledProcesses.empty() || pqueue.top()->atFullUtilization() ));
+		assert(!( !enabledProcesses.empty() && !pqueue.top()->atFullUtilization() ) || ( getWaitlist.empty() ));
 		assert(!( enabledProcesses.empty() && !spawning() && !restarting() && !poolAtFullCapacity() ) || ( getWaitlist.empty() ));
 		assert(!( !getWaitlist.empty() ) || ( !enabledProcesses.empty() || spawning() || restarting() || poolAtFullCapacity() ));
 		
@@ -235,7 +236,7 @@ private:
 		}
 
 		foreach (const ProcessPtr &process, detachedProcesses) {
-			assert(process->getLifeStatus() == Process::SHUTTING_DOWN);
+			assert(process->enabled == Process::DETACHED);
 			assert(process->pqHandle == NULL);
 		}
 		#endif
@@ -308,24 +309,26 @@ private:
 	void removeProcessFromList(const ProcessPtr &process, ProcessList &source) {
 		ProcessPtr p = process; // Keep an extra reference count just in case.
 		source.erase(process->it);
-		if (process->isAlive()) {
-			switch (process->enabled) {
-			case Process::ENABLED:
-				enabledCount--;
-				pqueue.erase(process->pqHandle);
-				process->pqHandle = NULL;
-				break;
-			case Process::DISABLING:
-				disablingCount--;
-				break;
-			case Process::DISABLED:
-				disabledCount--;
-				break;
-			default:
-				P_BUG("Unknown 'enabled' state " << (int) process->enabled);
-			}
-		} else {
+		switch (process->enabled) {
+		case Process::ENABLED:
+			assert(&source == &enabledProcesses);
+			enabledCount--;
+			pqueue.erase(process->pqHandle);
+			process->pqHandle = NULL;
+			break;
+		case Process::DISABLING:
+			assert(&source == &disablingProcesses);
+			disablingCount--;
+			break;
+		case Process::DISABLED:
+			assert(&source == &disabledProcesses);
+			disabledCount--;
+			break;
+		case Process::DETACHED:
 			assert(&source == &detachedProcesses);
+			break;
+		default:
+			P_BUG("Unknown 'enabled' state " << (int) process->enabled);
 		}
 	}
 
@@ -351,6 +354,7 @@ private:
 			disabledCount++;
 		} else if (&destination == &detachedProcesses) {
 			assert(process->isAlive());
+			process->enabled = Process::DETACHED;
 		} else {
 			P_BUG("Unknown destination list");
 		}
@@ -364,7 +368,7 @@ private:
 		// Checkout sessions from enabled processes, or if there are none,
 		// from disabling processes.
 		if (enabledCount > 0) {
-			while (!getWaitlist.empty() && pqueue.top() != NULL && !pqueue.top()->atFullCapacity()) {
+			while (!getWaitlist.empty() && pqueue.top() != NULL && !pqueue.top()->atFullUtilization()) {
 				GetAction action;
 				action.callback = getWaitlist.front().callback;
 				action.session  = newSession();
@@ -399,7 +403,7 @@ private:
 	
 	void assignSessionsToGetWaiters(vector<Callback> &postLockActions) {
 		if (enabledCount > 0) {
-			while (!getWaitlist.empty() && pqueue.top() != NULL && !pqueue.top()->atFullCapacity()) {
+			while (!getWaitlist.empty() && pqueue.top() != NULL && !pqueue.top()->atFullUtilization()) {
 				postLockActions.push_back(boost::bind(
 					getWaitlist.front().callback, newSession(),
 					ExceptionPtr()));
@@ -424,6 +428,7 @@ private:
 	}
 
 	void enableAllDisablingProcesses(vector<Callback> &postLockActions) {
+		P_DEBUG("Enabling all DISABLING processes with result DR_ERROR");
 		deque<DisableWaiter>::iterator it, end = disableWaitlist.end();
 		for (it = disableWaitlist.begin(); it != end; it++) {
 			const DisableWaiter &waiter = *it;
@@ -434,6 +439,7 @@ private:
 			if (process->enabled == Process::DISABLING) {
 				removeProcessFromList(process, disablingProcesses);
 				addProcessToList(process, enabledProcesses);
+				P_DEBUG("Enabled process " << process->inspect());
 			}
 		}
 		clearDisableWaitlist(DR_ERROR, postLockActions);
@@ -466,14 +472,6 @@ private:
 			postLockActions.push_back(boost::bind(waiter.callback, waiter.process, result));
 			disableWaitlist.pop_front();
 		}
-	}
-
-	void shutdownAndRemoveProcess(const ProcessPtr &process) {
-		TRACE_POINT();
-		const ProcessPtr p = process;
-		assert(process->canBeShutDown());
-		removeProcessFromList(process, detachedProcesses);
-		process->shutdown();
 	}
 
 	bool shutdownCanFinish() const {
@@ -557,8 +555,8 @@ public:
 	 *    if !spawning():
 	 *       (enabledCount > 0) or (disablingCount == 0)
 	 *
-	 *    if pqueue.top().atFullCapacity():
-	 *       All enabled processes are at full capacity.
+	 *    if pqueue.top().atFullUtilization():
+	 *       All enabled processes are at full utilization.
 	 *
 	 *    for all process in enabledProcesses:
 	 *       process.enabled == Process::ENABLED
@@ -583,10 +581,10 @@ public:
 
 	/**
 	 * When a process is detached, it is stored here until we've confirmed
-	 * that it can be shut down.
+	 * that the OS process has exited.
 	 *
 	 * for all process in detachedProcesses:
-	 *    process.getLifeStatus() == Process::SHUTTING_DOWN
+	 *    process.enabled == Process::DETACHED
 	 *    process.pqHandle == NULL
 	 */
 	ProcessList detachedProcesses;
@@ -646,7 +644,7 @@ public:
 	void shutdown(const Callback &callback, vector<Callback> &postLockActions) {
 		assert(isAlive());
 
-		P_DEBUG("Shutting down group " << name);
+		P_DEBUG("Begin shutting down group " << name);
 		shutdownCallback = callback;
 		detachAll(postLockActions);
 		startCheckingDetachedProcesses(true);
@@ -658,11 +656,6 @@ public:
 		{
 			lock_guard<boost::mutex> l(lifetimeSyncher);
 			lifeStatus = SHUTTING_DOWN;
-		}
-		if (shutdownCanFinish()) {
-			finishShutdown(postLockActions);
-		} else {
-			P_DEBUG("Shutdown finalization of group " << name << " has been deferred");
 		}
 	}
 
@@ -721,8 +714,8 @@ public:
 		} else {
 			Process *process = pqueue.top();
 			assert(process != NULL);
-			if (process->atFullCapacity()) {
-				/* Looks like all processes are at full capacity.
+			if (process->atFullUtilization()) {
+				/* Looks like all processes are at full utilization.
 				 * Wait until a new one has been spawned or until
 				 * resources have become free.
 				 */
@@ -813,6 +806,9 @@ public:
 			}
 		}
 		disableWaitlist = newDisableWaitlist;
+
+		// Update GC sleep timer.
+		wakeUpGarbageCollector();
 	}
 
 	/**
@@ -843,12 +839,7 @@ public:
 		}
 
 		addProcessToList(process, detachedProcesses);
-		process->setShuttingDown();
-		if (process->canBeShutDown()) {
-			shutdownAndRemoveProcess(process);
-		} else {
-			startCheckingDetachedProcesses(false);
-		}
+		startCheckingDetachedProcesses(false);
 	}
 	
 	/**
@@ -862,15 +853,12 @@ public:
 		foreach (ProcessPtr process, enabledProcesses) {
 			addProcessToList(process, detachedProcesses);
 			process->pqHandle = NULL;
-			process->setShuttingDown();
 		}
 		foreach (ProcessPtr process, disablingProcesses) {
 			addProcessToList(process, detachedProcesses);
-			process->setShuttingDown();
 		}
 		foreach (ProcessPtr process, disabledProcesses) {
 			addProcessToList(process, detachedProcesses);
-			process->setShuttingDown();
 		}
 		
 		enabledProcesses.clear();
@@ -1066,13 +1054,13 @@ public:
 		}
 		switch (lifeStatus) {
 		case ALIVE:
-			stream << "<life_status>alive</life_status>";
+			stream << "<life_status>ALIVE</life_status>";
 			break;
 		case SHUTTING_DOWN:
-			stream << "<life_status>shutting_down</life_status>";
+			stream << "<life_status>SHUTTING_DOWN</life_status>";
 			break;
 		case SHUT_DOWN:
-			stream << "<life_status>shut_down</life_status>";
+			stream << "<life_status>SHUT_DOWN</life_status>";
 			break;
 		default:
 			P_BUG("Unknown 'lifeStatus' state " << (int) lifeStatus);

@@ -11,6 +11,7 @@ $LOAD_PATH.unshift("#{source_root}/lib")
 require 'phusion_passenger'
 PhusionPassenger.locate_directories
 
+require 'digest'
 require 'optparse'
 require 'fileutils'
 require 'phusion_passenger/platform_info/ruby'
@@ -31,7 +32,7 @@ class Installer < PhusionPassenger::AbstractInstaller
 			'gcc',
 			'g++',
 			'download-tool',
-			'ruby-dev',
+			PlatformInfo.passenger_needs_ruby_dev_header? ? 'ruby-dev' : nil,
 			'ruby-openssl',
 			'rubygems',
 			'rake',
@@ -39,7 +40,7 @@ class Installer < PhusionPassenger::AbstractInstaller
 			'libcurl-dev',
 			'openssl-dev',
 			'zlib-dev'
-		]
+		].compact
 		return [specs, ids]
 	end
 	
@@ -171,6 +172,14 @@ private
 		
 		if download(url, tarball)
 			Dir.chdir(@working_dir) do
+				puts "<banner>Verifying PCRE checksum...</banner>"
+				if Digest::SHA256.file(tarball) != PCRE_SHA256_CHECKSUM
+					new_screen
+					render_template "nginx/pcre_checksum_could_not_be_verified"
+					wait
+					return nil
+				end
+
 				puts "<banner>Extracting PCRE source tarball...</banner>"
 				if sh("tar", "xzvf", tarball)
 					return "#{@working_dir}/#{dirname}"
@@ -201,6 +210,11 @@ private
 		
 		if download(url, tarball)
 			Dir.chdir(@working_dir) do
+				puts "<banner>Verifying Nginx checksum...</banner>"
+				if Digest::SHA256.file(tarball) != NGINX_SHA256_CHECKSUM
+					return nil
+				end
+
 				puts "<banner>Extracting Nginx source tarball...</banner>"
 				if sh("tar", "xzvf", tarball)
 					return "#{@working_dir}/#{dirname}"
@@ -396,6 +410,7 @@ private
 		command = "sh ./configure --prefix='#{prefix}' "
 		command << "--with-http_ssl_module "
 		command << "--with-http_gzip_static_module "
+		command << "--with-http_stub_status_module "
 		command << "--with-cc-opt='-Wno-error' "
 		if @pcre_source_dir
 			command << "--with-pcre='#{@pcre_source_dir}' "

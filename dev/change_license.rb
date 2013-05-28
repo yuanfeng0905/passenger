@@ -2,7 +2,7 @@
 FILES = Dir[
 	"bin/*",
 	"build/*.rb",
-	"ext/{apache2,common,nginx,ruby}/**/*.{c,cpp,h,hpp}",
+	"ext/{apache2,common,nginx,ruby}/**/*.{c,cpp,h,hpp,erb}",
 	"helper-scripts/*",
 	"lib/**/*.rb",
 	"lib/**/*.py",

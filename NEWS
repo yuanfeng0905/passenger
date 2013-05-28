@@ -1,5 +1,130 @@
-Release 3.9.6 (4.0.0 release candidate 4)
------------------------------------------
+Release 4.0.4
+-------------
+
+ * Fixed autodetection of noexec-mount /tmp directory. Fixes issue #850
+   and issue #625.
+ * Fixed a WSGI bug. wsgi.input was a file object opened in text mode,
+   but should be opened in binary mode. Fixes issue #881.
+ * Fixed a potential crash in Out-of-Band Work. Fixes issue #894.
+ * Fixed a potential crash in rolling restarting, which only occurs if a
+   process was also being spawned at the same time. Fixes issue #896.
+ * [Apache] The RailsBaseURI and RackBaseURI directives have been unified.
+   For a long time, RailsBaseURI told Phusion Passenger that the given
+   sub-URI belongs to a **Rails 2** application. Attempt to use this
+   directive with Rails 3 or with Rack applications would result in an
+   error. Because this confused users, RailsBaseURI and RackBaseURI
+   have now been unified and can now be used interchangably. Phusion
+   Passenger will automatically detect what kind of application it is.
+   The Nginx version already worked like this. Fixes issue #882.
+ * [Standalone] The Passenger Standalone temp directory and
+   PassengerWatchdog server instance directory have been unified.
+   PassengerWatchdog already automatically updates the timestamps of
+   all files in its server instance directory every 6 hours to prevent
+   /tmp cleaners from deleting the directory. Therefore this
+   unification prevents the Passenger Standalone temp directory to be
+   deleted by /tmp cleaners as well. Fixes issue #654.
+ * [Standalone] types_hash_max_size has been increased from 1024 to
+   2048. This solves a problem that causes Nginx not to start on some
+   platforms. Contributed by Jan-Willem Koelewijn.
+
+
+Release 4.0.3
+-------------
+
+ * Better protection is now provided against application processes that
+   are stuck and refuse to shut down cleanly. Since version 4.0.0,
+   Phusion Passenger already forcefully shuts down all processes during
+   web server shutdown. In addition to this, 4.0.3 now also forcefully
+   shuts down processes that take more than 1 minute to shut down, even
+   outside the context of web server shutdowns. This feature does not,
+   however, protect against requests that take too long. Use
+   PassengerMaxRequestTime (Apache) or passenger_max_request_time (Nginx)
+   for that.
+ * Fixed a crash in the HelperAgent which results in frequent process
+   restarts in some traffic patterns. Fixes issue #862.
+ * Fixed a problem that prevents processes from being spawned correctly
+   if the user's bashrc changes working directory. Fixes issue #851.
+ * passenger-status now also displays CPU usage.
+ * The installer now checks for checksums when automatically downloading
+   PCRE and Nginx. Contributed by Joshua Lund.
+ * An error is now printed when trying to daemonize Phusion Passenger
+   Standalone on Ruby implementations that don't support forking.
+   Contributed by Benjamin Fleischer.
+ * Although Phusion Passenger already supported JRuby, *installing*
+   Phusion Passenger with JRuby was not possible. This has been fixed.
+ * Various other minor bug fixes.
+
+
+Release 4.0.2
+-------------
+
+ * Bumped the preferred Nginx version to 1.4.1 because of a critical
+   Nginx security vulnerability, CVE-2013-2028. Users are advised to
+   upgrade immediately.
+
+
+Release 4.0.1
+-------------
+
+ * Fixed a crasher bug in the Deployment Error Resistance feature.
+ * Fixed a bug in PassengerDefaultUser and PassengerDefaultGroup.
+ * Fixed a bug which could cause application processes to exit before
+   they've finished their request.
+ * Fixed some small file descriptor leaks.
+ * Bumped the preferred Nginx version to 1.4.0.
+ * Editing the Phusion Passenger Standalone Nginx config template
+   is no longer discouraged.
+ * Improved documentation.
+
+
+Release 4.0.0 release candidate 6
+---------------------------------
+
+ * WebSocket support on Nginx. Requires Nginx >= 1.3.15.
+ * Improved RVM support.
+ * Performance optimizations.
+ * Various bug fixes.
+
+
+Release 4.0.0 release candidate 5
+---------------------------------
+
+ * The default config snippet for Apache has changed! It must now contain a
+   `PassengerDefaultRuby` option. The installer has been updated to output
+   this option. The `PassengerRuby` option still exists, but it's only used
+   for configuring different Ruby interpreters in different contexts. Please
+   refer to the manual for more information.
+ * We now provide GPG digital signatures for all file releases by Phusion.
+   More information can be found in the manual.
+ * `passenger-status` now displays process memory usage and time when it
+   was last used. The latter fixes issue #853.
+ * Exceptions in Rack application objects are now caught to prevent
+   application processes from exiting.
+ * The `passenger-config` tool now supports the `--ruby-command` argument,
+   which helps the user with figuring out the correct Ruby command to use
+   in case s/he wants to use multiple Ruby interpreters. The manual has
+   also been updated to mention this tool.
+ * Fixed streaming responses on Apache.
+ * Worked around an OS X Unix domain socket bug. Fixes issue #854.
+ * Out-of-Band Garbage Collection now works properly when the application
+   has disabled garbage collection. Fixes issue #859.
+ * Fixed support for /usr/bin/python on OS X. Fixes issue #855.
+ * Fixed looping-without-sleeping in the ApplicationPool garbage collector
+   if PassengerPoolIdleTime is set to 0. Fixes issue #858.
+ * Fixed some process memory usage measurement bugs.
+ * Fixed process memory usage measurement on NetBSD. Fixes issue #736.
+ * Fixed a file descriptor leak in the Out-of-Band Work feature. Fixes issue #864.
+ * The PassengerPreStart helper script now uses the default Ruby
+   interpreter specified in the web server configuration, and no longer
+   requires a `ruby` command to be in `$PATH`.
+ * Updated preferred PCRE version to 8.32.
+ * Worked around some RVM bugs.
+ * The ngx_http_stub_status_module is now enabled by default.
+ * Performance optimizations.
+
+
+Release 4.0.0 release candidate 4
+---------------------------------
 
  * Fixed compilation on systems where /tmp is mounted noexec.
  * Fixed some memory corruption bugs.
