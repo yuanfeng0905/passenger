@@ -52,5 +52,7 @@ module PhusionPassenger
 		PASSENGER_IS_ENTERPRISE = 1
 	end
 
-	include SharedConstants
+	SharedConstants.constants.each do |name|
+		const_set(name, SharedConstants.const_get(name)) unless const_defined? name
+	end
 end
