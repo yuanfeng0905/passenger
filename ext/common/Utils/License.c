@@ -19,12 +19,17 @@ namespace Passenger {
 #define MAX_LICENSE_LINES 30
 #define LICENSE_SECRET "An error occurred while fetching this page. Please contact an administrator if this problem persists."
 #define APPEAL_MESSAGE \
- 	"We kindly ask you not to try to crack this software or to obtain it illegally. " \
- 	"We're trying to make a living out of this and the profits are used to fund the development of the " \
- 	"open source version of Phusion Passenger. We can only do this with your support. If you don't have " \
- 	"a valid license, please buy it from www.phusionpassenger.com.\n" \
- 	"Thank you for your support.\n" \
- 	"- Hongli, Ninh, and the rest of the Phusion team"
+	"If you have a valid license, then you probably did not copy the license key properly. " \
+	"The license key must be an exact byte-by-byte copy of the one downloaded from the Customer Area. " \
+	"It is already considered corrupted if you add a newline to it, which can happen if you e.g. copy-paste the contents using a text editor. " \
+	"Please use a binary copying tool to copy the license key to your server, e.g. 'scp' or FTP in binary mode. " \
+	"If the problem persists, please contact support@phusion.nl.\n" \
+	"If you do not have a valid license, then we kindly ask you not to try to crack this software or to obtain it illegally. " \
+	"We're trying to make a living out of this and the profits are used to fund the development of the " \
+	"open source version of Phusion Passenger. We can only do this with your support. If you don't have " \
+	"a valid license, please buy it from www.phusionpassenger.com.\n" \
+	"Thank you for your support.\n" \
+	"- Hongli, Ninh, and the rest of the Phusion team"
 
 static md5_byte_t
 hexNibbleToByte(char hexNibble) {
