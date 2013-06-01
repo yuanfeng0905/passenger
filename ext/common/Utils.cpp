@@ -396,7 +396,7 @@ parseModeString(const StaticString &mode) {
 		
 		if (clause.empty()) {
 			continue;
-		} else if (clause.size() < 2 || clause[1] != '=') {
+		} else if (clause.size() < 2 || (clause[0] != '+' && clause[1] != '=')) {
 			throw InvalidModeStringException("Invalid mode clause specification '" + clause + "'");
 		}
 		
@@ -458,6 +458,20 @@ parseModeString(const StaticString &mode) {
 					break;
 				case 'x':
 					modeBits |= S_IXOTH;
+					break;
+				default:
+					throw InvalidModeStringException("Invalid permission '" +
+						string(1, clause[i]) +
+						"' in mode clause specification '" +
+						clause + "'");
+				}
+			}
+			break;
+		case '+':
+			for (string::size_type i = 1; i < clause.size(); i++) {
+				switch (clause[i]) {
+				case 't':
+					modeBits |= S_ISVTX;
 					break;
 				default:
 					throw InvalidModeStringException("Invalid permission '" +
