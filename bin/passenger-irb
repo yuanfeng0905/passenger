@@ -76,6 +76,9 @@ def attach_irb(process)
 			STDERR.puts "*** ERROR: #{result[0]}"
 			exit 1
 		end
+
+		puts "Attached. You can now evaluate any arbitrary Ruby code in this process. " +
+			"Type 'help' for useful commands."
 		
 		exit_irb = false
 		while !nonblock_check_eof(socket)
