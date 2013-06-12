@@ -651,24 +651,28 @@ private
 
 	class IrbContext
 		def initialize(channel)
-			utility_class = Class.new do
-				include Utils
-				instance_methods.each do |method|
-					public(method)
-				end
-			end
 			@channel = channel
 			@mutex   = Mutex.new
-			@utils   = utility_class.new
+			@binding = binding
+		end
+
+		def _eval(code)
+			eval(code, @binding, '(passenger-irb)')
 		end
 		
 		def help
 			puts "Available commands:"
 			puts
+			puts "  p OBJECT    Inspect an object."
+			puts "  pp OBJECT   Inspect an object, with pretty printing."
 			puts "  backtraces  Show the all threads' backtraces (requires Ruby Enterprise"
 			puts "              Edition or Ruby 1.9)."
 			puts "  debugger    Enter a ruby-debug console."
 			puts "  help        Show this help message."
+			puts
+			puts "Available variables:"
+			puts
+			puts "  app         The Rack application object."
 			return
 		end
 		
@@ -680,10 +684,33 @@ private
 				return nil
 			end
 		end
+
+		def p(object)
+			@mutex.synchronize do
+				io = StringIO.new
+				io.puts(object.inspect)
+				@channel.write('puts', [io.string].pack('m'))
+				return nil
+			end
+		end
+
+		def pp(object)
+			require 'pp' if !defined?(PP)
+			@mutex.synchronize do
+				io = StringIO.new
+				PP.pp(object, io)
+				@channel.write('puts', [io.string].pack('m'))
+				return nil
+			end
+		end
 		
 		def backtraces
-			puts @utils.global_backtrace_report
+			puts Utils.global_backtrace_report
 			return nil
+		end
+
+		def app
+			return PhusionPassenger::App.app
 		end
 	end
 	
@@ -704,7 +731,7 @@ private
 			code = channel.read_scalar
 			break if code.nil?
 			begin
-				result = irb_context.instance_eval(code, '(passenger-irb)')
+				result = irb_context._eval(code)
 				if result.respond_to?(:inspect)
 					result_str = "=> #{result.inspect}"
 				else
@@ -759,6 +786,7 @@ private
 	rescue Exception => e
 		print_exception("passenger-irb", e)
 	ensure
+		socket.close if !socket.closed?
 		@async_irb_mutex.synchronize do
 			@async_irb_worker_threads.delete(Thread.current)
 		end

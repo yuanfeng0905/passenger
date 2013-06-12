@@ -90,7 +90,7 @@ class StartCommand < Command
 		end
 	ensure
 		if @temp_dir
-			FileUtils.rm_rf(@temp_dir) rescue nil
+			FileUtils.remove_entry_secure(@temp_dir) rescue nil
 		end
 		@plugin.call_hook(:cleanup)
 	end
@@ -146,6 +146,10 @@ private
 			opts.on("--resist-deployment-errors",
 				wrap_desc("Enable deployment error resistance (Enterprise only)")) do
 				@options[:resist_deployment_errors] = true
+			end
+			opts.on("--no-friendly-error-pages",
+				wrap_desc("Disable passenger_friendly_error_pages")) do
+				@options[:friendly_error_pages] = false
 			end
 			opts.on("--union-station-gateway HOST:PORT", String,
 				wrap_desc("Specify Union Station Gateway host and port")) do |value|
