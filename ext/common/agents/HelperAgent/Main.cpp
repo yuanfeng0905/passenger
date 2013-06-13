@@ -399,30 +399,6 @@ public:
 			lowerPrivilege(options.defaultUser, options.defaultGroup);
 		}
 
-		/* Initialize cloud usage tracker. */
-		UPDATE_TRACE_POINT();
-		if (passenger_enterprise_on_cloud_license()) {
-			string certificate;
-			if (options.cloudLicensingCert.empty()) {
-				certificate = resourceLocator.getResourcesDir() + "/cloud_service.crt";
-			} else if (options.cloudLicensingCert != "-") {
-				certificate = options.cloudLicensingCert;
-			}
-
-			P_INFO("Starting Phusion Passenger Cloud usage tracker using data directory " <<
-				options.cloudLicensingDataDir << " and certificate " <<
-				(certificate.empty() ? "(none)" : certificate));
-			makeDirTree(options.cloudLicensingDataDir);
-			
-			CloudUsageTracker *tracker = new CloudUsageTracker(
-				options.cloudLicensingDataDir,
-				options.cloudLicensingBaseUrl,
-				certificate,
-				options.cloudLicensingProxy);
-			tracker->abortHandler = boost::bind(&Server::cloudTrackerAbortHandler, this, _1);
-			tracker->start();
-		}
-
 		UPDATE_TRACE_POINT();
 		randomGenerator = make_shared<RandomGenerator>();
 		// Check whether /dev/urandom is actually random.
@@ -512,6 +488,31 @@ public:
 		
 		poolLoop.start("Pool event loop", 0);
 		requestLoop.start("Request event loop", 0);
+
+
+		/* Initialize cloud usage tracker. */
+		UPDATE_TRACE_POINT();
+		if (passenger_enterprise_on_cloud_license()) {
+			string certificate;
+			if (options.cloudLicensingCert.empty()) {
+				certificate = resourceLocator.getResourcesDir() + "/cloud_service.crt";
+			} else if (options.cloudLicensingCert != "-") {
+				certificate = options.cloudLicensingCert;
+			}
+
+			P_INFO("Starting Phusion Passenger Cloud usage tracker using data directory " <<
+				options.cloudLicensingDataDir << " and certificate " <<
+				(certificate.empty() ? "(none)" : certificate));
+			makeDirTree(options.cloudLicensingDataDir);
+			
+			CloudUsageTracker *tracker = new CloudUsageTracker(
+				options.cloudLicensingDataDir,
+				options.cloudLicensingBaseUrl,
+				certificate,
+				options.cloudLicensingProxy);
+			tracker->abortHandler = boost::bind(&Server::cloudTrackerAbortHandler, this, _1);
+			tracker->start();
+		}
 
 		
 		/* Wait until the watchdog closes the feedback fd (meaning it
