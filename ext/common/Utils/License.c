@@ -53,7 +53,7 @@ passenger_enterprise_license_check() {
 	if (f == NULL) {
 		return strdup("Could not open the Passenger Enterprise Server license file. "
 			"Please check whether it's installed correctly and whether it's world-readable.\n"
-			CRACK_APPEAL_MESSAGE);
+			APPEAL_MESSAGE);
 	}
 
 	while (1) {
@@ -61,7 +61,7 @@ passenger_enterprise_license_check() {
 			if (ferror(f)) {
 				message = strdup(
 					"An I/O error occurred while reading the Passenger Enterprise Server license file.\n"
-					CRACK_APPEAL_MESSAGE);
+					APPEAL_MESSAGE);
 				goto finish;
 			} else {
 				break;
@@ -71,7 +71,7 @@ passenger_enterprise_license_check() {
 		len = strlen(line);
 		if (len == 0 || line[len - 1] != '\n' || count >= MAX_LICENSE_LINES) {
 			message = strdup("The Passenger Enterprise Server license file appears to be corrupted. Please reinstall it.\n"
-				CRACK_APPEAL_MESSAGE);
+				APPEAL_MESSAGE);
 			goto finish;
 		}
 
@@ -82,7 +82,7 @@ passenger_enterprise_license_check() {
 
 	if (count == 0) {
 		message = strdup("The Passenger Enterprise Server license file appears to be corrupted. Please reinstall it.\n"
-			CRACK_APPEAL_MESSAGE);
+			APPEAL_MESSAGE);
 		goto finish;
 	}
 
@@ -107,7 +107,7 @@ passenger_enterprise_license_check() {
 
 	if (memcmp(digest, readDigest, MD5_SIZE) != 0) {
 		message = strdup("The Passenger Enterprise Server license file is invalid.\n"
-			CRACK_APPEAL_MESSAGE);
+			APPEAL_MESSAGE);
 		goto finish;
 	}
 
