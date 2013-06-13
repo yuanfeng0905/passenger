@@ -201,8 +201,9 @@ protected:
 					"To ensure proper access to the cloud licensing server, please try these:\n"
 					"- Ensure that your network connection to https://www.phusionpassenger.com works.\n"
 					"- If you can only access https://www.phusionpassenger.com via a proxy, "
-					"please set the config option 'PassengerCloudLicensingProxy' (Apache) "
-					"or 'passenger_cloud_licensing_proxy' (Nginx).\n"
+					"please set the config option 'PassengerCtl cloud_licensing_proxy PROXY_URL' (Apache) "
+					"or 'passenger_ctl cloud_licensing_proxy PROXY_URL' (Nginx). 'PROXY_URL' takes the format of "
+					"protocol://username:password@hostname:port, where 'protocol' is either 'http' or 'socks5'.\n"
 					"Please contact support@phusion.nl if you require any assistance.");
 				return false;
 			} else if (response["status"].asString() == "ok") {
@@ -226,8 +227,9 @@ protected:
 				"To ensure proper access to the cloud licensing server, please try these:\n"
 				"- Ensure that your network connection to https://www.phusionpassenger.com works.\n"
 				"- If you can only access https://www.phusionpassenger.com via a proxy, "
-				"please set the config option 'PassengerCloudLicensingProxy' (Apache) "
-				"or 'passenger_cloud_licensing_proxy' (Nginx).\n"
+				"please set the config option 'PassengerCtl cloud_licensing_proxy PROXY_URL' (Apache) "
+				"or 'passenger_ctl cloud_licensing_proxy PROXY_URL' (Nginx). 'PROXY_URL' takes the format of "
+				"protocol://username:password@hostname:port, where 'protocol' is either 'http' or 'socks5'.\n"
 				"Please contact support@phusion.nl if you require any assistance.");
 			return false;
 		}
@@ -361,8 +363,9 @@ public:
 				"more than 3 days.\n"
 				"- Please ensure that your network connection to https://www.phusionpassenger.com works.\n"
 				"- If you can only access https://www.phusionpassenger.com via a proxy, "
-				"please set the config option 'PassengerCloudLicensingProxy' (Apache) "
-				"or 'passenger_cloud_licensing_proxy' (Nginx).\n"
+				"please set the config option 'PassengerCtl cloud_licensing_proxy PROXY_URL' (Apache) "
+				"or 'passenger_ctl cloud_licensing_proxy PROXY_URL' (Nginx). 'PROXY_URL' takes the format of "
+				"protocol://username:password@hostname:port, where 'protocol' is either 'http' or 'socks5'.\n"
 				"If the problem persists, please contact support@phusion.nl.");
 		}
 		P_DEBUG("Done tracking cloud usage cycle");

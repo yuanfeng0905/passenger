@@ -41,10 +41,10 @@ struct AgentOptions {
 	vector<string> prestartUrls;
 
 	string requestSocketLink;
-	string cloudUsageDataDir;
-	string cloudUsageBaseUrl;
-	string cloudUsageCertificate;
-	string cloudUsageProxy;
+	string cloudLicensingDataDir;
+	string cloudLicensingBaseUrl;
+	string cloudLicensingCert;
+	string cloudLicensingProxy;
 
 	AgentOptions() { }
 
@@ -77,11 +77,11 @@ struct AgentOptions {
 		// Optional options.
 		prestartUrls          = options.getStrSet("prestart_urls", false);
 		requestSocketLink     = options.get("request_socket_link", false);
-		cloudUsageDataDir     = options.get("cloud_usage_data_dir", false,
+		cloudLicensingDataDir = options.get("cloud_licensing_data_dir", false,
 			getHomeDir() + "/.passenger-enterprise/cloud_usage_data");
-		cloudUsageCertificate = options.get("cloud_usage_certificate", false);
-		cloudUsageBaseUrl     = options.get("cloud_usage_base_url", false);
-		cloudUsageProxy       = options.get("cloud_usage_proxy", false);
+		cloudLicensingCert    = options.get("cloud_licensing_cert", false);
+		cloudLicensingBaseUrl = options.get("cloud_licensing_base_url", false);
+		cloudLicensingProxy   = options.get("cloud_licensing_proxy", false);
 	}
 };
 
