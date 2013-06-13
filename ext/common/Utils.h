@@ -195,6 +195,14 @@ string escapeForXml(const string &input);
 string getProcessUsername();
 
 /**
+ * Returns the home directory of the current user. This queries $HOME,
+ * or if that's not available, the user database.
+ *
+ * @throws RuntimeException The home directory cannot be determined.
+ */
+string getHomeDir();
+
+/**
  * Converts a mode string into a mode_t value.
  *
  * At this time only the symbolic mode strings are supported, e.g. something like looks

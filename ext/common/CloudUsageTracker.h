@@ -30,7 +30,6 @@
 #include <oxt/backtrace.hpp>
 #include <Logging.h>
 #include <Exceptions.h>
-#include <ResourceLocator.h>
 #include <FileDescriptor.h>
 #include <Utils.h>
 #include <Utils/json.h>
@@ -55,6 +54,7 @@ protected:
 	};
 
 	string datadir;
+	string url;
 	string certificate;
 	string hostname;
 	CurlProxyInfo proxyInfo;
@@ -66,7 +66,7 @@ protected:
 			abortHandler(message);
 		} else {
 			P_ERROR(message);
-			execlp("sleep", "sleep", "999", (const char * const) 0);
+			abort();
 		}
 	}
 
@@ -138,7 +138,7 @@ protected:
 			UPDATE_TRACE_POINT();
 			string filename = datadir + "/" + name;
 			string content;
-			P_DEBUG("Sending usage point: " << filename);
+			P_DEBUG("Sending usage point " << filename << " to " << url);
 			try {
 				content = readAll(filename);
 			} catch (const SystemException &e) {
@@ -238,8 +238,7 @@ protected:
 		TRACE_POINT();
 		CURL *curl = curl_easy_init();
 
-		curl_easy_setopt(curl, CURLOPT_URL,
-			"https://www.phusionpassenger.com/cloud_service/track_usage");
+		curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
 		curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1);
 		curl_easy_setopt(curl, CURLOPT_TIMEOUT, 180);
 		curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, lastErrorMessage);
@@ -303,10 +302,12 @@ public:
 	unsigned int threshold;
 	function<void (const string &message)> abortHandler;
 
-	CloudUsageTracker(const ResourceLocator &resourceLocator,
-		const string &dir,
+	CloudUsageTracker(const string &dir,
+		const string &baseUrl = string(),
+		const string &_certificate = string(),
 		const string &proxyAddress = string())
 		: datadir(dir),
+		  certificate(_certificate),
 		  threshold(3 * 24 * 4)
 	{
 		long size = sysconf(_SC_HOST_NAME_MAX) + 1;
@@ -326,7 +327,11 @@ public:
 				proxyAddress + "\": " + e.what());
 		}
 		thr = NULL;
-		certificate = resourceLocator.getResourcesDir() + "/cloud_service.crt";
+
+		url = baseUrl.empty()
+			? "https://www.phusionpassenger.com"
+			: baseUrl;
+		url += "/cloud_service/track_usage";
 	}
 
 	~CloudUsageTracker() {

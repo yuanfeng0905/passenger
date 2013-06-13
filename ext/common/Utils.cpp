@@ -364,12 +364,17 @@ escapeForXml(const string &input) {
 string
 getProcessUsername() {
 	struct passwd pwd, *result;
-	char strings[1024];
 	int ret;
+
+	int bufsize = sysconf(_SC_GETPW_R_SIZE_MAX);
+	if (bufsize == -1) {
+		bufsize = 1024;
+	}
 	
+	char strings[bufsize];
 	result = (struct passwd *) NULL;
 	do {
-		ret = getpwuid_r(getuid(), &pwd, strings, sizeof(strings), &result);
+		ret = getpwuid_r(getuid(), &pwd, strings, bufsize, &result);
 	} while (ret == -1 && errno == EINTR);
 	if (ret == -1) {
 		result = (struct passwd *) NULL;
@@ -381,6 +386,32 @@ getProcessUsername() {
 		return strings;
 	} else {
 		return result->pw_name;
+	}
+}
+
+string
+getHomeDir() {
+	const char *result = getenv("HOME");
+	if (result == NULL || *result == '\0') {
+		struct passwd pwd, *user;
+		int ret;
+
+		int bufsize = sysconf(_SC_GETPW_R_SIZE_MAX);
+		if (bufsize == -1) {
+			bufsize = 1024;
+		}
+
+		char strings[bufsize];
+		do {
+			ret = getpwuid_r(getuid(), &pwd, strings, bufsize, &user);
+		} while (ret == -1 && errno == EINTR);
+		if (ret == -1) {
+			throw RuntimeException("Cannot determine the home directory for user " + getProcessUsername());
+		} else {
+			return user->pw_dir;
+		}
+	} else {
+		return result;
 	}
 }
 

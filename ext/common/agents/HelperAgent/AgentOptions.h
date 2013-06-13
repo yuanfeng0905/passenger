@@ -11,6 +11,7 @@
 
 #include <sys/types.h>
 #include <string>
+#include <Utils.h>
 #include <Utils/VariantMap.h>
 
 namespace Passenger {
@@ -40,6 +41,10 @@ struct AgentOptions {
 	vector<string> prestartUrls;
 
 	string requestSocketLink;
+	string cloudUsageDataDir;
+	string cloudUsageBaseUrl;
+	string cloudUsageCertificate;
+	string cloudUsageProxy;
 
 	AgentOptions() { }
 
@@ -72,6 +77,11 @@ struct AgentOptions {
 		// Optional options.
 		prestartUrls          = options.getStrSet("prestart_urls", false);
 		requestSocketLink     = options.get("request_socket_link", false);
+		cloudUsageDataDir     = options.get("cloud_usage_data_dir", false,
+			getHomeDir() + "/.passenger-enterprise/cloud_usage_data");
+		cloudUsageCertificate = options.get("cloud_usage_certificate", false);
+		cloudUsageBaseUrl     = options.get("cloud_usage_base_url", false);
+		cloudUsageProxy       = options.get("cloud_usage_proxy", false);
 	}
 };
 

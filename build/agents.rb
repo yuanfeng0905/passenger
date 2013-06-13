@@ -37,7 +37,7 @@ file AGENT_OUTPUT_DIR + 'PassengerWatchdog' => dependencies do
 end
 
 helper_agent_libs = COMMON_LIBRARY.
-	only(:base, :other).
+	only(:base, :other, 'Utils/jsoncpp.o').
 	exclude('AgentsStarter.o')
 dependencies = [
 	'ext/common/agents/HelperAgent/Main.cpp',
@@ -79,6 +79,7 @@ file AGENT_OUTPUT_DIR + 'PassengerHelperAgent' => dependencies do
 		"#{EXTRA_PRE_CXXFLAGS} " <<
 		"-Iext -Iext/common " <<
 		"#{AGENT_CFLAGS} #{LIBEV_CFLAGS} #{LIBEIO_CFLAGS} " <<
+		"#{PlatformInfo.curl_flags} " <<
 		"#{PlatformInfo.portability_cflags} " <<
 		"#{EXTRA_CXXFLAGS}")
 	create_executable("#{AGENT_OUTPUT_DIR}PassengerHelperAgent",
@@ -88,6 +89,7 @@ file AGENT_OUTPUT_DIR + 'PassengerHelperAgent' => dependencies do
 		"#{EXTRA_PRE_LDFLAGS} " <<
 		"#{LIBEV_LIBS} " <<
 		"#{LIBEIO_LIBS} " <<
+		"#{PlatformInfo.curl_libs} " <<
 		"#{PlatformInfo.portability_ldflags} " <<
 		"#{AGENT_LDFLAGS} " <<
 		"#{EXTRA_LDFLAGS}")

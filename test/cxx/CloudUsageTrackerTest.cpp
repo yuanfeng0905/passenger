@@ -19,10 +19,8 @@ namespace tut {
 
 		int flushResult;
 
-		TestTracker(const ResourceLocator &resourceLocator,
-			const string &dir,
-			const string &proxyAddress = string())
-			: CloudUsageTracker(resourceLocator, dir, proxyAddress),
+		TestTracker(const string &dir)
+			: CloudUsageTracker(dir),
 			  defaultCurlCode(CURLE_OK),
 			  defaultResponseData("{\"status\": \"ok\"}"),
 			  flushResult(0)
@@ -86,7 +84,7 @@ namespace tut {
 		}
 
 		void init(const string &datadir = "tmp.clouddata") {
-			tracker = make_shared<TestTracker>(*resourceLocator, datadir, string());
+			tracker = make_shared<TestTracker>(datadir);
 			tracker->abortHandler = abortHandler;
 		}
 

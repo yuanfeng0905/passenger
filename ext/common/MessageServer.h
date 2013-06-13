@@ -493,6 +493,10 @@ public:
 		syscalls::close(serverFd);
 		syscalls::unlink(socketFilename.c_str());
 	}
+
+	void forceClose() {
+		syscalls::close(serverFd);
+	}
 	
 	string getSocketFilename() const {
 		return socketFilename;
