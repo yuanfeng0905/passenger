@@ -48,16 +48,25 @@ class FlyingPassenger
 	def initialize(argv)
 		check_ruby_compatibility
 		@argv = argv.dup
-		@logger = Logger.new(STDERR)
 	end
 
 	def start
 		parse_options
-		set_log_level
+		initialize_logger
 		spawn
-		return wait_for_exit
+		maybe_daemonize
+		maybe_write_pidfile
+		@logger.info("Flying Passenger up and running!")
+		return nil
 	rescue Exit => e
 		return e.code
+	end
+
+	def wait
+		return wait_for_exit
+	ensure
+		maybe_cleanup_pidfile
+		@logger.info("Flying Passenger exited")
 	end
 
 private
@@ -68,7 +77,8 @@ private
 				rvmsudo = "#{PlatformInfo.ruby_sudo_command} "
 			end
 			raise RubyUnsupported, "The Flying Passenger program must be run on Ruby 1.9. " +
-				"It's currently being run on Ruby #{RUBY_VERSION}. Please restart it using Ruby 1.9, like this:\n\n" +
+				"It's currently being run on Ruby #{RUBY_VERSION} (#{PlatformInfo.ruby_command}). " +
+				"Please restart it using Ruby 1.9, like this:\n\n" +
 				"  #{sudo}ruby1.9 #{PhusionPassenger.bin_dir}/flying-passenger\n\n" +
 				"If you installed Ruby 1.9 with RVM then you can use rvm-exec to invoke Ruby 1.9, like this:\n\n" +
 				"  #{rvmsudo}rvm-exec ruby-1.9.3 #{PhusionPassenger.bin_dir}/flying-passenger"
@@ -76,20 +86,31 @@ private
 	end
 
 	def parse_options
-		@options = {
+		@watchdog_options = {
 			:log_level => DEFAULT_LOG_LEVEL
 		}
+		@options = {}
 		parser = OptionParser.new do |opts|
 			nl = "\n#{' ' * 37}"
 			opts.banner = "Usage: flying-passenger [options]"
 			opts.separator ""
 			
 			opts.separator "Options:"
+			opts.on("--log-file FILENAME", String, "The log file to use") do |val|
+				@options[:log_file] = val
+				@watchdog_options[:debug_log_file] = val
+			end
 			opts.on("--log-level LEVEL", Integer, "The log level (default: #{@options[:log_level]})") do |val|
-				@options[:log_level] = val
+				@watchdog_options[:log_level] = val
 			end
 			opts.on("--socket-file FILENAME", String, "The socket to listen on") do |val|
-				@options[:request_socket_link] = val
+				@watchdog_options[:request_socket_link] = val
+			end
+			opts.on("--daemonize", "Daemonize into background") do
+				@options[:daemonize] = true
+			end
+			opts.on("--pid-file FILENAME", String, "Write to the given PID file") do |val|
+				@options[:pidfile] = val
 			end
 			opts.on("--help", "Show this help message") do
 				@options[:help] = true
@@ -109,14 +130,30 @@ private
 			exit 0
 		end
 
-		if !@options[:request_socket_link]
+		if !@watchdog_options[:request_socket_link]
 			STDERR.puts "You didn't specify a socket filename. Please set --socket-file."
 			exit 1
 		end
+		if @options[:daemonize] && !PlatformInfo.ruby_supports_fork?
+			raise Error, "Unable to daemonize using the current Ruby interpreter " +
+				"(#{PlatformInfo.ruby_command}) because it does not support forking."
+		end
+		if @options[:daemonize] && !@options[:log_file]
+			raise Error, "If you set --daemonize then you must also set --log-file."
+		end
 	end
 
-	def set_log_level
-		if @options[:log_level] <= 0
+	def initialize_logger
+		if @options[:log_file]
+			file = File.open(@options[:log_file], "a")
+			@logger = Logger.new(file)
+			STDOUT.reopen(file)
+			STDERR.reopen(file)
+			STDOUT.sync = STDERR.sync = file.sync = true
+		else
+			@logger = Logger.new(STDERR)
+		end
+		if @watchdog_options[:log_level] <= 0
 			@logger.level = Logger::INFO
 		else
 			@logger.level = Logger::DEBUG
@@ -131,7 +168,7 @@ private
 			"setsid" => "true",
 			"request_socket_password" => "-"
 		}
-		@options.each_pair do |name, val|
+		@watchdog_options.each_pair do |name, val|
 			args[name.to_s] = val.to_s
 		end
 		return args.to_a.flatten
@@ -188,6 +225,43 @@ private
 		raise
 	end
 
+	def maybe_daemonize
+		if @options[:daemonize]
+			@logger.info("Daemonization requested...")
+			pid = fork
+			if pid
+				# Parent
+				exit!(0)
+			else
+				# Child
+				trap "HUP", "IGNORE"
+				STDIN.reopen("/dev/null", "r")
+				STDOUT.reopen(@options[:log_file], "a")
+				STDERR.reopen(@options[:log_file], "a")
+				STDOUT.sync = true
+				STDERR.sync = true
+				Process.setsid
+				@logger.info("Daemonized into background: PID #{$$}")
+			end
+		end
+	end
+
+	def maybe_write_pidfile
+		if @options[:pidfile]
+			@logger.info("Creating PID file: #{@options[:pidfile]}")
+			File.open(@options[:pidfile], "w") do |f|
+				f.puts $$
+			end
+		end
+	end
+
+	def maybe_cleanup_pidfile
+		if @options[:pidfile] && File.exist?(@options[:pidfile])
+			@logger.info("Deleting PID file: #{@options[:pidfile]}")
+			File.unlink(@options[:pidfile])
+		end
+	end
+
 	def async_waitpid(pid)
 		a, b = IO.pipe
 		thread = Thread.new do
@@ -217,6 +291,7 @@ private
 	end
 
 	def send_shutdown_signal
+		@logger.info("Performing clean shutdown")
 		clean_shutdown = gracefully_shut_down_agent(
 			@info["helper_agent_admin_socket_address"],
 			"_web_server",
@@ -243,6 +318,7 @@ private
 		begin
 			select([exit_signaller])
 		rescue SignalException => e
+			@logger.info("Received signal #{e.signo}")
 			if e.signo == Signal.list["INT"] || e.signo == Signal.list["TERM"]
 				send_shutdown_signal if !@sent_shutdown_signal
 			else
@@ -270,9 +346,11 @@ end # module PhusionPassenger
 
 begin
 	flyer = PhusionPassenger::FlyingPassenger.new(ARGV)
-	exit(flyer.start)
+	exit_code = flyer.start
+	exit(exit_code) if exit_code
+	exit(flyer.wait)
 rescue PhusionPassenger::FlyingPassenger::Error => e
-	if flyer.logger
+	if flyer && flyer.logger
 		flyer.logger.fatal(e.message)
 	else
 		abort(e.message)
