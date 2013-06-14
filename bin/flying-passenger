@@ -120,8 +120,14 @@ private
 			opts.on("--max-pool-size NUMBER", Integer, "Max total number of processes (default: #{@watchdog_options[:max_pool_size]})") do |val|
 				@watchdog_options[:max_pool_size] = val
 			end
-			opts.on("--pool-idle-time NUMBER", Integer, "Max process idle time in seconds (default: #{@watchdog_options[:pool_idle_time]})") do |val|
+			opts.on("--pool-idle-time SECONDS", Integer, "Max process idle time (default: #{@watchdog_options[:pool_idle_time]})") do |val|
 				@watchdog_options[:pool_idle_time] = val
+			end
+			opts.on("--max-preloader-idle-time", Integer, "Max preloader idle time") do |val|
+				@watchdog_options[:max_preloader_idle_time] = val
+			end
+			opts.on("--temp-dir PATH", String, "Directory to store the server instance dir in") do |val|
+				@watchdog_options[:temp_dir] = val
 			end
 			opts.on("--help", "Show this help message") do
 				@options[:help] = true
@@ -177,6 +183,7 @@ private
 			"web_server_type" => "nginx",
 			"web_server_pid" => $$.to_s,
 			"passenger_root" => PhusionPassenger.source_root,
+			"ruby" => PlatformInfo.ruby_command,
 			"setsid" => "true",
 			"request_socket_password" => "-"
 		}
