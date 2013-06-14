@@ -169,6 +169,7 @@ private:
 	void wakeUpGarbageCollector();
 	bool poolAtFullCapacity() const;
 	bool anotherGroupIsWaitingForCapacity() const;
+	const ResourceLocator &getResourceLocator() const;
 
 	void verifyInvariants() const {
 		// !a || b: logical equivalent of a IMPLIES b.
@@ -1065,6 +1066,10 @@ public:
 		default:
 			P_BUG("Unknown 'lifeStatus' state " << (int) lifeStatus);
 		}
+
+		stream << "<options>";
+		options.toXml(stream, getResourceLocator());
+		stream << "</options>";
 
 		stream << "<processes>";
 		
