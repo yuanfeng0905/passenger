@@ -6,29 +6,275 @@
 #
 #  See LICENSE file for license information.
 
-require 'socket'
+source_root = File.expand_path("..", File.dirname(__FILE__))
+$LOAD_PATH.unshift("#{source_root}/lib")
+require 'phusion_passenger'
+PhusionPassenger.locate_directories
 
-a, b = UNIXSocket.pair
-pid = Process.spawn("./agents/PassengerWatchdog",
-	"web_server_pid", $$.to_s,
-	"passenger_root", Dir.pwd,
-	"log_level", "3",
-	"request_socket_password", "-",
-	"request_socket_link", "/tmp/flying-passenger.sock",
-	
-	:in  => ['/dev/null', 'r'],
-	:out => :out,
-	:err => :err,
-	3    => b,
-	:close_others => true
-)
-b.close
+require 'optparse'
+require 'socket'
+require 'logger'
+require 'phusion_passenger/constants'
+require 'phusion_passenger/message_channel'
+require 'phusion_passenger/message_client'
+require 'phusion_passenger/platform_info/ruby'
+
+
+module PhusionPassenger
+
+class FlyingPassenger
+	class Error < StandardError
+	end
+
+	class RubyUnsupported < Error
+	end
+
+	class SpawnError < Error
+	end
+
+	class OptionError < Error
+	end
+
+	class Exit < StandardError
+		attr_reader :code
+
+		def initialize(code)
+			@code = code
+		end
+	end
+
+	attr_reader :logger
+
+	def initialize(argv)
+		check_ruby_compatibility
+		@argv = argv.dup
+		@logger = Logger.new(STDERR)
+	end
+
+	def start
+		parse_options
+		set_log_level
+		spawn
+		return wait_for_exit
+	rescue Exit => e
+		return e.code
+	end
+
+private
+	def check_ruby_compatibility
+		if !Process.respond_to?(:spawn)
+			if Process.euid == 0
+				sudo = "sudo "
+				rvmsudo = "#{PlatformInfo.ruby_sudo_command} "
+			end
+			raise RubyUnsupported, "The Flying Passenger program must be run on Ruby 1.9. " +
+				"It's currently being run on Ruby #{RUBY_VERSION}. Please restart it using Ruby 1.9, like this:\n\n" +
+				"  #{sudo}ruby1.9 #{PhusionPassenger.bin_dir}/flying-passenger\n\n" +
+				"If you installed Ruby 1.9 with RVM then you can use rvm-exec to invoke Ruby 1.9, like this:\n\n" +
+				"  #{rvmsudo}rvm-exec ruby-1.9.3 #{PhusionPassenger.bin_dir}/flying-passenger"
+		end
+	end
+
+	def parse_options
+		@options = {
+			:log_level => DEFAULT_LOG_LEVEL
+		}
+		parser = OptionParser.new do |opts|
+			nl = "\n#{' ' * 37}"
+			opts.banner = "Usage: flying-passenger [options]"
+			opts.separator ""
+			
+			opts.separator "Options:"
+			opts.on("--log-level LEVEL", Integer, "The log level (default: #{@options[:log_level]})") do |val|
+				@options[:log_level] = val
+			end
+			opts.on("--socket-file FILENAME", String, "The socket to listen on") do |val|
+				@options[:request_socket_link] = val
+			end
+			opts.on("--help", "Show this help message") do
+				@options[:help] = true
+			end
+		end
+		begin
+			parser.parse!
+		rescue OptionParser::ParseError => e
+			STDERR.puts e
+			STDERR.puts
+			STDERR.puts "Please see '--help' for valid options."
+			exit 1
+		end
+
+		if @options[:help]
+			puts parser
+			exit 0
+		end
+
+		if !@options[:request_socket_link]
+			STDERR.puts "You didn't specify a socket filename. Please set --socket-file."
+			exit 1
+		end
+	end
+
+	def set_log_level
+		if @options[:log_level] <= 0
+			@logger.level = Logger::INFO
+		else
+			@logger.level = Logger::DEBUG
+		end
+	end
+
+	def create_arguments
+		args = {
+			"web_server_type" => "nginx",
+			"web_server_pid" => $$.to_s,
+			"passenger_root" => PhusionPassenger.source_root,
+			"setsid" => "true",
+			"request_socket_password" => "-"
+		}
+		@options.each_pair do |name, val|
+			args[name.to_s] = val.to_s
+		end
+		return args.to_a.flatten
+	end
+
+	def spawn
+		args = ["#{PhusionPassenger.agents_dir}/PassengerWatchdog"]
+		#args.concat(create_arguments)
+
+		@logger.info("Starting PassengerWatchdog...")
+		a, b = UNIXSocket.pair
+		channel = MessageChannel.new(a)
+		args << {
+			:in  => ['/dev/null', 'r'],
+			:out => :out,
+			:err => :err,
+			3    => b,
+			:close_others => true
+		}
+
+		begin
+			pid = Process.spawn(*args)
+		rescue SystemCallError => e
+			raise SpawnError, e.message
+		end
+		b.close
+		@logger.info("PassengerWatchdog started on PID #{pid}")
+		
+		@logger.debug { "Sending arguments to PassengerWatchdog: " + create_arguments.inspect }
+		channel.write("VariantMap", *create_arguments)
+		result = channel.read
+		result_name, *result_args = result
+		@logger.debug { "PassengerWatchdog response: " + result.inspect }
+
+		case result_name
+		when "Agents information"
+			@logger.info("PassengerWatchdog initialized properly")
+		when "Watchdog startup error"
+			raise SpawnError, "Unable to start the Phusion Passenger watchdog " +
+				"because it encountered the following error during startup: " +
+				result_args[0]
+		else
+			a.close
+			raise SpawnError, "The Phusion Passenger watchdog sent an unknown feedback message: " +
+				result.inspect
+		end
+
+		@pid  = pid
+		@pipe = a
+		@info = Hash[*result_args]
+	rescue
+		a.close if a && !a.closed?
+		b.close if b && !b.closed?
+		raise
+	end
+
+	def async_waitpid(pid)
+		a, b = IO.pipe
+		thread = Thread.new do
+			Thread.current.abort_on_exception = true
+			begin
+				Process.waitpid(pid)
+				Thread.current[:result] = $?
+			ensure
+				b.close
+			end
+		end
+		return [a, thread]
+	end
+
+	def gracefully_shut_down_agent(address, username, password)
+		client = MessageClient.new(username, password, address)
+		client.write("exit")
+		result = client.read
+		if result && result[0] == "Passed security"
+			result = client.read
+			return result[0] == "exit command received"
+		else
+			return false
+		end
+	rescue SystemCallError, IOError
+		return false
+	end
+
+	def send_shutdown_signal
+		clean_shutdown = gracefully_shut_down_agent(
+			@info["helper_agent_admin_socket_address"],
+			"_web_server",
+			@info["helper_agent_exit_password"])
+		clean_shutdown = clean_shutdown &&
+			gracefully_shut_down_agent(
+				@info["logging_socket_address"],
+				"logging",
+				@info["logging_socket_password"])
+		
+		begin
+			@pipe.write_nonblock(clean_shutdown ? 'c' : 'u')
+			@pipe.close
+		rescue Errno::EAGAIN, Errno::EPIPE, Errno::ECONNRESET
+			# Ignore error, we don't care.
+		end
+		
+		@sent_shutdown_signal = true
+	end
+
+	def wait_for_exit
+		exit_signaller, waitpid_thread = async_waitpid(@pid)
+
+		begin
+			select([exit_signaller])
+		rescue SignalException => e
+			if e.signo == Signal.list["INT"] || e.signo == Signal.list["TERM"]
+				send_shutdown_signal if !@sent_shutdown_signal
+			else
+				Process.kill(e.signo, @pid) rescue nil
+			end
+			retry
+		end
+
+		exit_signaller.close
+		waitpid_thread.join
+		result = waitpid_thread[:result]
+		return result ? (result.exitstatus || 1) : 1
+	ensure
+		@pipe.close if !@pipe.closed?
+		@pipe = nil
+		@pid = nil
+	end
+
+	def exit(code = 0)
+		raise Exit.new(code)
+	end
+end
+
+end # module PhusionPassenger
 
 begin
-	sleep
-rescue SignalException => e
-	if e.signo == Signal.list["INT"] || e.signo == Signal.list["TERM"]
-		c.write('c')
-		Process.waitpid(pid)
+	flyer = PhusionPassenger::FlyingPassenger.new(ARGV)
+	exit(flyer.start)
+rescue PhusionPassenger::FlyingPassenger::Error => e
+	if flyer.logger
+		flyer.logger.fatal(e.message)
+	else
+		abort(e.message)
 	end
 end

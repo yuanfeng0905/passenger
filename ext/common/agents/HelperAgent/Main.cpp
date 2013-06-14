@@ -234,12 +234,13 @@ private:
 		if (!options.requestSocketLink.empty()) {
 			struct stat buf;
 
+			// Delete existing socket file/symlink.
 			// If this is a symlink then we'll want to check the file the symlink
 			// points to, so we use stat() instead of lstat().
 			ret = syscalls::stat(options.requestSocketLink.c_str(), &buf);
 			if (ret == 0 || (ret == -1 && errno == ENOENT)) {
 				if (ret == -1 || buf.st_mode & S_IFSOCK) {
-					if (syscalls::unlink(options.requestSocketLink.c_str()) == -1) {
+					if (syscalls::unlink(options.requestSocketLink.c_str()) == -1 && errno != ENOENT) {
 						e = errno;
 						throw FileSystemException("Cannot delete existing socket file '" +
 							options.requestSocketLink + "'", e, options.requestSocketLink);
@@ -255,6 +256,7 @@ private:
 					options.requestSocketLink);
 			}
 
+			// Create symlink.
 			do {
 				ret = symlink(getRequestSocketFilename().c_str(),
 					options.requestSocketLink.c_str());
