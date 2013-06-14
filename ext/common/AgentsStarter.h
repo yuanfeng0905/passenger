@@ -558,7 +558,7 @@ public:
 				UPDATE_TRACE_POINT();
 				killProcessGroupAndWait(&pid, 5000);
 				guard.clear();
-				throw RuntimeException("One of the Passenger agents sent an unknown feedback message '" + args[0] + "'");
+				throw RuntimeException("The Phusion Passenger watchdog sent an unknown feedback message '" + args[0] + "'");
 			}
 		}
 	}
