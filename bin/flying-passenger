@@ -90,7 +90,9 @@ private
 
 	def parse_options
 		@watchdog_options = {
-			:log_level => DEFAULT_LOG_LEVEL
+			:log_level => DEFAULT_LOG_LEVEL,
+			:max_pool_size => DEFAULT_MAX_POOL_SIZE,
+			:pool_idle_time => DEFAULT_POOL_IDLE_TIME
 		}
 		@options = {}
 		parser = OptionParser.new do |opts|
@@ -99,13 +101,6 @@ private
 			opts.separator ""
 			
 			opts.separator "Options:"
-			opts.on("--log-file FILENAME", String, "The log file to use") do |val|
-				@options[:log_file] = val
-				@watchdog_options[:debug_log_file] = val
-			end
-			opts.on("--log-level LEVEL", Integer, "The log level (default: #{@options[:log_level]})") do |val|
-				@watchdog_options[:log_level] = val
-			end
 			opts.on("--socket-file FILENAME", String, "The socket to listen on") do |val|
 				@watchdog_options[:request_socket_link] = val
 			end
@@ -114,6 +109,19 @@ private
 			end
 			opts.on("--pid-file FILENAME", String, "Write to the given PID file") do |val|
 				@options[:pidfile] = val
+			end
+			opts.on("--log-file FILENAME", String, "The log file to use") do |val|
+				@options[:log_file] = val
+				@watchdog_options[:debug_log_file] = val
+			end
+			opts.on("--log-level LEVEL", Integer, "The log level (default: #{@watchdog_options[:log_level]})") do |val|
+				@watchdog_options[:log_level] = val
+			end
+			opts.on("--max-pool-size NUMBER", Integer, "Max total number of processes (default: #{@watchdog_options[:max_pool_size]})") do |val|
+				@watchdog_options[:max_pool_size] = val
+			end
+			opts.on("--pool-idle-time NUMBER", Integer, "Max process idle time in seconds (default: #{@watchdog_options[:pool_idle_time]})") do |val|
+				@watchdog_options[:pool_idle_time] = val
 			end
 			opts.on("--help", "Show this help message") do
 				@options[:help] = true
