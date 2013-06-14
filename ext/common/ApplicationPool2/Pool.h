@@ -691,7 +691,6 @@ public:
 				 */
 				oldProcess = findProcessNeedingRollingRestart(group);
 			}
-			assert(oldProcess->isAlive());
 
 			vector<Callback> actions;
 			// TODO: respect maxInstances and maxPoolSize
@@ -711,25 +710,31 @@ public:
 				}
 			} else {
 				UPDATE_TRACE_POINT();
+				assert(oldProcess->isAlive());
 				group->detach(oldProcess, actions);
 				group->attach(newProcess, actions);
 				newProcessGuard.clear();
 			}
 
 			UPDATE_TRACE_POINT();
-			if (group->getWaitlist.empty()) {
+			if (!group->getWaitlist.empty()) {
 				group->assignSessionsToGetWaiters(actions);
-			} else {
-				assignSessionsToGetWaiters(actions);
-				possiblySpawnMoreProcessesForExistingGroups();
 			}
+			assignSessionsToGetWaiters(actions);
+			// Because the rolling restarter aborted any concurrent process
+			// spawning threads, we check whether we need to spawn after
+			// we're done.
+			possiblySpawnMoreProcessesForExistingGroups();
 
 			UPDATE_TRACE_POINT();
 			fullVerifyInvariants();
 
 			if (!actions.empty()) {
+				UPDATE_TRACE_POINT();
 				l.unlock();
 				runAllActions(actions);
+				actions.clear();
+				UPDATE_TRACE_POINT();
 				l.lock();
 				fullVerifyInvariants();
 			}
@@ -738,6 +743,12 @@ public:
 		UPDATE_TRACE_POINT();
 		verifyInvariants();
 		verifyExpensiveInvariants();
+
+		if (debugSupport != NULL && debugSupport->rollingRestarting) {
+			this_thread::restore_interruption ri(di);
+			this_thread::restore_syscall_interruption rsi(dsi);
+			debugSupport->debugger->send("Done rolling restarting");
+		}
 	}
 
 	static void garbageCollect(PoolPtr self) {

@@ -11,6 +11,7 @@
 
 #include <sys/types.h>
 #include <string>
+#include <Utils.h>
 #include <Utils/VariantMap.h>
 
 namespace Passenger {
@@ -40,6 +41,10 @@ struct AgentOptions {
 	vector<string> prestartUrls;
 
 	string requestSocketLink;
+	string cloudLicensingDataDir;
+	string cloudLicensingBaseUrl;
+	string cloudLicensingCert;
+	string cloudLicensingProxy;
 
 	AgentOptions() { }
 
@@ -61,6 +66,9 @@ struct AgentOptions {
 		generationNumber      = options.getInt("generation_number");
 		requestSocketFilename = options.get("request_socket_filename");
 		requestSocketPassword = options.get("request_socket_password");
+		if (requestSocketPassword == "-") {
+			requestSocketPassword = "";
+		}
 		adminSocketAddress    = options.get("helper_agent_admin_socket_address");
 		exitPassword          = options.get("helper_agent_exit_password");
 		loggingAgentAddress   = options.get("logging_agent_address");
@@ -69,6 +77,11 @@ struct AgentOptions {
 		// Optional options.
 		prestartUrls          = options.getStrSet("prestart_urls", false);
 		requestSocketLink     = options.get("request_socket_link", false);
+		cloudLicensingDataDir = options.get("cloud_licensing_data_dir", false,
+			getHomeDir() + "/.passenger-enterprise/cloud_usage_data");
+		cloudLicensingCert    = options.get("cloud_licensing_cert", false);
+		cloudLicensingBaseUrl = options.get("cloud_licensing_base_url", false);
+		cloudLicensingProxy   = options.get("cloud_licensing_proxy", false);
 	}
 };
 

@@ -1678,6 +1678,76 @@ namespace tut {
 	}
 
 	TEST_METHOD(82) {
+		// Test rolling restarting a group that's currently spawning a process.
+		TempDirCopy dir("stub/wsgi", "tmp.wsgi");
+		initPoolDebugging();
+		debug->restarting = false;
+		debug->spawning = true;
+		debug->rollingRestarting = true;
+
+		Options options = createOptions();
+		options.appRoot = "tmp.wsgi";
+		options.appType = "wsgi";
+		options.spawnMethod = "direct";
+		options.minProcesses = 2;
+		options.rollingRestart = true;
+
+		// Initiate spawning of 2 processes, then freeze it
+		// at a point where the second one is being spawned.
+		retainSessions = true;
+		pool->asyncGet(options, callback);
+		pool->asyncGet(options, callback);
+		debug->messages->send("Proceed with spawn loop iteration 1");
+		debug->debugger->recv("Begin spawn loop iteration 1");
+		debug->debugger->recv("Begin spawn loop iteration 2");
+		EVENTUALLY(2,
+			result = pool->getProcessCount() == 1u;
+		);
+		EVENTUALLY(2,
+			LockGuard l(pool->syncher);
+			result = pool->getSuperGroup("tmp.wsgi")->defaultGroup->getWaitlist.size() == 1;
+		);
+
+		// The first asyncGet() should have succeeded.
+		ensure_equals((int) number, 1);
+		SessionPtr session1 = currentSession;
+		ensure(session1 != NULL);
+		sessions.clear();
+		currentSession.reset();
+
+		// Now initiate a rolling restart.
+		vector<ProcessPtr> processes = pool->getProcesses();
+		touchFile("tmp.wsgi/tmp/restart.txt");
+		pool->asyncGet(options, callback);
+		debug->debugger->recv("About to attach rolling restarted process");
+		debug->messages->send("Proceed with attaching rolling restarted process");
+		debug->debugger->recv("Done rolling restarting");
+
+		// Test that the first process has been restarted.
+		vector<ProcessPtr> processes2 = pool->getProcesses();
+		ensure_equals(processes2.size(), 1u);
+		ensure(processes2[0]->pid != processes[0]->pid);
+
+		// The second asyncGet() should eventually be processed by
+		// the newly spawned process.
+		EVENTUALLY(2,
+			result = number == 2;
+		);
+		SessionPtr session2 = currentSession;
+		ensure(session2 != NULL);
+		sessions.clear();
+		currentSession.reset();
+		
+		// Cleanup.
+		debug->messages->send("Proceed with spawn loop iteration 2");
+		session1.reset();
+		session2.reset();
+		EVENTUALLY(2,
+			result = number == 3;
+		);
+	}
+
+	TEST_METHOD(83) {
 		// Test detaching a group after the rolling restarter thread has spawned
 		// a new process, but before it has attached the new process to the group.
 		initPoolDebugging();
@@ -1706,7 +1776,7 @@ namespace tut {
 		ensure_equals(pool->getProcessCount(), 0u);
 	}
 
-	TEST_METHOD(83) {
+	TEST_METHOD(84) {
 		// Test deployment error resistance. When ignoreSpawnErrors is set,
 		// and there are already processes, and a spawn error is encountered,
 		// then get() should never try to spawn another process until the group
@@ -1769,7 +1839,7 @@ namespace tut {
 		ensure_equals("(4)", pool->getProcessCount(), 1u);
 	}
 
-	TEST_METHOD(84) {
+	TEST_METHOD(85) {
 		// Test deployment error resistance. When ignoreSpawnErrors is set,
 		// and the first process fails to spawn, it throws a SpawnException.
 		TempDirCopy c1("stub/wsgi", "tmp.wsgi");
@@ -1795,7 +1865,7 @@ namespace tut {
 		}
 	}
 
-	TEST_METHOD(85) {
+	TEST_METHOD(86) {
 		// Upon encountering a spawn error, the rolling restarter thread should
 		// quit trying to restart that group.
 		initPoolDebugging();
@@ -1866,7 +1936,7 @@ namespace tut {
 		);
 	}
 
-	TEST_METHOD(86) {
+	TEST_METHOD(87) {
 		// Test that the maxProcesses option causes no more than the specified number
 		// of processes to be spawned per group.
 		Options options = createOptions();

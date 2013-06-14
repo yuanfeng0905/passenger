@@ -14,6 +14,7 @@ require 'phusion_passenger/common_library'
 require 'phusion_passenger/platform_info/ruby'
 require 'phusion_passenger/platform_info/binary_compatibility'
 require 'phusion_passenger/standalone/utils'
+require 'phusion_passenger/utils/tmpio'
 
 module PhusionPassenger
 module Standalone
@@ -79,7 +80,7 @@ protected
 			'g++',
 			'gmake',
 			'download-tool',
-			'ruby-dev',
+			PlatformInfo.passenger_needs_ruby_dev_header? ? 'ruby-dev' : nil,
 			'ruby-openssl',
 			'rubygems',
 			'rake',
@@ -89,7 +90,7 @@ protected
 			'zlib-dev',
 			'pcre-dev',
 			'daemon_controller >= 1.1.0'
-		]
+		].compact
 		return [specs, ids]
 	end
 	
@@ -102,6 +103,8 @@ protected
 			show_welcome_screen
 		end
 		check_dependencies(false) || exit(1)
+		check_whether_os_is_broken
+		check_whether_system_has_enough_ram
 		puts
 		
 		phase = 1
@@ -183,16 +186,14 @@ protected
 	def before_install
 		super
 		@plugin.call_hook(:runtime_installer_start, self) if @plugin
-		@working_dir = "/tmp/#{myself}-passenger-standalone-#{Process.pid}"
-		FileUtils.rm_rf(@working_dir)
-		FileUtils.mkdir_p(@working_dir)
+		@working_dir = PhusionPassenger::Utils.mktmpdir("passenger.", PlatformInfo.tmpexedir)
 		@download_binaries = true if !defined?(@download_binaries)
 		@binaries_url_root ||= STANDALONE_BINARIES_URL_ROOT
 	end
 
 	def after_install
 		super
-		FileUtils.rm_rf(@working_dir)
+		FileUtils.remove_entry_secure(@working_dir) if @working_dir
 		@plugin.call_hook(:runtime_installer_cleanup) if @plugin
 	end
 
@@ -513,7 +514,8 @@ private
 				nginx_libs = COMMON_LIBRARY.only(*NGINX_LIBS_SELECTOR).
 					set_output_dir(output_dir).
 					link_objects_as_string
-				command << "env PASSENGER_LIBS='#{nginx_libs} #{output_dir}/../libboost_oxt.a' "
+				command << "env PASSENGER_INCLUDEDIR='#{PhusionPassenger.include_dir}'" <<
+					" PASSENGER_LIBS='#{nginx_libs} #{output_dir}/../libboost_oxt.a' "
 			end
 			# RPM thinks it's being smart by scanning binaries for
 			# paths and refusing to create package if it detects any

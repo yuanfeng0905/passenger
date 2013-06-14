@@ -27,9 +27,15 @@ task 'package:release' => ['package:gem', 'package:tarball', 'package:sign'] do
 	is_beta        = !!version.split('.')[3]
 	tag_prefix     = is_open_source ? 'release' : 'enterprise'
 	
+	if !`git status --porcelain | grep -Ev '^\\?\\? '`.empty?
+		STDERR.puts "-------------------"
+		abort "*** ERROR: There are uncommitted files. See 'git status'"
+	end
+exit
 	begin
 		website_config = YAML.load_file(File.expand_path("~/.passenger_website.yml"))
 	rescue Errno::ENOENT
+		STDERR.puts "-------------------"
 		abort "*** ERROR: Please put the Phusion Passenger website admin " +
 			"password in ~/.passenger_website.yml:\n" +
 			"admin_password: ..."
@@ -45,55 +51,45 @@ task 'package:release' => ['package:gem', 'package:tarball', 'package:sign'] do
 			sh "scp pkg/#{basename}.{gem.asc,tar.gz.asc} app@shell.phusion.nl:/u/apps/signatures/phusion-passenger/"
 			sh "./dev/googlecode_upload.py -p phusion-passenger -s 'Phusion Passenger #{version}' pkg/passenger-#{version}.tar.gz"
 			sh "gem push pkg/passenger-#{version}.gem"
+			puts "Updating version number on website..."
+			if is_beta
+				uri = URI.parse("https://www.phusionpassenger.com/latest_beta_version")
+			else
+				uri = URI.parse("https://www.phusionpassenger.com/latest_stable_version")
+			end
+			http = Net::HTTP.new(uri.host, uri.port)
+			http.use_ssl = true
+			http.verify_mode = OpenSSL::SSL::VERIFY_PEER
+			request = Net::HTTP::Post.new(uri.request_uri)
+			request.basic_auth("admin", website_config["admin_password"])
+			request.set_form_data("version" => version)
+			response = http.request(request)
+			if response.code != 200 && response.body != "ok"
+				abort "*** ERROR: Cannot update version number on www.phusionpassenger.com:\n" +
+					"Status: #{response.code}\n\n" +
+					response.body
+			end
 			puts "--------------"
-			puts "All done. Please update the version number in the Phusion Passenger website."
+			puts "All done."
 		else
 			dir = "/u/apps/passenger_website/shared"
 			subdir = string_option('NAME', version)
 			sh "scp pkg/#{basename}.{gem,tar.gz,gem.asc,tar.gz.asc} app@shell.phusion.nl:#{dir}/"
 			sh "ssh app@shell.phusion.nl 'mkdir -p \"#{dir}/assets/#{subdir}\" && mv #{dir}/#{basename}.{gem,tar.gz,gem.asc,tar.gz.asc} \"#{dir}/assets/#{subdir}/\"'"
 		end
-
-		puts "Updating version number on website..."
-		if is_beta
-			uri = URI.parse("https://www.phusionpassenger.com/latest_beta_version")
-		else
-			uri = URI.parse("https://www.phusionpassenger.com/latest_stable_version")
-		end
-		http = Net::HTTP.new(uri.host, uri.port)
-		http.use_ssl = true
-		http.verify_mode = OpenSSL::SSL::VERIFY_PEER
-		request = Net::HTTP::Post.new(uri.request_uri)
-		request.basic_auth("admin", website_config["admin_password"])
-		request.set_form_data("version" => version)
-		response = http.request(request)
-		if response.code != 200 && response.body != "ok"
-			abort "*** ERROR: Cannot update version number on www.phusionpassenger.com:\n" +
-				"Status: #{response.code}\n\n" +
-				response.body
-		end
 	else
 		puts "Did not upload anything."
 	end
 end
 
-task 'package:check' do
-	require 'phusion_passenger'
-	
-	File.read("ext/common/Constants.h") =~ /PASSENGER_VERSION \"(.+)\"/
-	if $1 != PhusionPassenger::VERSION_STRING
-		abort "Version number in ext/common/Constants.h doesn't match."
-	end
-end
-
-task 'package:gem' => Packaging::ASCII_DOCS + ['package:check'] do
+task 'package:gem' => Packaging::PREGENERATED_FILES do
 	require 'phusion_passenger'
 	sh "gem build #{PhusionPassenger::PACKAGE_NAME}.gemspec --sign --key 0x0A212A8C"
 	sh "mkdir -p pkg"
 	sh "mv #{PhusionPassenger::PACKAGE_NAME}-#{PhusionPassenger::VERSION_STRING}.gem pkg/"
 end
 
-task 'package:tarball' => Packaging::ASCII_DOCS + ['package:check'] do
+task 'package:tarball' => Packaging::PREGENERATED_FILES do
 	require 'phusion_passenger'
 	require 'fileutils'
 
@@ -171,23 +167,30 @@ task :fakeroot => [:apache2, :nginx] + Packaging::ASCII_DOCS do
 	# We don't use CONFIG['archdir'] and the like because we want
 	# the files to be installed to /usr, and the Ruby interpreter
 	# on the packaging machine might be in /usr/local.
-	fake_libdir = "#{fakeroot}/usr/lib/ruby/#{CONFIG['ruby_version']}"
+	fake_rubylibdir = "#{fakeroot}/usr/lib/ruby/vendor_ruby"
+	fake_libdir = "#{fakeroot}/usr/lib/phusion-passenger"
 	fake_native_support_dir = "#{fakeroot}/usr/lib/ruby/#{CONFIG['ruby_version']}/#{CONFIG['arch']}"
-	fake_agents_dir = "#{fakeroot}#{NATIVELY_PACKAGED_AGENTS_DIR}"
-	fake_helper_scripts_dir = "#{fakeroot}#{NATIVELY_PACKAGED_HELPER_SCRIPTS_DIR}"
+	fake_agents_dir = "#{fakeroot}/usr/lib/#{GLOBAL_NAMESPACE_DIRNAME}/agents"
+	fake_helper_scripts_dir = "#{fakeroot}/usr/share/#{GLOBAL_NAMESPACE_DIRNAME}/helper-scripts"
 	fake_resources_dir = "#{fakeroot}/usr/share/phusion-passenger"
-	fake_docdir = "#{fakeroot}#{NATIVELY_PACKAGED_DOC_DIR}"
+	fake_include_dir = "#{fakeroot}/usr/share/phusion-passenger/include"
+	fake_docdir = "#{fakeroot}/usr/share/doc/#{GLOBAL_NAMESPACE_DIRNAME}"
 	fake_bindir = "#{fakeroot}/usr/bin"
 	fake_sbindir = "#{fakeroot}/usr/sbin"
-	fake_apache2_module = "#{fakeroot}#{NATIVELY_PACKAGED_APACHE2_MODULE}"
-	fake_apache2_module_dir = File.dirname(fake_apache2_module)
+	fake_apache2_module_dir = "#{fakeroot}/usr/lib/apache2/modules"
+	fake_apache2_module = "#{fake_apache2_module_dir}/mod_passenger.so"
+	fake_ruby_extension_source_dir = "#{fakeroot}/usr/share/phusion-passenger/ruby_extension_source"
 	
 	sh "rm -rf #{fakeroot}"
 	sh "mkdir -p #{fakeroot}"
 	
+	sh "mkdir -p #{fake_rubylibdir}"
+	sh "cp #{PhusionPassenger.ruby_libdir}/phusion_passenger.rb #{fake_rubylibdir}/"
+	sh "cp -R #{PhusionPassenger.ruby_libdir}/phusion_passenger #{fake_rubylibdir}/"
+
 	sh "mkdir -p #{fake_libdir}"
-	sh "cp #{PhusionPassenger.ruby_libdir}/phusion_passenger.rb #{fake_libdir}/"
-	sh "cp -R #{PhusionPassenger.ruby_libdir}/phusion_passenger #{fake_libdir}/"
+	sh "cp -R #{PhusionPassenger.lib_dir}/common #{fake_libdir}/"
+	sh "rm -rf #{fake_libdir}/common/libboost_oxt"
 	
 	sh "mkdir -p #{fake_native_support_dir}"
 	native_support_archdir = PlatformInfo.ruby_extension_binary_compatibility_id
@@ -198,12 +201,30 @@ task :fakeroot => [:apache2, :nginx] + Packaging::ASCII_DOCS do
 	sh "cp -R #{PhusionPassenger.agents_dir}/* #{fake_agents_dir}/"
 	sh "rm -rf #{fake_agents_dir}/*.dSYM"
 	sh "rm -rf #{fake_agents_dir}/*/*.dSYM"
+	sh "rm -rf #{fake_agents_dir}/*.o"
 	
 	sh "mkdir -p #{fake_helper_scripts_dir}"
 	sh "cp -R #{PhusionPassenger.helper_scripts_dir}/* #{fake_helper_scripts_dir}/"
 	
 	sh "mkdir -p #{fake_resources_dir}"
 	sh "cp -R resources/* #{fake_resources_dir}/"
+
+	sh "mkdir -p #{fake_include_dir}"
+	# Infer headers that the Nginx module needs
+	headers = []
+	Dir["ext/nginx/*.[ch]"].each do |filename|
+		File.read(filename).split("\n").grep(%r{#include "common/(.+)"}) do |match|
+			headers << ["ext/common/#{$1}", $1]
+		end
+	end
+	headers.each do |header|
+		target = "#{fake_include_dir}/#{header[1]}"
+		dir = File.dirname(target)
+		if !File.directory?(dir)
+			sh "mkdir -p #{dir}"
+		end
+		sh "cp #{header[0]} #{target}"
+	end
 	
 	sh "mkdir -p #{fake_docdir}"
 	Packaging::ASCII_DOCS.each do |docfile|
@@ -224,11 +245,29 @@ task :fakeroot => [:apache2, :nginx] + Packaging::ASCII_DOCS do
 	sh "mkdir -p #{fake_apache2_module_dir}"
 	sh "cp #{APACHE2_MODULE} #{fake_apache2_module_dir}/"
 
+	sh "mkdir -p #{fake_ruby_extension_source_dir}"
+	sh "cp -R #{PhusionPassenger.ruby_extension_source_dir}/* #{fake_ruby_extension_source_dir}"
+
+	puts "Creating #{fake_rubylibdir}/phusion_passenger/locations.ini"
+	File.open("#{fake_rubylibdir}/phusion_passenger/locations.ini", "w") do |f|
+		f.puts "natively_packaged=true"
+		f.puts "bin=/usr/bin"
+		f.puts "agents=/usr/lib/phusion-passenger/agents"
+		f.puts "libdir=/usr/lib/phusion-passenger"
+		f.puts "helper_scripts=/usr/share/phusion-passenger/helper-scripts"
+		f.puts "resources=/usr/share/phusion-passenger"
+		f.puts "includedir=/usr/share/phusion-passenger/include"
+		f.puts "doc=/usr/share/doc/phusion-passenger"
+		f.puts "rubylibdir=/usr/lib/ruby/vendor_ruby"
+		f.puts "apache2_module=/usr/lib/apache2/modules/mod_passenger.so"
+		f.puts "ruby_extension_source=/usr/share/phusion-passenger/ruby_extension_source"
+	end
+
 	sh "find #{fakeroot} -name .DS_Store -print0 | xargs -0 rm -f"
 end
 
 desc "Create a Debian package"
-task 'package:debian' => 'package:check' do
+task 'package:debian' do
 	checkbuilddeps = PlatformInfo.find_command("dpkg-checkbuilddeps")
 	debuild = PlatformInfo.find_command("debuild")
 	if !checkbuilddeps || !debuild

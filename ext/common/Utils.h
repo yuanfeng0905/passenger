@@ -195,6 +195,14 @@ string escapeForXml(const string &input);
 string getProcessUsername();
 
 /**
+ * Returns the home directory of the current user. This queries $HOME,
+ * or if that's not available, the user database.
+ *
+ * @throws RuntimeException The home directory cannot be determined.
+ */
+string getHomeDir();
+
+/**
  * Converts a mode string into a mode_t value.
  *
  * At this time only the symbolic mode strings are supported, e.g. something like looks
@@ -397,7 +405,14 @@ int runShellCommand(const StaticString &command);
 
 /**
  * Async-signal safe way to fork().
+ *
+ * On Linux, the fork() glibc wrapper grabs a ptmalloc lock, so
+ * if malloc causes a segfault then we can't fork.
  * http://sourceware.org/bugzilla/show_bug.cgi?id=4737
+ *
+ * OS X apparently does something similar, except they use a
+ * spinlock so it results in 100% CPU. See _cthread_fork_prepare()
+ * at http://www.opensource.apple.com/source/Libc/Libc-166/threads.subproj/cthreads.c
  */
 pid_t asyncFork();
 

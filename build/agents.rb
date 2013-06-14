@@ -12,6 +12,7 @@ dependencies = [
 	'ext/common/agents/Watchdog/HelperAgentWatcher.cpp',
 	'ext/common/agents/Watchdog/LoggingAgentWatcher.cpp',
 	'ext/common/agents/Watchdog/ServerInstanceDirToucher.cpp',
+	'ext/common/Constants.h',
 	'ext/common/ServerInstanceDir.h',
 	'ext/common/ResourceLocator.h',
 	'ext/common/Utils/VariantMap.h',
@@ -36,7 +37,7 @@ file AGENT_OUTPUT_DIR + 'PassengerWatchdog' => dependencies do
 end
 
 helper_agent_libs = COMMON_LIBRARY.
-	only(:base, :other).
+	only(:base, :other, 'Utils/jsoncpp.o').
 	exclude('AgentsStarter.o')
 dependencies = [
 	'ext/common/agents/HelperAgent/Main.cpp',
@@ -44,6 +45,7 @@ dependencies = [
 	'ext/common/agents/HelperAgent/RequestHandler.cpp',
 	'ext/common/agents/HelperAgent/ScgiRequestParser.h',
 	'ext/common/agents/HelperAgent/BacktracesServer.h',
+	'ext/common/Constants.h',
 	'ext/common/StaticString.h',
 	'ext/common/Account.h',
 	'ext/common/AccountsDatabase.h',
@@ -77,6 +79,7 @@ file AGENT_OUTPUT_DIR + 'PassengerHelperAgent' => dependencies do
 		"#{EXTRA_PRE_CXXFLAGS} " <<
 		"-Iext -Iext/common " <<
 		"#{AGENT_CFLAGS} #{LIBEV_CFLAGS} #{LIBEIO_CFLAGS} " <<
+		"#{PlatformInfo.curl_flags} " <<
 		"#{PlatformInfo.portability_cflags} " <<
 		"#{EXTRA_CXXFLAGS}")
 	create_executable("#{AGENT_OUTPUT_DIR}PassengerHelperAgent",
@@ -86,6 +89,7 @@ file AGENT_OUTPUT_DIR + 'PassengerHelperAgent' => dependencies do
 		"#{EXTRA_PRE_LDFLAGS} " <<
 		"#{LIBEV_LIBS} " <<
 		"#{LIBEIO_LIBS} " <<
+		"#{PlatformInfo.curl_libs} " <<
 		"#{PlatformInfo.portability_ldflags} " <<
 		"#{AGENT_LDFLAGS} " <<
 		"#{EXTRA_LDFLAGS}")
@@ -99,6 +103,7 @@ dependencies = [
 	'ext/common/agents/LoggingAgent/RemoteSender.h',
 	'ext/common/agents/LoggingAgent/DataStoreId.h',
 	'ext/common/agents/LoggingAgent/FilterSupport.h',
+	'ext/common/Constants.h',
 	'ext/common/ServerInstanceDir.h',
 	'ext/common/Logging.h',
 	'ext/common/EventedServer.h',

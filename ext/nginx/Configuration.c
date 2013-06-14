@@ -35,8 +35,8 @@
 #include "ngx_http_passenger_module.h"
 #include "Configuration.h"
 #include "ContentHandler.h"
-#include "../common/Constants.h"
-#include "../common/agents/LoggingAgent/FilterSupport.h"
+#include "common/Constants.h"
+#include "common/agents/LoggingAgent/FilterSupport.h"
 
 
 static ngx_str_t headers_to_hide[] = {
@@ -928,7 +928,7 @@ passenger_enabled(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
          * loading is done.
          */
         ngx_memzero(&upstream_url, sizeof(ngx_url_t));
-        upstream_url.url = passenger_placeholder_upstream_address;
+        upstream_url.url = pp_placeholder_upstream_address;
         upstream_url.no_resolve = 1;
         passenger_conf->upstream_config.upstream = ngx_http_upstream_add(cf, &upstream_url, 0);
         if (passenger_conf->upstream_config.upstream == NULL) {

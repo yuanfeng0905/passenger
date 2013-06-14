@@ -5,7 +5,7 @@
 #
 #  See LICENSE file for license information.
 
-if RUBY_PLATFORM =~ /java/
+if !PlatformInfo.passenger_needs_ruby_dev_header?
 	NATIVE_SUPPORT_TARGET = nil
 
 	task :native_support do

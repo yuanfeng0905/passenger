@@ -553,13 +553,25 @@ Group::spawnThreadOOBWRequest(GroupPtr self, ProcessPtr process) {
 	{
 		// Standard resource management boilerplate stuff...
 		unique_lock<boost::mutex> lock(pool->syncher);
-		if (OXT_UNLIKELY(!process->isAlive() || !isAlive())) {
+		if (OXT_UNLIKELY(!process->isAlive()
+			|| process->enabled == Process::DETACHED
+			|| !isAlive()))
+		{
+			return;
+		}
+
+		if (process->enabled != Process::DISABLED) {
+			UPDATE_TRACE_POINT();
+			P_INFO("Out-of-Band Work canceled: process " << process->inspect() <<
+				" was concurrently re-enabled.");
+			if (debug != NULL && debug->oobw) {
+				debug->debugger->send("OOBW request canceled");
+			}
 			return;
 		}
 		
 		assert(process->oobwStatus = Process::OOBW_IN_PROGRESS);
 		assert(process->sessions == 0);
-		assert(process->enabled == Process::DISABLED);
 		socket = process->sessionSockets.top();
 		assert(socket != NULL);
 	}
@@ -960,6 +972,12 @@ Group::detachedProcessesCheckerMain(GroupPtr self) {
 						assert(process->getLifeStatus() == Process::DEAD);
 						it++;
 						removeProcessFromList(process, detachedProcesses);
+					} else if (process->shutdownTimeoutExpired()) {
+						P_WARN("Detached process " << process->inspect() <<
+							" didn't shut down within " PROCESS_SHUTDOWN_TIMEOUT_DISPLAY
+							". Forcefully killing it with SIGKILL.");
+						kill(process->pid, SIGKILL);
+						it++;
 					} else {
 						it++;
 					}
@@ -998,7 +1016,7 @@ Group::detachedProcessesCheckerMain(GroupPtr self) {
 		// someone wakes us up.
 		UPDATE_TRACE_POINT();
 		detachedProcessesCheckerCond.timed_wait(lock,
-			posix_time::milliseconds(10));
+			posix_time::milliseconds(100));
 	}
 }
 

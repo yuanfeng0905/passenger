@@ -50,8 +50,7 @@ struct DirConfig {
 	
 	Threeway enabled;
 	
-	std::set<std::string> railsBaseURIs;
-	std::set<std::string> rackBaseURIs;
+	std::set<std::string> baseURIs;
 	
 	/** The Ruby interpreter to use. */
 	const char *ruby;
@@ -215,18 +214,6 @@ struct DirConfig {
 	
 	bool isEnabled() const {
 		return enabled != DISABLED;
-	}
-	
-	string getAppRoot(const StaticString &documentRoot) const {
-		if (appRoot == NULL) {
-			if (resolveSymlinksInDocRoot == DirConfig::ENABLED) {
-				return extractDirName(resolveSymlink(documentRoot));
-			} else {
-				return extractDirName(documentRoot);
-			}
-		} else {
-			return appRoot;
-		}
 	}
 	
 	StaticString getUser() const {

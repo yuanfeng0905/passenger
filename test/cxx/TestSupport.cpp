@@ -147,6 +147,7 @@ listDir(const string &path) {
 		}
 		result.push_back(ent->d_name);
 	}
+	std::sort(result.begin(), result.end());
 	return result;
 }
 

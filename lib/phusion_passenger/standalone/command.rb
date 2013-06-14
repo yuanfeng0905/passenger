@@ -1,11 +1,12 @@
 #  Phusion Passenger - https://www.phusionpassenger.com/
-#  Copyright (c) 2010-2012 Phusion
+#  Copyright (c) 2010-2013 Phusion
 #
 #  "Phusion Passenger" is a trademark of Hongli Lai & Ninh Bui.
 #
 #  See LICENSE file for license information.
 require 'optparse'
 require 'phusion_passenger'
+require 'phusion_passenger/constants'
 require 'phusion_passenger/standalone/utils'
 
 module PhusionPassenger
@@ -19,7 +20,8 @@ class Command
 		:max_pool_size => 6,
 		:min_instances => 1,
 		:spawn_method  => Kernel.respond_to?(:fork) ? 'smart' : 'direct',
-		:nginx_version => PREFERRED_NGINX_VERSION
+		:nginx_version => PREFERRED_NGINX_VERSION,
+		:friendly_error_pages => true
 	}.freeze
 	
 	include Utils
@@ -163,9 +165,15 @@ private
 	
 	def write_nginx_config_file
 		require 'phusion_passenger/platform_info/ruby'
-		ensure_directory_exists(@temp_dir)
+		require 'phusion_passenger/utils/tmpio'
+		@temp_dir        = PhusionPassenger::Utils.mktmpdir(
+			"passenger.#{SERVER_INSTANCE_DIR_STRUCTURE_MAJOR_VERSION}.#{SERVER_INSTANCE_DIR_STRUCTURE_MINOR_VERSION}.",
+			"/tmp")
+		@config_filename = "#{@temp_dir}/config"
+		location_config_filename = "#{@temp_dir}/locations.ini"
+		File.chmod(0755, @temp_dir)
 		
-		File.open(@location_config_filename, 'w') do |f|
+		File.open(location_config_filename, 'w') do |f|
 			f.puts '[locations]'
 			f.puts "natively_packaged=false"
 			f.puts "bin=#{PhusionPassenger.bin_dir}"
@@ -174,14 +182,16 @@ private
 			else
 				f.puts "agents=#{@runtime_dirs[:support_dir]}"
 			end
+			f.puts "libdir=#{PhusionPassenger.lib_dir}"
 			f.puts "helper_scripts=#{PhusionPassenger.helper_scripts_dir}"
 			f.puts "resources=#{PhusionPassenger.resources_dir}"
+			f.puts "includedir=#{PhusionPassenger.include_dir}"
 			f.puts "doc=#{PhusionPassenger.doc_dir}"
 			f.puts "rubylib=#{PhusionPassenger.ruby_libdir}"
 			f.puts "apache2_module=#{PhusionPassenger.apache2_module_path}"
 			f.puts "ruby_extension_source=#{PhusionPassenger.ruby_extension_source_dir}"
 		end
-		puts File.read(@location_config_filename) if debugging?
+		puts File.read(location_config_filename) if debugging?
 		
 		File.open(@config_filename, 'w') do |f|
 			f.chmod(0644)
@@ -189,6 +199,7 @@ private
 				"templates", "standalone", "config.erb")
 			require_erb
 			erb = ERB.new(File.read(template_filename))
+			current_user = Etc.getpwuid(Process.uid).name
 			
 			# The template requires some helper methods which are defined in start_command.rb.
 			output = erb.result(binding)
@@ -218,9 +229,6 @@ private
 	def create_nginx_controller(extra_options = {})
 		require_daemon_controller
 		require 'socket' unless defined?(UNIXSocket)
-		@temp_dir        = "/tmp/passenger-standalone.#{$$}"
-		@config_filename = "#{@temp_dir}/config"
-		@location_config_filename = "#{@temp_dir}/locations.ini"
 		if @options[:socket_file]
 			ping_spec = [:unix, @options[:socket_file]]
 		else

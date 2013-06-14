@@ -228,13 +228,23 @@
 
 8. Tips	=>	tips-n4c22d
 
-8.1. User switching (security)	=>	user-switching-security--zmsy9o
+8.1. User Switching (security feature)	=>	user-switching-security--zmsy9o
 
-8.2. Reducing memory consumption of Ruby on Rails applications by 33%	=>	reducing-memory-consumption-of-ruby-on-rails-applications-by-33--1o3z66q
+8.1.1. Requirements	=>	requirements-15ozqdj
+
+8.1.2. Effects	=>	effects-nd2m44
+
+8.1.3. Caveats & troubleshooting	=>	caveats-troubleshooting-mbw582
+
+8.1.4. Finding out what user an application is running as	=>	finding-out-what-user-an-application-is-running-as-1ni7zk6
+
+8.2. Copy-on-write memory support (reducing memory consumption of Ruby applications)	=>	reducing-memory-consumption-of-ruby-on-rails-applications-by-33--1o3z66q
 
 8.3. Capistrano recipe	=>	capistrano-recipe-pfn4qu
 
 8.4. Bundler support	=>	bundler-support-19v1h43
+
+8.4.1. Does Phusion Passenger itself need to be added to the Gemfile?	=>	does-phusion-passenger-itself-need-to-be-added-to-the-gemfile--xn1a11
 
 8.5. Installing multiple Ruby on Rails versions	=>	installing-multiple-ruby-on-rails-versions-1bp1fff
 
@@ -279,4 +289,24 @@
 12.4. Smart spawning gotcha #2: the need to revive threads	=>	smart-spawning-gotcha-2-the-need-to-revive-threads-1ey176o
 
 12.5. Smart spawning gotcha #3: code load order	=>	smart-spawning-gotcha-3-code-load-order-12ydsn8
+
+13. Appendix D: About environment variables	=>	appendix-d-about-environment-variables-1t2cuff
+
+13.1. Working with environment variables	=>	working-with-environment-variables-1kmvq8w
+
+13.2. The PATH environment variable	=>	the-path-environment-variable-vlp05e
+
+13.3. Making environment variables permanent	=>	making-environment-variables-permanent-1wjyhzt
+
+13.3.1. bash	=>	bash-19xsxec
+
+13.3.2. Apache	=>	apache-9hqtyj
+
+13.3.3. Nginx	=>	nginx-157dpwy
+
+13.3.4. cron	=>	cron-1nuc9cz
+
+13.3.5. Phusion Passenger-served apps	=>	phusion-passenger-served-apps-uiewl5
+
+13.4. Environment variables and sudo	=>	environment-variables-and-sudo-10lphxn
 

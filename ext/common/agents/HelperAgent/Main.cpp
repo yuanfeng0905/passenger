@@ -49,12 +49,14 @@
 #include <ServerInstanceDir.h>
 #include <UnionStation.h>
 #include <Exceptions.h>
+#include <CloudUsageTracker.h>
 #include <MultiLibeio.cpp>
 #include <Utils.h>
 #include <Utils/Timer.h>
 #include <Utils/IOUtils.h>
 #include <Utils/MessageIO.h>
 #include <Utils/VariantMap.h>
+#include <Utils/License.c>
 
 using namespace boost;
 using namespace oxt;
@@ -351,6 +353,16 @@ private:
 		cerr << oxt::thread::all_backtraces();
 		cerr.flush();
 	}
+
+	void cloudTrackerAbortHandler(const string &message) {
+		P_CRITICAL(message);
+		requestSocket.close();
+		if (messageServerThread != NULL) {
+			messageServerThread->interrupt_and_join();
+		}
+		messageServer->forceClose();
+		execlp("sleep", "sleep", "999", (const char * const) 0);
+	}
 	
 public:
 	Server(FileDescriptor feedbackFd, const AgentOptions &_options)
@@ -361,6 +373,15 @@ public:
 	{
 		TRACE_POINT();
 		this->feedbackFd = feedbackFd;
+
+		/* Enterprise license check. */
+		UPDATE_TRACE_POINT();
+		char *error = passenger_enterprise_license_check();
+		if (error != NULL) {
+			string message = error;
+			free(error);
+			throw RuntimeException(message);
+		}
 		
 		UPDATE_TRACE_POINT();
 		generation = serverInstanceDir.getGeneration(options.generationNumber);
@@ -373,7 +394,7 @@ public:
 		
 		createFile(generation->getPath() + "/helper_agent.pid",
 			toString(getpid()), S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
-		
+
 		if (geteuid() == 0 && !options.userSwitching) {
 			lowerPrivilege(options.defaultUser, options.defaultGroup);
 		}
@@ -386,7 +407,7 @@ public:
 			throw RuntimeException("Your random number device, /dev/urandom, appears to be broken. "
 				"It doesn't seem to be returning random data. Please fix this.");
 		}
-		
+
 		UPDATE_TRACE_POINT();
 		loggerFactory = make_shared<UnionStation::LoggerFactory>(options.loggingAgentAddress,
 			"logging", options.loggingAgentPassword);
@@ -467,6 +488,31 @@ public:
 		
 		poolLoop.start("Pool event loop", 0);
 		requestLoop.start("Request event loop", 0);
+
+
+		/* Initialize cloud usage tracker. */
+		UPDATE_TRACE_POINT();
+		if (passenger_enterprise_on_cloud_license()) {
+			string certificate;
+			if (options.cloudLicensingCert.empty()) {
+				certificate = resourceLocator.getResourcesDir() + "/cloud_service.crt";
+			} else if (options.cloudLicensingCert != "-") {
+				certificate = options.cloudLicensingCert;
+			}
+
+			P_INFO("Starting Phusion Passenger Cloud usage tracker using data directory " <<
+				options.cloudLicensingDataDir << " and certificate " <<
+				(certificate.empty() ? "(none)" : certificate));
+			makeDirTree(options.cloudLicensingDataDir);
+			
+			CloudUsageTracker *tracker = new CloudUsageTracker(
+				options.cloudLicensingDataDir,
+				options.cloudLicensingBaseUrl,
+				certificate,
+				options.cloudLicensingProxy);
+			tracker->abortHandler = boost::bind(&Server::cloudTrackerAbortHandler, this, _1);
+			tracker->start();
+		}
 
 		
 		/* Wait until the watchdog closes the feedback fd (meaning it

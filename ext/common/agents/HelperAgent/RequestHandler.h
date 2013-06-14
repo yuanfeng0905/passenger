@@ -1633,6 +1633,7 @@ private:
 			options.baseURI = scriptName;
 		}
 		
+		options.ruby = this->options.defaultRubyCommand;
 		options.logLevel = getLogLevel();
 		options.loggingAgentAddress = this->options.loggingAgentAddress;
 		options.loggingAgentUsername = "logging";

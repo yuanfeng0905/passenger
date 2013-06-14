@@ -9,6 +9,7 @@ require 'phusion_passenger'
 require 'phusion_passenger/constants'
 require 'phusion_passenger/console_text_template'
 require 'phusion_passenger/platform_info'
+require 'phusion_passenger/platform_info/operating_system'
 require 'phusion_passenger/utils/ansi_colors'
 
 # IMPORTANT: do not directly or indirectly require native_support; we can't compile
@@ -140,6 +141,42 @@ protected
 			return false
 		end
 	end
+
+	def check_whether_os_is_broken
+		if PlatformInfo.os_name == "freebsd9" && `uname -r` =~ /^9\.1-/
+			new_screen
+			render_template 'installer_common/freebsd9_broken_cxx_runtime'
+			wait
+		end
+	end
+
+	def check_whether_system_has_enough_ram(required = 1024)
+		begin
+			meminfo = File.read("/proc/meminfo")
+			if meminfo =~ /^MemTotal: *(\d+) kB$/
+				ram_mb = $1.to_i / 1024
+				if meminfo =~ /^SwapTotal: *(\d+) kB$/
+					swap_mb = $1.to_i / 1024
+				else
+					swap_mb = 0
+				end
+			end
+		rescue Errno::ENOENT, Errno::EACCES
+			# Don't do anything on systems without memory information.
+			ram_mb = nil
+			swap_mb = nil
+		end
+		if ram_mb && swap_mb && ram_mb + swap_mb < required
+			new_screen
+			render_template 'installer_common/low_amount_of_memory_warning',
+				:required => required,
+				:current => ram_mb + swap_mb,
+				:ram => ram_mb,
+				:swap => swap_mb,
+				:doc => users_guide
+			wait
+		end
+	end
 	
 	
 	def use_stderr
@@ -213,6 +250,8 @@ protected
 			end
 		end
 		return result
+	rescue Interrupt
+		raise Abort
 	end
 	
 	def prompt_confirmation(message)
@@ -225,6 +264,8 @@ protected
 			end
 		end
 		return result.downcase == 'y'
+	rescue Interrupt
+		raise Abort
 	end
 
 	def wait(timeout = nil)

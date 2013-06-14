@@ -5,6 +5,8 @@
 #
 #  See LICENSE file for license information.
 
+require 'phusion_passenger/utils/tmpio'
+
 module PhusionPassenger
 
 # This module autodetects various platform-specific information, and
@@ -133,20 +135,18 @@ private
 	private_class_method :reindent
 
 	def self.create_temp_file(name, dir = tmpdir)
-		tag = "#{Process.pid}.#{Thread.current.object_id.to_s(16)}"
-		if name =~ /\./
-			ext = File.extname(name)
-			name = File.basename(name, ext) + "-#{tag}#{ext}"
-		else
-			name = "#{name}-#{tag}"
-		end
-		filename = "#{dir}/#{name}"
-		f = File.open(filename, "w")
-		begin
-			yield(filename, f)
-		ensure
-			f.close if !f.closed?
-			File.unlink(filename) if File.exist?(filename)
+		# This function is mostly used for compiling C programs to autodetect
+		# system properties. We create a secure temp subdirectory to prevent
+		# TOCTU attacks, especially because we don't know how the compiler
+		# handles this.
+		PhusionPassenger::Utils.mktmpdir("passenger.", dir) do |subdir|
+			filename = "#{subdir}/#{name}"
+			f = File.open(filename, "w")
+			begin
+				yield(filename, f)
+			ensure
+				f.close if !f.closed?
+			end
 		end
 	end
 	private_class_method :create_temp_file
@@ -229,9 +229,11 @@ public
 		dir = tmpdir
 		filename = "#{dir}/#{basename}"
 		begin
-			File.open(filename, 'w').close
+			File.open(filename, 'w') do |f|
+				f.puts("#!/bin/sh")
+			end
 			File.chmod(0700, filename)
-			if File.executable?(filename)
+			if system(filename)
 				return dir
 			else
 				attempts << { :dir => dir,
@@ -250,9 +252,11 @@ public
 		dir = Dir.pwd
 		filename = "#{dir}/#{basename}"
 		begin
-			File.open(filename, 'w').close
+			File.open(filename, 'w') do |f|
+				f.puts("#!/bin/sh")
+			end
 			File.chmod(0700, filename)
-			if File.executable?(filename)
+			if system(filename)
 				return dir
 			else
 				attempts << { :dir => dir,
@@ -268,7 +272,8 @@ public
 			File.unlink(filename) rescue nil
 		end
 		
-		message = "In order to run certain tests, this program " +
+		message = "ERROR: Cannot find suitable temporary directory\n" +
+			"In order to run certain tests, this program " +
 			"must be able to write temporary\n" +
 			"executable files to some directory. However no such " +
 			"directory can be found. \n" +
@@ -278,7 +283,7 @@ public
 			message << "   #{attempt[:error]}\n"
 		end
 		message << "\nYou can solve this problem by telling this program what directory to write\n" <<
-			"temporary executable files to.\n" <<
+			"temporary executable files to, as follows:\n" <<
 			"\n" <<
 			"  Set the $TMPDIR environment variable to the desired directory's filename and\n" <<
 			"  re-run this program.\n" <<
@@ -307,8 +312,17 @@ public
 	#
 	# This function exists because system('which') doesn't always behave
 	# correctly, for some weird reason.
-	def self.find_command(name)
+	#
+	# When `is_executable` is true, this function checks whether
+	# there is an executable named `name` in $PATH. When false, it
+	# assumes that `name` is not an executable name but a command string
+	# (e.g. "ccache gcc"). It then infers the executable name ("ccache")
+	# from the command string, and checks for that instead.
+	def self.find_command(name, is_executable = true)
 		name = name.to_s
+		if !is_executable && name =~ / /
+			name = name.sub(/ .*/, '')
+		end
 		if name =~ /^\//
 			if File.executable?(name)
 				return name

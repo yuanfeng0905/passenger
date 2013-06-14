@@ -364,12 +364,17 @@ escapeForXml(const string &input) {
 string
 getProcessUsername() {
 	struct passwd pwd, *result;
-	char strings[1024];
 	int ret;
+
+	int bufsize = sysconf(_SC_GETPW_R_SIZE_MAX);
+	if (bufsize == -1) {
+		bufsize = 1024;
+	}
 	
+	char strings[bufsize];
 	result = (struct passwd *) NULL;
 	do {
-		ret = getpwuid_r(getuid(), &pwd, strings, sizeof(strings), &result);
+		ret = getpwuid_r(getuid(), &pwd, strings, bufsize, &result);
 	} while (ret == -1 && errno == EINTR);
 	if (ret == -1) {
 		result = (struct passwd *) NULL;
@@ -381,6 +386,32 @@ getProcessUsername() {
 		return strings;
 	} else {
 		return result->pw_name;
+	}
+}
+
+string
+getHomeDir() {
+	const char *result = getenv("HOME");
+	if (result == NULL || *result == '\0') {
+		struct passwd pwd, *user;
+		int ret;
+
+		int bufsize = sysconf(_SC_GETPW_R_SIZE_MAX);
+		if (bufsize == -1) {
+			bufsize = 1024;
+		}
+
+		char strings[bufsize];
+		do {
+			ret = getpwuid_r(getuid(), &pwd, strings, bufsize, &user);
+		} while (ret == -1 && errno == EINTR);
+		if (ret == -1) {
+			throw RuntimeException("Cannot determine the home directory for user " + getProcessUsername());
+		} else {
+			return user->pw_dir;
+		}
+	} else {
+		return result;
 	}
 }
 
@@ -396,7 +427,7 @@ parseModeString(const StaticString &mode) {
 		
 		if (clause.empty()) {
 			continue;
-		} else if (clause.size() < 2 || clause[1] != '=') {
+		} else if (clause.size() < 2 || (clause[0] != '+' && clause[1] != '=')) {
 			throw InvalidModeStringException("Invalid mode clause specification '" + clause + "'");
 		}
 		
@@ -458,6 +489,20 @@ parseModeString(const StaticString &mode) {
 					break;
 				case 'x':
 					modeBits |= S_IXOTH;
+					break;
+				default:
+					throw InvalidModeStringException("Invalid permission '" +
+						string(1, clause[i]) +
+						"' in mode clause specification '" +
+						clause + "'");
+				}
+			}
+			break;
+		case '+':
+			for (string::size_type i = 1; i < clause.size(); i++) {
+				switch (clause[i]) {
+				case 't':
+					modeBits |= S_ISVTX;
 					break;
 				default:
 					throw InvalidModeStringException("Invalid permission '" +
@@ -946,12 +991,20 @@ runShellCommand(const StaticString &command) {
 	}
 }
 
-// Async-signal safe way to fork().
-// http://sourceware.org/bugzilla/show_bug.cgi?id=4737
+#ifdef __APPLE__
+	// http://www.opensource.apple.com/source/Libc/Libc-825.26/sys/fork.c
+	// This bypasses atfork handlers.
+	extern "C" {
+		extern pid_t __fork(void);
+	}
+#endif
+
 pid_t
 asyncFork() {
 	#if defined(__linux__)
 		return (pid_t) syscall(SYS_fork);
+	#elif defined(__APPLE__)
+		return __fork();
 	#else
 		return fork();
 	#endif

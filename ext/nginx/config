@@ -1,6 +1,10 @@
 PATH="$ngx_addon_dir/../../bin:$PATH"
 export PATH
 
+if ! ruby -v >/dev/null 2>/dev/null; then
+    echo '*** ERROR: Cannot find the "ruby" command in $PATH. Please fix your $PATH. You can learn more about $PATH at: http://www.modrails.com/documentation/Users%20guide%20Apache.html#_the_path_environment_variable'
+fi
+
 if test "x$PASSENGER_LIBS" = "x" && ! passenger-config --compiled; then
     echo "*** The Phusion Passenger support files are not yet compiled. Compiling them for you... ***"
     echo "*** Running 'rake nginx CACHING=false' in $ngx_addon_dir... ***"
@@ -33,9 +37,14 @@ NGX_ADDON_DEPS="$NGX_ADDON_DEPS \
     ${ngx_addon_dir}/ContentHandler.h \
     ${ngx_addon_dir}/StaticContentHandler.h \
     ${ngx_addon_dir}/ngx_http_passenger_module.h \
-    `passenger-config --root`/ext/common/Constants.h \
-    `passenger-config --root`/ext/common/AgentsStarter.h \
-    `passenger-config --root`/ext/common/ApplicationPool2/AppTypes.h"
+    `passenger-config --includedir`/common/Constants.h \
+    `passenger-config --includedir`/common/AgentsStarter.h \
+    `passenger-config --includedir`/common/ApplicationPool2/AppTypes.h"
+if test "x$PASSENGER_INCLUDEDIR" = "x"; then
+    CORE_INCS="$CORE_INCS `passenger-config --includedir`"
+else
+    CORE_INCS="$CORE_INCS $PASSENGER_INCLUDEDIR"
+fi
 if test "x$PASSENGER_LIBS" = "x"; then
     CORE_LIBS="$CORE_LIBS `passenger-config --nginx-libs`"
 else

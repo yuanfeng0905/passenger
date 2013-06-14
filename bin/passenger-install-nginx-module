@@ -16,6 +16,7 @@ require 'optparse'
 require 'fileutils'
 require 'phusion_passenger/platform_info/ruby'
 require 'phusion_passenger/abstract_installer'
+require 'phusion_passenger/utils/tmpio'
 
 class Installer < PhusionPassenger::AbstractInstaller
 	include PhusionPassenger
@@ -32,7 +33,7 @@ class Installer < PhusionPassenger::AbstractInstaller
 			'gcc',
 			'g++',
 			'download-tool',
-			'ruby-dev',
+			PlatformInfo.passenger_needs_ruby_dev_header? ? 'ruby-dev' : nil,
 			'ruby-openssl',
 			'rubygems',
 			'rake',
@@ -40,7 +41,7 @@ class Installer < PhusionPassenger::AbstractInstaller
 			'libcurl-dev',
 			'openssl-dev',
 			'zlib-dev'
-		]
+		].compact
 		return [specs, ids]
 	end
 	
@@ -61,6 +62,8 @@ class Installer < PhusionPassenger::AbstractInstaller
 		show_welcome_screen
 		check_dependencies || exit(1)
 		check_whether_we_can_write_to(PhusionPassenger.source_root) || exit(1)
+		check_whether_os_is_broken
+		check_whether_system_has_enough_ram
 		
 		download_and_install = should_we_download_and_install_nginx_automatically?
 		if pcre_is_installed?
@@ -106,14 +109,12 @@ class Installer < PhusionPassenger::AbstractInstaller
 	def before_install
 		super
 		myself = `whoami`.strip
-		@working_dir = "/tmp/#{myself}-passenger-#{Process.pid}"
-		FileUtils.rm_rf(@working_dir)
-		FileUtils.mkdir_p(@working_dir)
+		@working_dir = PhusionPassenger::Utils.mktmpdir("passenger.", PlatformInfo.tmpexedir)
 	end
 	
 	def after_install
 		super
-		FileUtils.rm_rf(@working_dir)
+		FileUtils.remove_entry_secure(@working_dir) if @working_dir
 	end
 
 private
