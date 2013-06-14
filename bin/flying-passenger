@@ -56,7 +56,7 @@ class FlyingPassenger
 		maybe_daemonize
 		maybe_write_pidfile
 		spawn
-		@logger.info("Flying Passenger up and running!")
+		@logger.info("Flying Passenger up and listening on #{@watchdog_options[:request_socket_link]}!")
 		return nil
 	rescue Exit => e
 		return e.code
@@ -161,6 +161,7 @@ private
 		else
 			@logger.level = Logger::DEBUG
 		end
+		@logger.info("Welcome to Flying Passenger #{PhusionPassenger::VERSION_STRING}")
 	end
 
 	def create_arguments
@@ -252,8 +253,12 @@ private
 	def maybe_write_pidfile
 		if @options[:pidfile]
 			@logger.info("Creating PID file: #{@options[:pidfile]}")
-			File.open(@options[:pidfile], "w") do |f|
-				f.puts $$
+			if File.exist?(@options[:pidfile])
+				raise Error, "PID file already exists! Exiting!"
+			else
+				File.open(@options[:pidfile], "w") do |f|
+					f.puts $$
+				end
 			end
 		end
 	end
