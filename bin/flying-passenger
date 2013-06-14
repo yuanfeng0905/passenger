@@ -53,13 +53,16 @@ class FlyingPassenger
 	def start
 		parse_options
 		initialize_logger
-		spawn
 		maybe_daemonize
 		maybe_write_pidfile
+		spawn
 		@logger.info("Flying Passenger up and running!")
 		return nil
 	rescue Exit => e
 		return e.code
+	rescue
+		maybe_cleanup_pidfile
+		raise
 	end
 
 	def wait
