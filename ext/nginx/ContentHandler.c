@@ -251,9 +251,15 @@ fix_peer_address(ngx_http_request_t *r) {
 
     rrp        = r->upstream->peer.data;
     peers      = rrp->peers;
-    request_socket_filename =
-        pp_agents_starter_get_request_socket_filename(pp_agents_starter,
-                                                       &request_socket_filename_len);
+
+    if (passenger_main_conf.fly_with.len != 0) {
+        request_socket_filename = (const char *) passenger_main_conf.fly_with.data;
+        request_socket_filename_len = passenger_main_conf.fly_with.len;
+    } else {
+        request_socket_filename =
+            pp_agents_starter_get_request_socket_filename(pp_agents_starter,
+                                                          &request_socket_filename_len);
+    }
 
     while (peers != NULL) {
         if (peers->name) {
