@@ -66,6 +66,14 @@ def boolean_option(name, default_value = false)
 	end
 end
 
+def maybe_wrap_in_ccache(command)
+	if boolean_option('USE_CCACHE', false)
+		return "ccache #{command}"
+	else
+		return command
+	end
+end
+
 #################################################
 
 if string_option('OUTPUT_DIR')
@@ -95,9 +103,15 @@ end
 
 #################################################
 
+PACKAGE_NAME    = PhusionPassenger::PACKAGE_NAME
+PACKAGE_VERSION = PhusionPassenger::VERSION_STRING
+PACKAGE_SIGNING_KEY = "0x0A212A8C"
+MAINTAINER_NAME  = "Phusion"
+MAINTAINER_EMAIL = "info@phusion.nl"
+
 OPTIMIZE = boolean_option("OPTIMIZE")
-CC       = string_option("CC", "gcc")
-CXX      = string_option("CXX", "g++")
+CC       = maybe_wrap_in_ccache(string_option("CC", "gcc"))
+CXX      = maybe_wrap_in_ccache(string_option("CXX", "g++"))
 LIBEXT   = PlatformInfo.library_extension
 USE_DMALLOC = boolean_option('USE_DMALLOC')
 USE_EFENCE  = boolean_option('USE_EFENCE')
@@ -147,14 +161,15 @@ EXTRA_PRE_LDFLAGS  = string_option('EXTRA_PRE_LDFLAGS', '').gsub("\n", " ")
 EXTRA_LDFLAGS  = string_option('EXTRA_LDFLAGS', '').gsub("\n", " ")
 
 
-AGENT_OUTPUT_DIR          = string_option('AGENT_OUTPUT_DIR', OUTPUT_DIR + "agents") + "/"
-COMMON_OUTPUT_DIR         = string_option('COMMON_OUTPUT_DIR', OUTPUT_DIR + "libout/common") + "/"
-APACHE2_OUTPUT_DIR        = string_option('APACHE2_OUTPUT_DIR', OUTPUT_DIR + "libout/apache2") + "/"
-LIBEV_OUTPUT_DIR          = string_option('LIBEV_OUTPUT_DIR', OUTPUT_DIR + "libout/libev") + "/"
-LIBEIO_OUTPUT_DIR         = string_option('LIBEIO_OUTPUT_DIR', OUTPUT_DIR + "libout/libeio") + "/"
+AGENT_OUTPUT_DIR          = string_option('AGENT_OUTPUT_DIR', OUTPUT_DIR + "buildout/agents") + "/"
+COMMON_OUTPUT_DIR         = string_option('COMMON_OUTPUT_DIR', OUTPUT_DIR + "buildout/common") + "/"
+APACHE2_OUTPUT_DIR        = string_option('APACHE2_OUTPUT_DIR', OUTPUT_DIR + "buildout/apache2") + "/"
+LIBEV_OUTPUT_DIR          = string_option('LIBEV_OUTPUT_DIR', OUTPUT_DIR + "buildout/libev") + "/"
+LIBEIO_OUTPUT_DIR         = string_option('LIBEIO_OUTPUT_DIR', OUTPUT_DIR + "buildout/libeio") + "/"
 ruby_extension_archdir    = PlatformInfo.ruby_extension_binary_compatibility_id
 RUBY_EXTENSION_OUTPUT_DIR = string_option('RUBY_EXTENSION_OUTPUT_DIR',
-	OUTPUT_DIR + "libout/ruby/" + ruby_extension_archdir) + "/"
+	OUTPUT_DIR + "buildout/ruby/" + ruby_extension_archdir) + "/"
+PKG_DIR                   = string_option('PKG_DIR', "pkg")
 
 
 # Whether to use the vendored libev or the system one.

@@ -15,70 +15,69 @@ sudo sh -c 'cat >> /etc/hosts' <<EOF
 127.0.0.1 7.passenger.test 8.passenger.test 9.passenger.test
 EOF
 
+function run()
+{
+	echo "$ $@"
+	"$@"
+}
+
 if [[ "$TEST_RUBY_VERSION" != "" ]]; then
 	echo "$ rvm use $TEST_RUBY_VERSION"
-	source ~/.rvm/scripts/rvm
+	if [[ -f ~/.rvm/scripts/rvm ]]; then
+		source ~/.rvm/scripts/rvm
+	else
+		source /usr/local/rvm/scripts/rvm
+	fi
 	rvm use $TEST_RUBY_VERSION
 	if [[ "$TEST_RUBYGEMS_VERSION" = "" ]]; then
-		echo "$ gem --version"
-		gem --version
+		run gem --version
 	fi
 fi
 
 if [[ "$TEST_RUBYGEMS_VERSION" != "" ]]; then
-	echo "$ rvm install rubygems $TEST_RUBYGEMS_VERSION"
-	rvm install rubygems $TEST_RUBYGEMS_VERSION
-	echo "$ gem --version"
-	gem --version
-fi
-
-if [[ "$TEST_FULL_COMPILE" = 1 ]]; then
-	echo "$ gem install rack --no-rdoc --no-ri"
-	gem install rack --no-rdoc --no-ri
-	echo "$ ./bin/passenger-install-apache2-module --auto"
-	./bin/passenger-install-apache2-module --auto
-	echo "$ rake nginx"
-	rake nginx
-	echo "$ rake test/cxx/CxxTestMain"
-	rake test/cxx/CxxTestMain
-	echo "$ rake test/oxt/oxt_test_main"
-	rake test/oxt/oxt_test_main
+	run rvm install rubygems $TEST_RUBYGEMS_VERSION
+	run gem --version
 fi
 
 if [[ "$TEST_CXX" = 1 ]]; then
-	echo "$ rake test:install_deps RAILS_BUNDLES=no"
-	rake test:install_deps RAILS_BUNDLES=no
-	echo "$ rake test:cxx"
-	rake test:cxx
-	echo "$ rake test:oxt"
-	rake test:oxt
+	run rake test:install_deps RAILS_BUNDLES=no DOCTOOLS=no
+	run rake test:cxx
+	run rake test:oxt
 fi
 
 if [[ "$TEST_RUBY" = 1 ]]; then
-	echo "$ rake test:install_deps"
-	rake test:install_deps
-	echo "$ rake test:ruby"
-	rake test:ruby
+	run rake test:install_deps DOCTOOLS=no
+	run rake test:ruby
 fi
 
 if [[ "$TEST_NGINX" = 1 ]]; then
-	echo "$ rake test:install_deps RAILS_BUNDLES=no"
-	rake test:install_deps RAILS_BUNDLES=no
-	echo "$ gem install rack daemon_controller --no-rdoc --no-ri"
-	gem install rack daemon_controller --no-rdoc --no-ri
-	echo "$ ./bin/passenger-install-nginx-module --auto --prefix=/tmp/nginx --auto-download"
-	./bin/passenger-install-nginx-module --auto --prefix=/tmp/nginx --auto-download
-	echo "$ rake test:integration:nginx"
-	rake test:integration:nginx
+	run rake test:install_deps RAILS_BUNDLES=no DOCTOOLS=no
+	run gem install rack daemon_controller --no-rdoc --no-ri
+	run ./bin/passenger-install-nginx-module --auto --prefix=/tmp/nginx --auto-download
+	run rake test:integration:nginx
 fi
 
 if [[ "$TEST_APACHE2" = 1 ]]; then
-	echo "$ rake test:install_deps RAILS_BUNDLES=no"
-	rake test:install_deps RAILS_BUNDLES=no
-	echo "$ gem install rack --no-rdoc --no-ri"
-	gem install rack --no-rdoc --no-ri
-	echo "$ rake apache2"
-	rake apache2
-	echo "$ rake test:integration:apache2"
-	rake test:integration:apache2
+	run sudo apt-get install -y --no-install-recommends \
+		apache2-mpm-worker apache2-threaded-dev
+	run rake test:install_deps RAILS_BUNDLES=no DOCTOOLS=no
+	run gem install rack --no-rdoc --no-ri
+	run ./bin/passenger-install-apache2-module --auto
+	run rake test:integration:apache2
+fi
+
+if [[ "$TEST_DEBIAN_PACKAGING" = 1 ]]; then
+	run sudo apt-get install -y --no-install-recommends \
+		devscripts rake apache2-mpm-worker apache2-threaded-dev \
+		ruby1.8 ruby1.8-dev ruby1.9.1 ruby1.9.1-dev libev-dev gdebi-core
+	run rake test:install_deps RAILS_BUNDLES=no
+	run rake debian:dev
+	run sudo gdebi -n pkg/ruby-passenger_*.deb
+	run sudo gdebi -n pkg/ruby-passenger-dev_*.deb
+	run sudo gdebi -n pkg/ruby-passenger-doc_*.deb
+	run sudo gdebi -n pkg/libapache2-mod-passenger_*.deb
+	run rvmsudo env LOCATIONS_INI=/usr/lib/ruby/vendor_ruby/phusion_passenger/locations.ini \
+		rspec -f s -c test/integration_tests/native_packaging_spec.rb
+	run env PASSENGER_LOCATION_CONFIGURATION_FILE=/usr/lib/ruby/vendor_ruby/phusion_passenger/locations.ini \
+		rake test:integration:apache2
 fi

@@ -36,6 +36,7 @@ else
 	require 'build/ruby_tests'
 	require 'build/integration_tests'
 	require 'build/misc'
+	require 'build/debian'
 	require 'build/rpm'
 end
 
@@ -50,7 +51,7 @@ end
 desc "Remove compiled files"
 task :clean do
 	sh "rm -rf build/cache"
-	sh "rm -rf libout"
+	sh "rm -rf buildout"
 end
 
 desc "Remove all generated files"

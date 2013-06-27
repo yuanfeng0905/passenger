@@ -54,11 +54,11 @@ public:
 			helperScriptsDir    = getOption(file, options, "helper_scripts");
 			resourcesDir        = getOption(file, options, "resources");
 			docDir              = getOption(file, options, "doc");
-			rubyLibDir          = getOption(file, options, "rubylib");
+			rubyLibDir          = getOption(file, options, "rubylibdir");
 		} else {
 			string root = rootOrFile;
 			binDir              = root + "/bin";
-			agentsDir           = root + "/agents";
+			agentsDir           = root + "/buildout/agents";
 			helperScriptsDir    = root + "/helper-scripts";
 			resourcesDir        = root + "/resources";
 			docDir              = root + "/doc";
@@ -76,10 +76,6 @@ public:
 	
 	string getHelperScriptsDir() const {
 		return helperScriptsDir;
-	}
-	
-	string getSpawnServerFilename() const {
-		return getHelperScriptsDir() + "/passenger-spawn-server";
 	}
 	
 	string getResourcesDir() const {

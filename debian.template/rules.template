@@ -1,0 +1,35 @@
+#!/usr/bin/make -f
+# export DH_VERBOSE=1
+
+export USE_VENDORED_LIBEV=false
+
+#if ['1', 'true', 'on', 'yes'].include?(ENV['USE_CCACHE'])
+	export USE_CCACHE=1
+#endif
+
+%:
+	dh $@
+
+override_dh_auto_configure:
+	# Do nothing
+
+override_dh_auto_build:
+	/usr/bin/ruby1.8 /usr/bin/rake fakeroot
+	mv pkg/fakeroot pkg/fakeroot1.8
+	/usr/bin/ruby1.9.1 /usr/bin/rake fakeroot
+	mv pkg/fakeroot pkg/fakeroot1.9.1
+
+override_dh_auto_install:
+	mkdir debian/tmp/
+	# Merge Ruby 1.8 and 1.9 files into a single directory.
+	cp -a pkg/fakeroot1.8/* debian/tmp/
+	cp -a pkg/fakeroot1.9.1/* debian/tmp/
+	# Do not package Passenger Standalone.
+	rm -rf debian/tmp/usr/bin/passenger
+
+override_dh_auto_clean:
+	/usr/bin/rake clean CLEAN_DOCS=false
+	rm -rf pkg/fakeroot1.8
+	rm -rf pkg/fakeroot1.9.1
+	# Hack to prevent HTML files from being renegerated
+	touch doc/*.html

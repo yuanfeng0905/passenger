@@ -2,13 +2,19 @@ Release 4.0.6
 -------------
 
  * Fixed a potential 100% CPU lock up in the crash handler, which only occurs
-   on OS X.
+   on OS X. Fixes issue #908.
+ * Fixed a crash in request handling, when certain events are trigger after
+   the client has already disconnected. Fixes issue #889.
  * [Apache] Fixed compatibility with Apache pipe logging. Previously this
    would cause Phusion Passenger to lock up with 100% CPU during Apache
    restart.
  * [Nginx] The Nginx configure script now checks whether 'ruby' is in $PATH.
    Previously, if 'ruby' is not in $PATH, then the compilation process fails
    with an obscure error.
+ * [Nginx] passenger-install-nginx-module now works properly even when Phusion
+   Passenger is installed through the Debian packages. Before, the installer
+   would tell you to install Phusion Passenger through the gem or tarball
+   instead.
  * [Enterprise] Added pretty printing helpers to the Live IRB Console.
  * Fixed permissions on a subdirectory in the server instance directory. The
    server instance directory is a temporary directory that Phusion Passenger
@@ -22,6 +28,7 @@ Release 4.0.6
    file). This has now been fixed.
  * The installer now checks whether the system has enough virtual memory, and
    prints a helpful warning if it doesn't.
+ * Linux/AArch64 compatibility fixes. Patch contributed by Dirk Mueller.
  * Improved documentation.
 
 

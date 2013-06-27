@@ -28,7 +28,7 @@ module PhusionPassenger
 	
 	###### Directories ######
 	
-	GLOBAL_NAMESPACE_DIRNAME            = "phusion-passenger-enterprise"
+	GLOBAL_NAMESPACE_DIRNAME            = "passenger-enterprise"
 	GLOBAL_STANDALONE_NAMESPACE_DIRNAME = "passenger-standalone"
 	# Subdirectory under $HOME to use for storing stuff.
 	USER_NAMESPACE_DIRNAME              = ".passenger"
@@ -83,13 +83,13 @@ module PhusionPassenger
 			@source_root           = File.dirname(File.dirname(FILE_LOCATION))
 			@natively_packaged     = false
 			@bin_dir               = "#{@source_root}/bin".freeze
-			@agents_dir            = "#{@source_root}/agents".freeze
-			@lib_dir               = "#{@source_root}/libout".freeze
+			@agents_dir            = "#{@source_root}/buildout/agents".freeze
+			@lib_dir               = "#{@source_root}/buildout".freeze
 			@helper_scripts_dir    = "#{@source_root}/helper-scripts".freeze
 			@resources_dir         = "#{@source_root}/resources".freeze
 			@include_dir           = "#{@source_root}/ext".freeze
 			@doc_dir               = "#{@source_root}/doc".freeze
-			@apache2_module_path   = "#{@source_root}/libout/apache2/mod_passenger.so".freeze
+			@apache2_module_path   = "#{@source_root}/buildout/apache2/mod_passenger.so".freeze
 			@ruby_extension_source_dir = "#{@source_root}/ext/ruby"
 		end
 	end
@@ -148,6 +148,14 @@ module PhusionPassenger
 
 	def self.ruby_extension_source_dir
 		return @ruby_extension_source_dir
+	end
+
+	def self.nginx_addon_dir
+		if PhusionPassenger.natively_packaged?
+			return "#{resources_dir}/ngx_http_passenger_module"
+		else
+			return "#{source_root}/ext/nginx"
+		end
 	end
 	
 	
