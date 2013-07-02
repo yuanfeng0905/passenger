@@ -5,6 +5,14 @@ Release 4.0.6
    on OS X. Fixes issue #908.
  * Fixed a crash in request handling, when certain events are trigger after
    the client has already disconnected. Fixes issue #889.
+ * Phusion Passenger will no longer crash when the Phusion Passenger
+   native_support Ruby extension cannot be compiled, e.g. because the Ruby
+   development headers are not installed or because the current user has no
+   permission to save the native extension file. Fixes issue #890.
+ * Fixed OS X 10.9 support. Fixes issue #906.
+ * Removed dependency on bash, so that Phusion Passenger works out of the box
+   on BSD platforms without installing/configuring bash. Fixes issue #911.
+ * Fix 'PassengerPoolIdleTime 0' not being respected correctly. Issue #904.
  * [Apache] Fixed compatibility with Apache pipe logging. Previously this
    would cause Phusion Passenger to lock up with 100% CPU during Apache
    restart.
@@ -26,6 +34,10 @@ Release 4.0.6
    created with the setuid bit, when it should have sticky bit (to prevent
    existing files from being deleted or renamed by a user that doesn't own the
    file). This has now been fixed.
+ * If the server instance directory already exists, it will now be removed
+   first in order get correct directory permissions. If the directory still
+   exists after removal, Phusion Passenger aborts to avoid writing to a
+   directory with unexpected permissions. Fixes issue #910.
  * The installer now checks whether the system has enough virtual memory, and
    prints a helpful warning if it doesn't.
  * Linux/AArch64 compatibility fixes. Patch contributed by Dirk Mueller.

@@ -166,9 +166,8 @@ private
 	def write_nginx_config_file
 		require 'phusion_passenger/platform_info/ruby'
 		require 'phusion_passenger/utils/tmpio'
-		@temp_dir        = PhusionPassenger::Utils.mktmpdir(
-			"passenger.#{SERVER_INSTANCE_DIR_STRUCTURE_MAJOR_VERSION}.#{SERVER_INSTANCE_DIR_STRUCTURE_MINOR_VERSION}.",
-			"/tmp")
+		@temp_dir = PhusionPassenger::Utils.mktmpdir(
+			"passenger-standalone.")
 		@config_filename = "#{@temp_dir}/config"
 		location_config_filename = "#{@temp_dir}/locations.ini"
 		File.chmod(0755, @temp_dir)
@@ -180,7 +179,7 @@ private
 			if debugging?
 				f.puts "agents=#{PhusionPassenger.agents_dir}"
 			else
-				f.puts "agents=#{@runtime_dirs[:support_dir]}"
+				f.puts "agents=#{@runtime_dirs[:support_dir]}/agents"
 			end
 			f.puts "libdir=#{PhusionPassenger.lib_dir}"
 			f.puts "helper_scripts=#{PhusionPassenger.helper_scripts_dir}"

@@ -67,6 +67,7 @@ class StartCommand < Command
 			########################
 			monitor_app_directories_in_background if @app_finder.multi_mode?
 			########################
+			touch_temp_dir_in_background
 			watch_log_files_in_background if should_watch_logs?
 			wait_until_nginx_has_exited
 		rescue Interrupt
@@ -385,7 +386,7 @@ private
 			:ruby_dir => "#{root}/rubyext-#{PlatformInfo.ruby_extension_binary_compatibility_id}",
 			:nginx_installed => File.exist?(nginx_bin)
 		}
-		result[:support_dir_installed] = File.exist?(result[:support_dir] + "/PassengerWatchdog")
+		result[:support_dir_installed] = File.exist?(result[:support_dir] + "/agents/PassengerWatchdog")
 		result[:everything_installed] = result[:nginx_installed] && result[:support_dir_installed]
 		return result
 	end
@@ -559,6 +560,17 @@ private
 		end
 		@threads << thread
 		@interruptable_threads << thread
+	end
+
+	def touch_temp_dir_in_background
+		@interruptable_threads << Thread.new do
+			while true
+				# Touch the temp dir every 30 minutes to prevent
+				# /tmp cleaners from removing it.
+				sleep 60 * 30
+				system("find '#{@temp_dir}' | xargs touch")
+			end
+		end
 	end
 
 	def wait_until_nginx_has_exited

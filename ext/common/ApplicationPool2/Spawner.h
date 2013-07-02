@@ -127,7 +127,7 @@ protected:
 					}
 				} else {
 					{
-						lock_guard<boost::mutex> l(dataSyncher);
+						boost::lock_guard<boost::mutex> l(dataSyncher);
 						data.append(buf, ret);
 					}
 					UPDATE_TRACE_POINT();
@@ -184,13 +184,13 @@ protected:
 			thr->interrupt_and_join();
 			delete thr;
 			thr = NULL;
-			lock_guard<boost::mutex> l(dataSyncher);
+			boost::lock_guard<boost::mutex> l(dataSyncher);
 			return data;
 		}
 
 		void appendToBuffer(const StaticString &dataToAdd) {
 			TRACE_POINT();
-			lock_guard<boost::mutex> l(dataSyncher);
+			boost::lock_guard<boost::mutex> l(dataSyncher);
 			data.append(dataToAdd.data(), dataToAdd.size());
 		}
 	};
@@ -724,7 +724,7 @@ protected:
 			}
 		}
 	}
-	
+
 	SpawnPreparationInfo prepareSpawn(const Options &options) const {
 		TRACE_POINT();
 		SpawnPreparationInfo info;
@@ -908,6 +908,15 @@ protected:
 		}
 
 		assert(info.appRootPathsInsideChroot.back() == info.appRootInsideChroot);
+	}
+
+	bool shouldLoadShellEnvvars(const Options &options, const SpawnPreparationInfo &preparation) const {
+		if (options.loadShellEnvvars) {
+			string shellName = extractBaseName(preparation.shell);
+			return shellName == "bash" || shellName == "zsh" || shellName == "ksh";
+		} else {
+			return false;
+		}
 	}
 	
 	string serializeEnvvarsFromPoolOptions(const Options &options) const {

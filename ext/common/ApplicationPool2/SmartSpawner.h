@@ -94,9 +94,9 @@ private:
 		string agentsDir = resourceLocator.getAgentsDir();
 		vector<string> command;
 		
-		if (options.loadShellEnvvars) {
-			command.push_back("bash");
-			command.push_back("bash");
+		if (shouldLoadShellEnvvars(options, preparation)) {
+			command.push_back(preparation.shell);
+			command.push_back(preparation.shell);
 			command.push_back("-lc");
 			command.push_back("exec \"$@\"");
 			command.push_back("SpawnPreparerShell");
@@ -263,7 +263,7 @@ private:
 			}
 			this->adminSocket = adminSocket.second;
 			{
-				lock_guard<boost::mutex> l(simpleFieldSyncher);
+				boost::lock_guard<boost::mutex> l(simpleFieldSyncher);
 				this->pid = pid;
 			}
 			
@@ -308,7 +308,7 @@ private:
 			syscalls::unlink(filename.c_str());
 		}
 		{
-			lock_guard<boost::mutex> l(simpleFieldSyncher);
+			boost::lock_guard<boost::mutex> l(simpleFieldSyncher);
 			pid = -1;
 		}
 		socketAddress.clear();
@@ -706,7 +706,7 @@ public:
 	}
 	
 	virtual ~SmartSpawner() {
-		lock_guard<boost::mutex> l(syncher);
+		boost::lock_guard<boost::mutex> l(syncher);
 		stopPreloader();
 	}
 	
@@ -719,11 +719,11 @@ public:
 		possiblyRaiseInternalError(options);
 
 		{
-			lock_guard<boost::mutex> l(simpleFieldSyncher);
+			boost::lock_guard<boost::mutex> l(simpleFieldSyncher);
 			m_lastUsed = SystemTime::getUsec();
 		}
 		UPDATE_TRACE_POINT();
-		lock_guard<boost::mutex> l(syncher);
+		boost::lock_guard<boost::mutex> l(syncher);
 		if (!preloaderStarted()) {
 			UPDATE_TRACE_POINT();
 			startPreloader();
@@ -763,20 +763,20 @@ public:
 	virtual void cleanup() {
 		TRACE_POINT();
 		{
-			lock_guard<boost::mutex> l(simpleFieldSyncher);
+			boost::lock_guard<boost::mutex> l(simpleFieldSyncher);
 			m_lastUsed = SystemTime::getUsec();
 		}
-		lock_guard<boost::mutex> lock(syncher);
+		boost::lock_guard<boost::mutex> lock(syncher);
 		stopPreloader();
 	}
 
 	virtual unsigned long long lastUsed() const {
-		lock_guard<boost::mutex> lock(simpleFieldSyncher);
+		boost::lock_guard<boost::mutex> lock(simpleFieldSyncher);
 		return m_lastUsed;
 	}
 	
 	pid_t getPreloaderPid() const {
-		lock_guard<boost::mutex> lock(simpleFieldSyncher);
+		boost::lock_guard<boost::mutex> lock(simpleFieldSyncher);
 		return pid;
 	}
 };

@@ -61,6 +61,8 @@ private
 	end
 
 	def load_from_native_support_output_dir
+		# Quick workaround for people suffering from
+		# https://code.google.com/p/phusion-passenger/issues/detail?id=865
 		output_dir = ENV['PASSENGER_NATIVE_SUPPORT_OUTPUT_DIR']
 		if output_dir && !output_dir.empty?
 			begin
@@ -120,7 +122,11 @@ private
 		target_dirs << "#{home}/#{USER_NAMESPACE_DIRNAME}/native_support/#{VERSION_STRING}/#{archdir}"
 		
 		target_dir = compile(target_dirs)
-		require "#{target_dir}/#{library_name}"
+		if target_dir
+			require "#{target_dir}/#{library_name}"
+		else
+			STDERR.puts "Ruby native_support extension not loaded. Continuing without native_support."
+		end
 	end
 	
 	def mkdir(dir)
@@ -132,11 +138,15 @@ private
 	end
 	
 	def sh(*args)
-		command_string = args.join(' ')
-		STDERR.puts "# #{command_string}"
-		if !system(*args)
+		if !sh_nonfatal(*args)
 			raise "Could not compile #{library_name} (\"#{command_string}\" failed)"
 		end
+	end
+
+	def sh_nonfatal(*args)
+		command_string = args.join(' ')
+		STDERR.puts "# #{command_string}"
+		return system(*args)
 	end
 	
 	def compile(target_dirs)
@@ -148,18 +158,29 @@ private
 				File.unlink("#{target_dir}/.permission_test")
 				STDERR.puts "# cd #{target_dir}"
 				Dir.chdir(target_dir) do
-					sh("#{PlatformInfo.ruby_command} '#{extconf_rb}'")
-					sh("make")
+					result =
+						sh_nonfatal("#{PlatformInfo.ruby_command} '#{extconf_rb}'") &&
+						sh_nonfatal("make")
+					if result
+						STDERR.puts "Compilation succesful."
+						STDERR.puts "-------------------------------"
+						return target_dir
+					else
+						STDERR.puts "Compilation failed."
+						STDERR.puts "-------------------------------"
+						return nil
+					end
 				end
-				result = target_dir
-				break
 			rescue Errno::EACCES
 				# If we encountered a permission error, then try
 				# the next target directory. If we get a permission
 				# error on the last one too then propagate the
 				# exception.
 				if i == target_dirs.size - 1
-					raise
+					STDERR.puts "Encountered permission error, " +
+						"but no more directories to try. Giving up."
+					STDERR.puts "-------------------------------"
+					return nil
 				else
 					STDERR.puts "Encountered permission error, " +
 						"trying a different directory..."
@@ -172,14 +193,16 @@ private
 				# in Phusion Passenger Standalone. In this case
 				# just ignore this directory.
 				if i == target_dirs.size - 1
-					raise
+					STDERR.puts "Encountered permission error, " +
+						"but no more directories to try. Giving up."
+					STDERR.puts "-------------------------------"
+					return nil
 				else
 					STDERR.puts "Not a valid directory. Trying a different one..."
 					STDERR.puts "-------------------------------"
 				end
 			end
 		end
-		return result
 	end
 end
 

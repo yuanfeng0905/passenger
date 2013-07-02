@@ -22,7 +22,7 @@ private:
 			
 			while (!this_thread::interruption_requested()) {
 				{
-					lock_guard<boost::mutex> l(lock);
+					boost::lock_guard<boost::mutex> l(lock);
 					pid = this->pid;
 				}
 				
@@ -49,7 +49,7 @@ private:
 				}
 				
 				{
-					lock_guard<boost::mutex> l(lock);
+					boost::lock_guard<boost::mutex> l(lock);
 					this->pid = 0;
 				}
 				
@@ -87,16 +87,16 @@ private:
 			}
 		} catch (const boost::thread_interrupted &) {
 		} catch (const tracable_exception &e) {
-			lock_guard<boost::mutex> l(lock);
+			boost::lock_guard<boost::mutex> l(lock);
 			threadExceptionMessage = e.what();
 			threadExceptionBacktrace = e.backtrace();
 			errorEvent->notify();
 		} catch (const std::exception &e) {
-			lock_guard<boost::mutex> l(lock);
+			boost::lock_guard<boost::mutex> l(lock);
 			threadExceptionMessage = e.what();
 			errorEvent->notify();
 		} catch (...) {
-			lock_guard<boost::mutex> l(lock);
+			boost::lock_guard<boost::mutex> l(lock);
 			threadExceptionMessage = "Unknown error";
 			errorEvent->notify();
 		}
@@ -399,7 +399,7 @@ public:
 					args[0] + "'");
 			}
 			
-			lock_guard<boost::mutex> l(lock);
+			boost::lock_guard<boost::mutex> l(lock);
 			this->feedbackFd = feedbackFd;
 			this->pid = pid;
 			failGuard.clear();
@@ -417,7 +417,7 @@ public:
 	 * @throws thread_resource_error
 	 */
 	virtual void startWatching() {
-		lock_guard<boost::mutex> l(lock);
+		boost::lock_guard<boost::mutex> l(lock);
 		if (pid == 0) {
 			throw RuntimeException("start() hasn't been called yet");
 		}
@@ -450,7 +450,7 @@ public:
 	 * or false if it wasn't started.
 	 */
 	virtual bool forceShutdown() {
-		lock_guard<boost::mutex> l(lock);
+		boost::lock_guard<boost::mutex> l(lock);
 		if (pid == 0) {
 			return false;
 		} else {
@@ -466,7 +466,7 @@ public:
 	 * everything is still OK.
 	 */
 	string getErrorMessage() const {
-		lock_guard<boost::mutex> l(lock);
+		boost::lock_guard<boost::mutex> l(lock);
 		return threadExceptionMessage;
 	}
 	
@@ -474,7 +474,7 @@ public:
 	 * The error backtrace, if applicable.
 	 */
 	string getErrorBacktrace() const {
-		lock_guard<boost::mutex> l(lock);
+		boost::lock_guard<boost::mutex> l(lock);
 		return threadExceptionBacktrace;
 	}
 	
@@ -484,7 +484,7 @@ public:
 	 * has exited without using waitpid().
 	 */
 	const FileDescriptor getFeedbackFd() const {
-		lock_guard<boost::mutex> l(lock);
+		boost::lock_guard<boost::mutex> l(lock);
 		return feedbackFd;
 	}
 };

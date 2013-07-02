@@ -44,7 +44,7 @@ public:
 	}
 	
 	unsigned int size() const {
-		lock_guard<boost::mutex> l(lock);
+		boost::lock_guard<boost::mutex> l(lock);
 		return (unsigned int) accounts.size();
 	}
 	
@@ -60,13 +60,13 @@ public:
 	
 	AccountPtr add(const string &username, const string &passwordOrHash, bool hashGiven, int rights = Account::ALL) {
 		AccountPtr account(new Account(username, passwordOrHash, hashGiven, rights));
-		lock_guard<boost::mutex> l(lock);
+		boost::lock_guard<boost::mutex> l(lock);
 		accounts[username] = account;
 		return account;
 	}
 	
 	const AccountPtr get(const string &username) const {
-		lock_guard<boost::mutex> l(lock);
+		boost::lock_guard<boost::mutex> l(lock);
 		map<string, AccountPtr>::const_iterator it = accounts.find(username);
 		if (it == accounts.end()) {
 			return AccountPtr();
@@ -76,7 +76,7 @@ public:
 	}
 	
 	AccountPtr authenticate(const string &username, const StaticString &userSuppliedPassword) const {
-		lock_guard<boost::mutex> l(lock);
+		boost::lock_guard<boost::mutex> l(lock);
 		map<string, AccountPtr>::const_iterator it = accounts.find(username);
 		if (it == accounts.end()) {
 			return AccountPtr();
@@ -91,7 +91,7 @@ public:
 	}
 	
 	bool remove(const string &username) {
-		lock_guard<boost::mutex> l(lock);
+		boost::lock_guard<boost::mutex> l(lock);
 		map<string, AccountPtr>::iterator it = accounts.find(username);
 		if (it == accounts.end()) {
 			return false;
@@ -102,7 +102,7 @@ public:
 	}
 	
 	unsigned int getUniqueNumber() {
-		lock_guard<boost::mutex> l(lock);
+		boost::lock_guard<boost::mutex> l(lock);
 		unsigned int result = uniqueNumber;
 		uniqueNumber++;
 		return result;
