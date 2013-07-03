@@ -46,7 +46,7 @@ public:
 		ALL                       = ~0,
 		NONE                      = 0,
 		
-		// ApplicationPool::Server rights.
+		// ApplicationPool2::Server rights.
 		GET                       = 1 << 0,
 		CLEAR                     = 1 << 1,
 		DETACH                    = 1 << 2,
