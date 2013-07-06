@@ -9,6 +9,7 @@
 #ifndef _PASSENGER_RESOURCE_LOCATOR_H_
 #define _PASSENGER_RESOURCE_LOCATOR_H_
 
+#include <boost/shared_ptr.hpp>
 #include <string>
 #include <Exceptions.h>
 #include <Utils.h>
@@ -16,6 +17,7 @@
 
 namespace Passenger {
 
+using namespace std;
 using namespace boost;
 
 
@@ -91,6 +93,8 @@ public:
 		return rubyLibDir;
 	}
 };
+
+typedef shared_ptr<ResourceLocator> ResourceLocatorPtr;
 
 
 }

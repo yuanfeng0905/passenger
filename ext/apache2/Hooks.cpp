@@ -263,7 +263,8 @@ private:
 				
 				if (!connected) {
 					UPDATE_TRACE_POINT();
-					throw IOException("Cannot connect to the helper agent");
+					throw IOException("Cannot connect to the helper agent at " +
+						agentsStarter.getRequestSocketFilename());
 				}
 			} else {
 				throw;
