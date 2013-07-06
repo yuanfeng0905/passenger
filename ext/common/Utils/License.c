@@ -36,7 +36,8 @@ void
 passenger_enterprise_license_init() {
 	/* Because of bugs on certain operating systems, we cannot assume that
 	 * `licenseKey` is NULL before initialization. This init function
-	 * initializes global variables.
+	 * initializes global variables. See email by Jason Rust,
+	 * "Not loading after installing 4.0.7", July 5 2013.
 	 */
 	licenseKey = NULL;
 }
