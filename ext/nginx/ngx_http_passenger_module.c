@@ -423,6 +423,7 @@ static ngx_int_t
 init_module(ngx_cycle_t *cycle) {
     char *error_message;
 
+    passenger_enterprise_license_init();
     error_message = passenger_enterprise_license_check();
     if (error_message != NULL) {
         ngx_errno = 0;

@@ -29,6 +29,7 @@ namespace Passenger {
 
 extern char *licenseKey;
 
+void passenger_enterprise_license_init();
 char *passenger_enterprise_license_check();
 int passenger_enterprise_on_cloud_license();
 

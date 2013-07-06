@@ -1561,7 +1561,10 @@ destroy_hooks(void *arg) {
 
 static int
 init_module(apr_pool_t *pconf, apr_pool_t *plog, apr_pool_t *ptemp, server_rec *s) {
-	char *errorMessage = passenger_enterprise_license_check();
+	char *errorMessage;
+
+	passenger_enterprise_license_init();
+	errorMessage = passenger_enterprise_license_check();
 	if (errorMessage != NULL) {
 		ap_log_error(APLOG_MARK, APLOG_ERR, 0, s,
 			"%s",

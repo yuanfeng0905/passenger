@@ -32,6 +32,15 @@ hexNibbleToByte(char hexNibble) {
 	}
 }
 
+void
+passenger_enterprise_license_init() {
+	/* Because of bugs on certain operating systems, we cannot assume that
+	 * `licenseKey` is NULL before initialization. This init function
+	 * initializes global variables.
+	 */
+	licenseKey = NULL;
+}
+
 char *
 passenger_enterprise_license_check() {
 	FILE *f;
@@ -46,12 +55,12 @@ passenger_enterprise_license_check() {
 	char *dataEnd2;
 
 	if (licenseKey != NULL) {
-		return strdup("License key already checked.");
+		return strdup("Phusion Passenger Enterprise license key already checked.");
 	}
 
 	f = fopen("/etc/passenger-enterprise-license", "r");
 	if (f == NULL) {
-		return strdup("Could not open the Passenger Enterprise Server license file. "
+		return strdup("Could not open the Phusion Passenger Enterprise license file. "
 			"Please check whether it's installed correctly and whether it's world-readable.\n"
 			APPEAL_MESSAGE);
 	}
@@ -60,7 +69,7 @@ passenger_enterprise_license_check() {
 		if (fgets(line, sizeof(line), f) == NULL) {
 			if (ferror(f)) {
 				message = strdup(
-					"An I/O error occurred while reading the Passenger Enterprise Server license file.\n"
+					"An I/O error occurred while reading the Phusion Passenger Enterprise license file.\n"
 					APPEAL_MESSAGE);
 				goto finish;
 			} else {
@@ -70,7 +79,7 @@ passenger_enterprise_license_check() {
 
 		len = strlen(line);
 		if (len == 0 || line[len - 1] != '\n' || count >= MAX_LICENSE_LINES) {
-			message = strdup("The Passenger Enterprise Server license file appears to be corrupted. Please reinstall it.\n"
+			message = strdup("The Phusion Passenger Enterprise license file appears to be corrupted. Please reinstall it.\n"
 				APPEAL_MESSAGE);
 			goto finish;
 		}
@@ -81,7 +90,7 @@ passenger_enterprise_license_check() {
 	}
 
 	if (count == 0) {
-		message = strdup("The Passenger Enterprise Server license file appears to be corrupted. Please reinstall it.\n"
+		message = strdup("The Phusion Passenger Enterprise license file appears to be corrupted. Please reinstall it.\n"
 			APPEAL_MESSAGE);
 		goto finish;
 	}
@@ -106,7 +115,7 @@ passenger_enterprise_license_check() {
 	}
 
 	if (memcmp(digest, readDigest, MD5_SIZE) != 0) {
-		message = strdup("The Passenger Enterprise Server license file is invalid.\n"
+		message = strdup("The Phusion Passenger Enterprise license file is invalid.\n"
 			APPEAL_MESSAGE);
 		goto finish;
 	}

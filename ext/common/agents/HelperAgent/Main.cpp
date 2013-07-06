@@ -418,7 +418,9 @@ public:
 
 		/* Enterprise license check. */
 		UPDATE_TRACE_POINT();
-		char *error = passenger_enterprise_license_check();
+		char *error;
+		passenger_enterprise_license_init();
+		error = passenger_enterprise_license_check();
 		if (error != NULL) {
 			string message = error;
 			free(error);
