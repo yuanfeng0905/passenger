@@ -148,8 +148,8 @@ end
 def find_app_with_pid(server_instances, pid)
 	server_instances.each do |instance|
 		begin
-			instance.connect(:passenger_status) do
-				instance.processes.each do |process|
+			instance.connect(:role => :passenger_status) do |client|
+				instance.processes(client).each do |process|
 					if process.pid == pid
 						return process
 					end
@@ -166,9 +166,10 @@ end
 def find_first_app(server_instances)
 	server_instances.each do |instance|
 		begin
-			instance.connect(:passenger_status) do
-				if !instance.groups.empty?
-					group = instance.groups[0]
+			instance.connect(:role => :passenger_status) do |client|
+				groups = instance.groups(client)
+				if !groups.empty?
+					group = groups[0]
 					return [group, group.processes[0]]
 				end
 			end
