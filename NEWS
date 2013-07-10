@@ -1,3 +1,9 @@
+Release 4.0.9
+-------------
+
+ * [Enterprise] Fixed a bug in passenger-irb.
+
+
 Release 4.0.8
 -------------
 
