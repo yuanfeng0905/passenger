@@ -90,15 +90,15 @@ private:
 			boost::lock_guard<boost::mutex> l(lock);
 			threadExceptionMessage = e.what();
 			threadExceptionBacktrace = e.backtrace();
-			errorEvent->notify();
+			wo->errorEvent.notify();
 		} catch (const std::exception &e) {
 			boost::lock_guard<boost::mutex> l(lock);
 			threadExceptionMessage = e.what();
-			errorEvent->notify();
+			wo->errorEvent.notify();
 		} catch (...) {
 			boost::lock_guard<boost::mutex> l(lock);
 			threadExceptionMessage = "Unknown error";
-			errorEvent->notify();
+			wo->errorEvent.notify();
 		}
 	}
 	
@@ -121,6 +121,8 @@ protected:
 	 * the watcher thread.
 	 */
 	mutable boost::mutex lock;
+
+	WorkingObjectsPtr wo;
 	
 	/**
 	 * Returns the filename of the agent process's executable. This method may be
@@ -201,9 +203,10 @@ protected:
 	}
 	
 public:
-	AgentWatcher() {
+	AgentWatcher(const WorkingObjectsPtr &wo) {
 		thr = NULL;
 		pid = 0;
+		this->wo = wo;
 	}
 	
 	virtual ~AgentWatcher() {
@@ -408,7 +411,7 @@ public:
 	}
 	
 	/**
-	 * Start watching the agent process.
+	 * Begin watching the agent process.
 	 *
 	 * @pre start() has been called and succeeded.
 	 * @pre This watcher isn't already watching.
@@ -416,7 +419,7 @@ public:
 	 * @throws thread_interrupted
 	 * @throws thread_resource_error
 	 */
-	virtual void startWatching() {
+	virtual void beginWatching() {
 		boost::lock_guard<boost::mutex> l(lock);
 		if (pid == 0) {
 			throw RuntimeException("start() hasn't been called yet");

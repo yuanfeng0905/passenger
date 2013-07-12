@@ -77,6 +77,9 @@ private:
 		
 		/** Last time data was actually written to the underlying storage device. */
 		ev_tstamp lastFlushed;
+
+		/** The amount of data that has been written to this sink so far. */
+		unsigned int writtenTo;
 		
 		/**
 		 * This LogSink's iterator inside LoggingServer.logSinkCache.
@@ -94,6 +97,7 @@ private:
 			opened = 0;
 			lastUsed = ev_now(server->getLoop());
 			lastFlushed = lastUsed;
+			writtenTo = 0;
 		}
 		
 		virtual ~LogSink() {
@@ -111,7 +115,10 @@ private:
 		}
 		
 		virtual void append(const DataStoreId &dataStoreId,
-			const StaticString &data) = 0;
+			const StaticString &data)
+		{
+			writtenTo += data.size();
+		}
 		
 		virtual bool flush() {
 			lastFlushed = ev_now(server->getLoop());
@@ -147,6 +154,7 @@ private:
 		}
 		
 		virtual void append(const DataStoreId &dataStoreId, const StaticString &data) {
+			LogSink::append(dataStoreId, data);
 			syscalls::write(fd, data.data(), data.size());
 		}
 
@@ -155,6 +163,7 @@ private:
 			stream << "     Opened     : " << opened << "\n";
 			stream << "     LastUsed   : " << distanceOfTimeInWords((time_t) lastUsed) << " ago\n";
 			stream << "     LastFlushed: " << distanceOfTimeInWords((time_t) lastFlushed) << " ago\n";
+			stream << "     WrittenTo  : " << writtenTo << "\n";
 		}
 	};
 	
@@ -207,6 +216,7 @@ private:
 		}
 		
 		virtual void append(const DataStoreId &dataStoreId, const StaticString &data) {
+			LogSink::append(dataStoreId, data);
 			if (bufferSize + data.size() > BUFFER_CAPACITY) {
 				StaticString data2[2];
 				data2[0] = StaticString(buffer, bufferSize);
@@ -249,6 +259,7 @@ private:
 			stream << "     Opened     : " << opened << "\n";
 			stream << "     LastUsed   : " << distanceOfTimeInWords((time_t) lastUsed) << " ago\n";
 			stream << "     LastFlushed: " << distanceOfTimeInWords((time_t) lastFlushed) << " ago\n";
+			stream << "     WrittenTo  : " << writtenTo << "\n";
 			stream << "     BufferSize : " << bufferSize << "\n";
 		}
 	};

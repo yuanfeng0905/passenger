@@ -31,7 +31,7 @@ class AnalyticsLogger
 		end
 		
 		def null?
-			return !@connection
+			return !@connection || !@connection.connected?
 		end
 		
 		def message(text)

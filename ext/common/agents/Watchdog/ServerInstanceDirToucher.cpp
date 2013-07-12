@@ -14,9 +14,10 @@
  */
 class ServerInstanceDirToucher {
 private:
+	WorkingObjectsPtr wo;
 	oxt::thread *thr;
 	
-	static void
+	void
 	threadMain() {
 		while (!this_thread::interruption_requested()) {
 			syscalls::sleep(60 * 60 * 6);
@@ -50,12 +51,12 @@ private:
 				}
 				
 				do {
-					ret = chdir(serverInstanceDir->getPath().c_str());
+					ret = chdir(wo->serverInstanceDir->getPath().c_str());
 				} while (ret == -1 && errno == EINTR);
 				if (ret == -1) {
 					e = errno;
 					fprintf(stderr, "chdir(\"%s\") failed: %s (%d)\n",
-						serverInstanceDir->getPath().c_str(),
+						wo->serverInstanceDir->getPath().c_str(),
 						strerror(e), e);
 					fflush(stderr);
 					_exit(1);
@@ -84,8 +85,10 @@ private:
 	}
 
 public:
-	ServerInstanceDirToucher() {
-		thr = new oxt::thread(threadMain, "Server instance dir toucher", 256 * 1024);
+	ServerInstanceDirToucher(const WorkingObjectsPtr &wo) {
+		this->wo = wo;
+		thr = new oxt::thread(boost::bind(&ServerInstanceDirToucher::threadMain, this),
+			"Server instance dir toucher", 256 * 1024);
 	}
 	
 	~ServerInstanceDirToucher() {
@@ -93,3 +96,5 @@ public:
 		delete thr;
 	}
 };
+
+typedef shared_ptr<ServerInstanceDirToucher> ServerInstanceDirToucherPtr;
