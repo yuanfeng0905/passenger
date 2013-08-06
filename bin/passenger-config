@@ -25,6 +25,7 @@ def help
 	puts "  --nginx-libs               Show Nginx runtime library flags."
 	puts "  --compiled                 Check whether runtime libraries are compiled."
 	puts "  --natively-packaged        Check whether Phusion Passenger is natively packged."
+	puts "  --detect-apache2           Autodetect Apache installations."
 	puts "  --ruby-command             Print the correct command for invoking the Ruby interpreter."
 	puts "  --rubyext-compat-id        Print the Ruby extension binary compatibility ID."
 	puts "  --cxx-compat-id            Print the C++ binary compatibility ID."
@@ -68,6 +69,15 @@ when "--natively-packaged"
 	else
 		exit 1
 	end
+when "--detect-apache2"
+	require 'phusion_passenger/platform_info/apache_detector'
+	detector = PhusionPassenger::PlatformInfo::ApacheDetector.new(STDOUT)
+	begin
+		detector.detect_all
+		detector.report
+	ensure
+		detector.finish
+	end
 when "--ruby-command"
 	require 'phusion_passenger/platform_info/ruby'
 	ruby = PhusionPassenger::PlatformInfo.ruby_command
@@ -82,7 +92,9 @@ when "--ruby-command"
 	puts
 
 	ruby = PhusionPassenger::PlatformInfo.find_command('ruby')
-	if ruby
+	if ruby && !ruby.include?("rvm/rubies/")
+		# If this is an RVM Ruby executable then we don't show it. We want people to
+		# use the RVM wrapper scripts only.
 		puts "The following Ruby interpreter was found first in $PATH:"
 		puts "  Command: #{ruby}"
 		STDOUT.write "  Version: "
@@ -91,7 +103,7 @@ when "--ruby-command"
 		puts "  To use in Apache: PassengerRuby #{ruby}"
 		puts "  To use in Nginx : passenger_ruby #{ruby}"
 		puts "  To use with Standalone: #{ruby} #{PhusionPassenger.bin_dir}/passenger start"
-	else
+	elsif !ruby.include?("rvm/rubies/")
 		puts "No Ruby interpreter found in $PATH."
 	end
 	puts
