@@ -346,18 +346,9 @@ describe "Apache 2 module" do
 			@server = "http://3.passenger.test:#{@apache2.port}"
 			pid = get('/foo/pid')
 			get('/foo/allocate_memory').should == 'ok'
-			
-			# Application should restart within the next 2 seconds.
-			pid_changed = false
-			20.times do
-				sleep 0.1
-				if get('/foo/pid') != pid
-					pid_changed = true
-					break
-				end
+			eventually(15) do
+				get('/foo/pid') != pid
 			end
-			
-			pid_changed.should be_true
 		end
 		
 		specify "PassengerMaxRequestTime works" do
