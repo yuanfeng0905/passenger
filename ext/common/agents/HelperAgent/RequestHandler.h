@@ -1598,13 +1598,6 @@ private:
 		}
 	}
 
-	static void fillPoolOption(const ClientPtr &client, unsigned int &field, const StaticString &name) {
-		ScgiRequestParser::const_iterator it = client->scgiParser.getHeaderIterator(name);
-		if (it != client->scgiParser.end()) {
-			field = stringToUint(it->second);
-		}
-	}
-
 	static void fillPoolOption(const ClientPtr &client, long &field, const StaticString &name) {
 		ScgiRequestParser::const_iterator it = client->scgiParser.getHeaderIterator(name);
 		if (it != client->scgiParser.end()) {
