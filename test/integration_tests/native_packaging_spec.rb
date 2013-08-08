@@ -43,7 +43,7 @@ describe "A natively packaged Phusion Passenger" do
 		if $?.exitstatus == 0
 			return output
 		else
-			abort "Command #{command.join(' ')} exited with status #{$?.exitstatus}"
+			abort "Command #{command} exited with status #{$?.exitstatus}"
 		end
 	end
 
@@ -120,6 +120,10 @@ describe "A natively packaged Phusion Passenger" do
 
 		it "recognizes the install as natively packaged" do
 			system("passenger-config --natively-packaged").should be_true
+		end
+
+		it "recognizes the install as coming from an official package" do
+			system("passenger-config --installed-from-release-package").should be_true
 		end
 
 		it "shows the directory to the runtime library headers" do

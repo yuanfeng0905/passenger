@@ -39,8 +39,12 @@ end
 
 task :clobber => 'package:clean'
 
+task 'package:set_official' do
+	ENV['OFFICIAL_RELEASE'] = '1'
+end
+
 desc "Build, sign & upload gem & tarball"
-task 'package:release' => ['package:gem', 'package:tarball', 'package:sign'] do
+task 'package:release' => ['package:set_official', 'package:gem', 'package:tarball', 'package:sign'] do
 	require 'phusion_passenger'
 	require 'yaml'
 	require 'uri'
@@ -109,7 +113,20 @@ end
 
 task 'package:gem' => Packaging::PREGENERATED_FILES do
 	require 'phusion_passenger'
-	sh "gem build #{PhusionPassenger::PACKAGE_NAME}.gemspec --sign --key 0x0A212A8C"
+	if ENV['OFFICIAL_RELEASE']
+		release_file = "#{PhusionPassenger.resources_dir}/release.txt"
+		File.unlink(release_file) rescue nil
+	end
+	begin
+		if release_file
+			File.open(release_file, "w").close
+		end
+		sh "gem build #{PhusionPassenger::PACKAGE_NAME}.gemspec --sign --key 0x0A212A8C"
+	ensure
+		if release_file
+			File.unlink(release_file) rescue nil
+		end
+	end
 	sh "mkdir -p pkg"
 	sh "mv #{PhusionPassenger::PACKAGE_NAME}-#{PhusionPassenger::VERSION_STRING}.gem pkg/"
 end
@@ -122,6 +139,9 @@ task 'package:tarball' => Packaging::PREGENERATED_FILES do
 	sh "rm -rf pkg/#{basename}"
 	sh "mkdir -p pkg/#{basename}"
 	recursive_copy_files(ORIG_TARBALL_FILES.call, "pkg/#{basename}")
+	if ENV['OFFICIAL_RELEASE']
+		File.open("pkg/#{basename}/resources/release.txt", "w").close
+	end
 	sh "cd pkg && tar -c #{basename} | gzip --best > #{basename}.tar.gz"
 	sh "rm -rf pkg/#{basename}"
 end
@@ -192,6 +212,7 @@ task :fakeroot => [:apache2, :nginx, :doc] do
 	fake_apache2_module_dir = "#{fakeroot}/usr/lib/apache2/modules"
 	fake_apache2_module = "#{fake_apache2_module_dir}/mod_passenger.so"
 	fake_ruby_extension_source_dir = "#{fakeroot}/usr/share/passenger/ruby_extension_source"
+	fake_nginx_module_source_dir = "#{fakeroot}/usr/share/passenger/ngx_http_passenger_module"
 	
 	sh "rm -rf #{fakeroot}"
 	sh "mkdir -p #{fakeroot}"
@@ -246,8 +267,8 @@ task :fakeroot => [:apache2, :nginx, :doc] do
 	end
 
 	# Nginx module sources
-	sh "mkdir -p #{fake_resources_dir}/ngx_http_passenger_module"
-	sh "cp ext/nginx/* #{fake_resources_dir}/ngx_http_passenger_module/"
+	sh "mkdir -p #{fake_nginx_module_source_dir}"
+	sh "cp ext/nginx/* #{fake_nginx_module_source_dir}/"
 	
 	# Documentation
 	sh "mkdir -p #{fake_docdir}"
@@ -278,16 +299,25 @@ task :fakeroot => [:apache2, :nginx, :doc] do
 	File.open("#{fake_rubylibdir}/phusion_passenger/locations.ini", "w") do |f|
 		f.puts "[locations]"
 		f.puts "natively_packaged=true"
-		f.puts "bin=/usr/bin"
-		f.puts "agents=/usr/lib/passenger/agents"
-		f.puts "libdir=/usr/lib/passenger"
-		f.puts "helper_scripts=/usr/share/passenger/helper-scripts"
-		f.puts "resources=/usr/share/passenger"
-		f.puts "includedir=/usr/share/passenger/include"
-		f.puts "doc=/usr/share/doc/passenger"
-		f.puts "rubylibdir=/usr/lib/ruby/vendor_ruby"
-		f.puts "apache2_module=/usr/lib/apache2/modules/mod_passenger.so"
-		f.puts "ruby_extension_source=/usr/share/passenger/ruby_extension_source"
+		f.puts "bin_dir=/usr/bin"
+		f.puts "agents_dir=/usr/lib/passenger/agents"
+		f.puts "lib_dir=/usr/lib/passenger"
+		f.puts "helper_scripts_dir=/usr/share/passenger/helper-scripts"
+		f.puts "resources_dir=/usr/share/passenger"
+		f.puts "include_dir=/usr/share/passenger/include"
+		f.puts "doc_dir=/usr/share/doc/passenger"
+		f.puts "ruby_libdir=/usr/lib/ruby/vendor_ruby"
+		f.puts "apache2_module_path=/usr/lib/apache2/modules/mod_passenger.so"
+		f.puts "ruby_extension_source_dir=/usr/share/passenger/ruby_extension_source"
+		f.puts "nginx_module_source_dir=/usr/share/passenger/ngx_http_passenger_module"
+	end
+
+	# Sanity check the locations.ini file
+	options = PhusionPassenger.parse_ini_file("#{fake_rubylibdir}/phusion_passenger/locations.ini")
+	PhusionPassenger::REQUIRED_LOCATIONS_INI_FIELDS.each do |field|
+		if !options[field.to_s]
+			raise "Bug in build/packaging.rb: the generated locations.ini is missing the '#{field}' field"
+		end
 	end
 
 	sh "find #{fakeroot} -name .DS_Store -print0 | xargs -0 rm -f"

@@ -11,6 +11,7 @@ require 'phusion_passenger/console_text_template'
 require 'phusion_passenger/platform_info'
 require 'phusion_passenger/platform_info/operating_system'
 require 'phusion_passenger/utils/ansi_colors'
+require 'fileutils'
 
 # IMPORTANT: do not directly or indirectly require native_support; we can't compile
 # it yet until we have a compiler, and installers usually check whether a compiler
@@ -143,11 +144,7 @@ protected
 	end
 
 	def check_whether_os_is_broken
-		if PlatformInfo.os_name == "freebsd9" && `uname -r` =~ /^9\.1-/
-			new_screen
-			render_template 'installer_common/freebsd9_broken_cxx_runtime'
-			wait
-		end
+		# No known broken OSes at the moment.
 	end
 
 	def check_whether_system_has_enough_ram(required = 1024)
@@ -325,11 +322,27 @@ protected
 		sh!("#{PlatformInfo.rake_command} #{args.join(' ')}")
 	end
 	
-	def download(url, output)
+	def download(url, output, options = {})
+		if options[:use_cache] && cache_dir = PhusionPassenger.download_cache_dir
+			basename = url.sub(/.*\//, '')
+			if File.exist?("#{cache_dir}/#{basename}")
+				puts "Copying #{basename} from #{cache_dir}..."
+				FileUtils.cp("#{cache_dir}/#{basename}", output)
+				return true
+			end
+		end
+
+		args = []
 		if PlatformInfo.find_command("wget")
-			return sh("wget", "--tries=3", "-O", output, url)
+			if options[:cacert]
+				args << "--ca-certificate=#{options[:cacert]}"
+			end
+			return sh("wget", "--tries=3", "-O", output, url, *args)
 		else
-			return sh("curl", url, "-f", "-L", "-o", output)
+			if options[:cacert]
+				args << "--cacert=#{options[:cacert]}"
+			end
+			return sh("curl", url, "-f", "-L", "-o", output, *args)
 		end
 	end
 end

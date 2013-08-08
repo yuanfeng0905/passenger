@@ -188,7 +188,7 @@ protected
 		@plugin.call_hook(:runtime_installer_start, self) if @plugin
 		@working_dir = PhusionPassenger::Utils.mktmpdir("passenger.", PlatformInfo.tmpexedir)
 		@download_binaries = true if !defined?(@download_binaries)
-		@binaries_url_root ||= STANDALONE_BINARIES_URL_ROOT
+		@binaries_url_root ||= BINARIES_URL_ROOT
 	end
 
 	def after_install
@@ -200,7 +200,7 @@ protected
 private
 	def nginx_needs_to_be_installed?
 		return @targets.include?(:nginx) &&
-			!File.exist?("#{@nginx_dir}/sbin/nginx")
+			!File.exist?("#{@nginx_dir}/nginx")
 	end
 	
 	def ruby_extension_should_be_installed?
@@ -210,13 +210,16 @@ private
 	
 	def binary_support_files_should_be_installed?
 		return @targets.include?(:support_binaries) && (
-			!File.exist?("#{@support_dir}/buildout/agents/PassengerHelperAgent") ||
-			!File.exist?("#{@support_dir}/buildout/common/libpassenger_common.a")
+			!File.exist?("#{@support_dir}/agents/PassengerHelperAgent") ||
+			!File.exist?("#{@support_dir}/common/libboost_oxt.a") ||
+			!File.exist?("#{@support_dir}/common/libpassenger_common/ApplicationPool2/Implementation.o")
 		)
 	end
 	
 	def should_download_binaries?
-		return @download_binaries && @binaries_url_root
+		return PhusionPassenger.installed_from_release_package? &&
+			@download_binaries &&
+			@binaries_url_root
 	end
 	
 	def show_welcome_screen
@@ -378,7 +381,7 @@ private
 		basename = "support-#{PlatformInfo.cxx_binary_compatibility_id}.tar.gz"
 		url      = "#{@binaries_url_root}/#{PhusionPassenger::VERSION_STRING}/#{basename}"
 		tarball  = "#{@working_dir}/#{basename}"
-		if !download(url, tarball)
+		if !download(url, tarball, :cacert => PhusionPassenger.binaries_ca_cert_path, :use_cache => true)
 			puts "<b>Looks like it's not. But don't worry, the " +
 				"necessary binaries will be compiled from source instead.</b>"
 			return nil
@@ -397,7 +400,7 @@ private
 		basename = "rubyext-#{PlatformInfo.ruby_extension_binary_compatibility_id}.tar.gz"
 		url      = "#{@binaries_url_root}/#{PhusionPassenger::VERSION_STRING}/#{basename}"
 		tarball  = "#{@working_dir}/#{basename}"
-		if !download(url, tarball)
+		if !download(url, tarball, :cacert => PhusionPassenger.binaries_ca_cert_path, :use_cache => true)
 			puts "<b>Looks like it's not. But don't worry, the " +
 				"necessary binaries will be compiled from source instead.</b>"
 			return nil
@@ -416,7 +419,7 @@ private
 		basename = "nginx-#{@nginx_version}-#{PlatformInfo.cxx_binary_compatibility_id}.tar.gz"
 		url      = "#{@binaries_url_root}/#{PhusionPassenger::VERSION_STRING}/#{basename}"
 		tarball  = "#{@working_dir}/#{basename}"
-		if !download(url, tarball)
+		if !download(url, tarball, :cacert => PhusionPassenger.binaries_ca_cert_path, :use_cache => true)
 			puts "<b>Looks like it's not. But don't worry, the " +
 				"necessary binaries will be compiled from source instead.</b>"
 			return nil
