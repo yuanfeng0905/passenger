@@ -281,6 +281,7 @@ protected:
 		curl_easy_setopt(curl, CURLOPT_HTTPPOST, post);
 		CURLcode code = curl_easy_perform(curl);
 		curl_formfree(post);
+		curl_easy_cleanup(curl);
 
 		return code;
 	}
