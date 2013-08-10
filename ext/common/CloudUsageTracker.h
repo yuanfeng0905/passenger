@@ -13,6 +13,8 @@
 #include <map>
 #include <sstream>
 #include <algorithm>
+#include <vector>
+#include <utility>
 
 #include <cstdio>
 #include <ctime>
@@ -53,10 +55,14 @@ protected:
 		}
 	};
 
+	typedef vector< pair<const char *, string> > MachineProperties;
+
 	string datadir;
 	string url;
 	string certificate;
 	string hostname;
+	bool machinePropertiesDetected;
+	MachineProperties savedMachineProperties;
 	CurlProxyInfo proxyInfo;
 	oxt::thread *thr;
 	char lastErrorMessage[CURL_ERROR_SIZE];
@@ -186,7 +192,7 @@ protected:
 	bool sendUsagePoint(const string &content) {
 		TRACE_POINT();
 		string responseData;
-		CURLcode code = performCurlAction(content, responseData);
+		CURLcode code = performCurlAction(autodetectMachineProperties(), content, responseData);
 
 		if (code == 0) {
 			Json::Reader reader;
@@ -235,8 +241,59 @@ protected:
 		}
 	}
 
+	const MachineProperties &autodetectMachineProperties() {
+		TRACE_POINT();
+		if (!machinePropertiesDetected) {
+			P_DEBUG("Autodetecting machine properties");
+			autodetectAmazonInstanceType(savedMachineProperties);
+			machinePropertiesDetected = true;
+			P_DEBUG("Machine properties autodetection finished");
+		}
+		return savedMachineProperties;
+	}
+
+	static void autodetectAmazonInstanceType(MachineProperties &properties) {
+		TRACE_POINT();
+		P_DEBUG("Autodetecting Amazon instance type");
+		string responseData;
+		char lastErrorMessage[CURL_ERROR_SIZE];
+		CURL *curl = curl_easy_init();
+
+		curl_easy_setopt(curl, CURLOPT_URL, "http://169.254.169.254/latest/meta-data/instance-type");
+		curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1);
+		curl_easy_setopt(curl, CURLOPT_TIMEOUT, 15);
+		curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, lastErrorMessage);
+		curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, curlDataReceived);
+		curl_easy_setopt(curl, CURLOPT_WRITEDATA, &responseData);
+		CURLcode code = curl_easy_perform(curl);
+		curl_easy_cleanup(curl);
+
+		if (code == 0) {
+			long responseCode;
+
+			if (curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &responseCode) != CURLE_OK) {
+				P_ERROR("Cannot not autodetect Amazon instance type (internal error: could "
+					"not query libcurl response code). Assuming this is not an Amazon instance");
+				return;
+			}
+
+			if (responseData.empty()) {
+				P_ERROR("Cannot not autodetect Amazon instance type (HTTP error: the server "
+					"returned an empty response). Assuming this is not an Amazon instance");
+				return;
+			}
+
+			properties.push_back(make_pair("aws_instance_type", responseData));
+		} else {
+			P_DEBUG("Cannot contact Amazon metadata server (HTTP error: " << lastErrorMessage <<
+				"). Assuming this is not an Amazon instance");
+		}
+	}
+
 	// Virtual so that unit tests can stub it.
-	virtual CURLcode performCurlAction(const string &content, string &responseData) {
+	virtual CURLcode performCurlAction(const MachineProperties &properties,
+		const string &content, string &responseData)
+	{
 		TRACE_POINT();
 		CURL *curl = curl_easy_init();
 
@@ -278,6 +335,17 @@ protected:
 			CURLFORM_PTRCONTENTS, now.data(),
 			CURLFORM_CONTENTSLENGTH, (long) now.size(),
 			CURLFORM_END);
+		
+		MachineProperties::const_iterator it;
+		for (it = properties.begin(); it != properties.end(); it++) {
+			const pair<const char *, string> &p = *it;
+			curl_formadd(&post, &last,
+				CURLFORM_PTRNAME, p.first,
+				CURLFORM_PTRCONTENTS, p.second.data(),
+				CURLFORM_CONTENTSLENGTH, (long) p.second.size(),
+				CURLFORM_END);
+		}
+		
 		curl_easy_setopt(curl, CURLOPT_HTTPPOST, post);
 		CURLcode code = curl_easy_perform(curl);
 		curl_formfree(post);
@@ -322,6 +390,7 @@ public:
 			int e = errno;
 			throw SystemException("Cannot query the host name", e);
 		}
+		machinePropertiesDetected = false;
 
 		try {
 			proxyInfo = prepareCurlProxy(proxyAddress);

@@ -26,7 +26,9 @@ namespace tut {
 			  flushResult(0)
 			{ }
 
-		virtual CURLcode performCurlAction(const string &content, string &responseData) {
+		virtual CURLcode performCurlAction(const MachineProperties &properties,
+			const string &content, string &responseData)
+		{
 			sentContent.push_back(content);
 
 			if (responseDataList.empty()) {
