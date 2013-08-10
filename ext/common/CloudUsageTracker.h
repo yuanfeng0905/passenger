@@ -252,7 +252,8 @@ protected:
 		return savedMachineProperties;
 	}
 
-	static void autodetectAmazonInstanceType(MachineProperties &properties) {
+	// Virtual so that unit tests can stub it.
+	virtual void autodetectAmazonInstanceType(MachineProperties &properties) const {
 		TRACE_POINT();
 		P_DEBUG("Autodetecting Amazon instance type");
 		string responseData;
@@ -283,6 +284,7 @@ protected:
 				return;
 			}
 
+			P_DEBUG("Autodetected Amazon instance type: " << responseData);
 			properties.push_back(make_pair("aws_instance_type", responseData));
 		} else {
 			P_DEBUG("Cannot contact Amazon metadata server (HTTP error: " << lastErrorMessage <<

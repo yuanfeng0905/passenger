@@ -26,6 +26,10 @@ namespace tut {
 			  flushResult(0)
 			{ }
 
+		virtual void autodetectAmazonInstanceType(MachineProperties &properties) const {
+			// Do nothing.
+		}
+
 		virtual CURLcode performCurlAction(const MachineProperties &properties,
 			const string &content, string &responseData)
 		{
