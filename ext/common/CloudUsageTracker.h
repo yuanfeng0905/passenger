@@ -253,7 +253,7 @@ protected:
 	}
 
 	// Virtual so that unit tests can stub it.
-	virtual void autodetectAmazonInstanceType(MachineProperties &properties) const {
+	virtual bool autodetectAmazonInstanceType(MachineProperties &properties) const {
 		TRACE_POINT();
 		P_DEBUG("Autodetecting Amazon instance type");
 		string responseData;
@@ -275,20 +275,29 @@ protected:
 			if (curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &responseCode) != CURLE_OK) {
 				P_ERROR("Cannot not autodetect Amazon instance type (internal error: could "
 					"not query libcurl response code). Assuming this is not an Amazon instance");
-				return;
+				return false;
+			}
+
+			if (responseCode != 200) {
+				P_ERROR("Cannot not autodetect Amazon instance type (HTTP error: response "
+					"code " << responseCode << "; body \"" << cEscapeString(responseData) <<
+					"\"). Assuming this is not an Amazon instance");
+				return false;
 			}
 
 			if (responseData.empty()) {
 				P_ERROR("Cannot not autodetect Amazon instance type (HTTP error: the server "
 					"returned an empty response). Assuming this is not an Amazon instance");
-				return;
+				return false;
 			}
 
 			P_DEBUG("Autodetected Amazon instance type: " << responseData);
 			properties.push_back(make_pair("aws_instance_type", responseData));
+			return true;
 		} else {
 			P_DEBUG("Cannot contact Amazon metadata server (HTTP error: " << lastErrorMessage <<
 				"). Assuming this is not an Amazon instance");
+			return false;
 		}
 	}
 
