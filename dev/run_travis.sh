@@ -21,6 +21,10 @@ function run()
 	"$@"
 }
 
+set +e
+run ls -l --color -Fh /
+run find /persist
+exit
 if [[ -f /persist/passenger-enterprise-license ]]; then
 	run sudo cp /persist/passenger-enterprise-license /etc/
 	echo "Using /persist/ccache as ccache directory"
