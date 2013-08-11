@@ -32,7 +32,7 @@ module PhusionPassenger
 	GLOBAL_NAMESPACE_DIRNAME            = "passenger-enterprise"
 	GLOBAL_STANDALONE_NAMESPACE_DIRNAME = "passenger-standalone"
 	# Subdirectory under $HOME to use for storing stuff.
-	USER_NAMESPACE_DIRNAME              = ".passenger"
+	USER_NAMESPACE_DIRNAME              = ".passenger-enterprise"
 	
 	# Directories in which to look for plugins.
 	PLUGIN_DIRS = [
