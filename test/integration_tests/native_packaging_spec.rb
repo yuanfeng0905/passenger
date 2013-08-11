@@ -22,19 +22,28 @@
 #  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 #  THE SOFTWARE.
 
+# To run the native packaging tests:
+#     rake debian:dev debian:dev:reinstall
+#     rvmsudo env LOCATIONS_INI=/usr/lib/ruby/vendor_ruby/phusion_passenger/locations.ini \
+#         rspec -f s -c test/integration_tests/native_packaging_spec.rb
+
 # Ensure that the natively installed tools are in PATH.
 ENV['PATH'] = "/usr/bin:#{ENV['PATH']}"
 LOCATIONS_INI = ENV['LOCATIONS_INI']
 abort "Please set the LOCATIONS_INI environment variable to the right locations.ini" if !LOCATIONS_INI
 
+source_root = File.expand_path("../..", File.dirname(__FILE__))
+$LOAD_PATH.unshift("#{source_root}/lib")
+require 'phusion_passenger'
+
 BINDIR = "/usr/bin"
 SBINDIR = "/usr/sbin"
-INCLUDEDIR = "/usr/share/passenger/include"
-NGINX_ADDON_DIR = "/usr/share/passenger/ngx_http_passenger_module"
+INCLUDEDIR = "/usr/share/#{PhusionPassenger::GLOBAL_NAMESPACE_DIRNAME}/include"
+NGINX_ADDON_DIR = "/usr/share/#{PhusionPassenger::GLOBAL_NAMESPACE_DIRNAME}/ngx_http_passenger_module"
 DOCDIR = "/usr/share/doc/ruby-passenger"
-RESOURCESDIR = "/usr/share/passenger"
-RUBY_EXTENSION_SOURCE_DIR = "/usr/share/passenger/ruby_extension_source"
-AGENTS_DIR = "/usr/lib/passenger/agents"
+RESOURCESDIR = "/usr/share/#{PhusionPassenger::GLOBAL_NAMESPACE_DIRNAME}"
+RUBY_EXTENSION_SOURCE_DIR = "/usr/share/#{PhusionPassenger::GLOBAL_NAMESPACE_DIRNAME}/ruby_extension_source"
+AGENTS_DIR = "/usr/lib/#{PhusionPassenger::GLOBAL_NAMESPACE_DIRNAME}/agents"
 APACHE2_MODULE_PATH = "/usr/lib/apache2/modules/mod_passenger.so"
 
 describe "A natively packaged Phusion Passenger" do
@@ -129,13 +138,12 @@ describe "A natively packaged Phusion Passenger" do
 		it "recognizes the system's Apache" do
 			output = capture_output("passenger-config --detect-apache2")
 			output.gsub!(/.*Final autodetection results\n/m, '')
-			output.scan(/\* Found Apache \(.*\)\!/).size.should == 1
-			output.should include(%Q{
-      apxs2          : /usr/sbin/apxs
-      Main executable: /usr/sbin/apache2
-      Control command: /usr/sbin/apache2ctl
-      Config file    : /etc/apache2/apache2.conf
-      Error log file : /var/log/apache2/error.log})
+			output.scan(/\* Found Apache .*\!/).size.should == 1
+			output.should include("apxs2          : /usr/bin/apxs2\n")
+			output.should include("Main executable: /usr/sbin/apache2\n")
+			output.should include("Control command: /usr/sbin/apache2ctl\n")
+			output.should include("Config file    : /etc/apache2/apache2.conf\n")
+			output.should include("Error log file : /var/log/apache2/error.log\n")
 			output.should include(%Q{
    To start, stop or restart this specific Apache version:
       /usr/sbin/apache2ctl start
