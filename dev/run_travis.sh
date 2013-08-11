@@ -28,6 +28,7 @@ if [[ -f /persist/passenger-enterprise-license ]]; then
 	export CCACHE_DIR=/persist/ccache
 	export CCACHE_COMPRESS=1
 	export CCACHE_COMPRESS_LEVEL=3
+	run sudo apt-get install ccache
 fi
 
 run uname -a
