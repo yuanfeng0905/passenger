@@ -21,6 +21,14 @@ function run()
 	"$@"
 }
 
+if [[ -f /persist/passenger-enterprise-license ]]; then
+	run sudo cp /persist/passenger-enterprise-license /etc/
+	echo "Using /persist/ccache as ccache directory"
+	export CCACHE_DIR=/persist/ccache
+	export CCACHE_COMPRESS=1
+	export CCACHE_COMPRESS_LEVEL=3
+fi
+
 run uname -a
 run lsb_release -a
 sudo tee /etc/dpkg/dpkg.cfg.d/02apt-speedup >/dev/null <<<"force-unsafe-io"
