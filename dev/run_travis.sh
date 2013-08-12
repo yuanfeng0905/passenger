@@ -21,6 +21,21 @@ function run()
 	"$@"
 }
 
+function apt_get_update() {
+	if [[ "$apt_get_updated" = "" ]]; then
+		apt_get_updated=1
+		run sudo apt-get update
+	fi
+}
+
+function install_test_deps_without_rails_bundles()
+{
+	if [[ "$install_test_deps_without_rails_bundles" = "" ]]; then
+		install_test_deps_without_rails_bundles=1
+		run rake test:install_deps RAILS_BUNDLES=no
+	fi
+}
+
 if [[ -f /persist/passenger-enterprise-license ]]; then
 	run sudo cp /persist/passenger-enterprise-license /etc/
 	echo "Using /persist/ccache as ccache directory"
@@ -72,7 +87,7 @@ if [[ "$TEST_NGINX" = 1 ]]; then
 fi
 
 if [[ "$TEST_APACHE2" = 1 ]]; then
-	run sudo apt-get update
+	apt_get_update
 	run sudo apt-get install -y --no-install-recommends \
 		apache2-mpm-worker apache2-threaded-dev
 	run rake test:install_deps RAILS_BUNDLES=no DOCTOOLS=no
@@ -82,19 +97,22 @@ if [[ "$TEST_APACHE2" = 1 ]]; then
 fi
 
 if [[ "$TEST_DEBIAN_PACKAGING" = 1 ]]; then
-	run sudo apt-get update
+	apt_get_update
 	run sudo apt-get install -y --no-install-recommends \
 		devscripts debhelper rake apache2-mpm-worker apache2-threaded-dev \
 		ruby1.8 ruby1.8-dev ruby1.9.1 ruby1.9.1-dev rubygems libev-dev gdebi-core \
 		source-highlight
-	run rake test:install_deps RAILS_BUNDLES=no
-	run rake debian:dev
-	run sudo gdebi -n pkg/ruby-passenger_*.deb
-	run sudo gdebi -n pkg/ruby-passenger-dev_*.deb
-	run sudo gdebi -n pkg/ruby-passenger-doc_*.deb
-	run sudo gdebi -n pkg/libapache2-mod-passenger_*.deb
+	install_test_deps_without_rails_bundles
+	run rake debian:dev debian:dev:reinstall
 	run rvmsudo env LOCATIONS_INI=/usr/lib/ruby/vendor_ruby/phusion_passenger/locations.ini \
 		rspec -f s -c test/integration_tests/native_packaging_spec.rb
 	run env PASSENGER_LOCATION_CONFIGURATION_FILE=/usr/lib/ruby/vendor_ruby/phusion_passenger/locations.ini \
 		rake test:integration:apache2 SUDO=1
+fi
+
+if [[ "$TEST_SOURCE_PACKAGING" = 1 ]]; then
+	apt_get_update
+	run sudo apt-get install -y --no-install-recommends source-highlight
+	install_test_deps_without_rails_bundles
+	run rspec -f s -c test/integration_tests/source_packaging_test.rb
 fi

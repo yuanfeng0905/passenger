@@ -39,6 +39,7 @@ module Packaging
 	# A list of globs which match all files that should be packaged
 	# in the Phusion Passenger gem or tarball.
 	GLOB = [
+		'.gitignore',
 		'.travis.yml',
 		'configure',
 		'Rakefile',
@@ -57,7 +58,8 @@ module Packaging
 		'doc/**/*',
 		'man/*',
 		'debian.template/**/*',
-		'helper-scripts/*',
+		'rpm/**/*',
+		'helper-scripts/**/*',
 		'ext/common/**/*.{cpp,c,h,hpp,md,erb}',
 		'ext/apache2/*.{cpp,h,hpp,c}',
 		'ext/nginx/*.{c,cpp,h}',
@@ -73,6 +75,7 @@ module Packaging
 		'ext/libeio/{*.h,*.c}',
 		'ext/oxt/*.hpp',
 		'ext/oxt/*.cpp',
+		'ext/oxt/*.txt',
 		'ext/oxt/detail/*.hpp',
 		'ext/ruby/*.{c,rb}',
 		'dev/*',
@@ -80,13 +83,15 @@ module Packaging
 		'test/.rspec',
 		'test/*.example',
 		'test/*.travis',
+		'test/*.supp',
 		'test/support/*.{c,cpp,h,rb}',
 		'test/tut/*',
 		'test/cxx/**/*.{cpp,h}',
 		'test/oxt/*.{cpp,hpp}',
 		'test/ruby/**/*',
 		'test/integration_tests/**/*',
-		'test/stub/**/*'
+		'test/stub/**/*',
+		'test/stub/**/.*'
 	]
 	
 	EXCLUDE_GLOB = [
