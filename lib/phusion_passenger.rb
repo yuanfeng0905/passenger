@@ -30,7 +30,6 @@ module PhusionPassenger
 	###### Directories ######
 	
 	GLOBAL_NAMESPACE_DIRNAME            = "passenger-enterprise"
-	GLOBAL_STANDALONE_NAMESPACE_DIRNAME = "passenger-standalone"
 	# Subdirectory under $HOME to use for storing stuff.
 	USER_NAMESPACE_DIRNAME              = ".passenger-enterprise"
 	
@@ -41,12 +40,6 @@ module PhusionPassenger
 		"~/#{USER_NAMESPACE_DIRNAME}/plugins"
 	]
 	
-	# Directory under $HOME for storing Phusion Passenger Standalone runtime files.
-	LOCAL_STANDALONE_RESOURCE_DIR  = File.join(USER_NAMESPACE_DIRNAME, "standalone")
-	
-	# System-wide directory for storing Phusion Passenger Standalone runtime files.
-	GLOBAL_STANDALONE_RESOURCE_DIR = "/var/lib/#{GLOBAL_STANDALONE_NAMESPACE_DIRNAME}".freeze
-
 	REQUIRED_LOCATIONS_INI_FIELDS = [
 		:bin_dir,
 		:agents_dir,

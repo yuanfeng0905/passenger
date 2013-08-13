@@ -148,8 +148,11 @@ task :contributors do
 	entries.delete "Hongli Lai (Phusion"
 	entries.delete "Ninh Bui"
 	entries.push "Ninh Bui (Phusion)"
+	entries.delete "Phusion Dev"
 	entries.delete "Tinco Andringa"
 	entries.push "Tinco Andringa (Phusion)"
+	entries.delete "Goffert van Gool"
+	entries.push "Goffert van Gool (Phusion)"
 	entries.delete "Gokulnath"
 	entries.push "Gokulnath Manakkattil"
 	File.open("CONTRIBUTORS", "w") do |f|

@@ -14,10 +14,6 @@ require 'phusion_passenger/standalone/command'
 # We lazy load as many libraries as possible not only to improve startup performance,
 # but also to ensure that we don't require libraries before we've passed the dependency
 # checking stage of the runtime installer.
-#
-# IMPORTANT: do not directly or indirectly require native_support; we can't compile
-# it yet until we have a compiler, and the runtime installer is supposed to check whether
-# a compiler is installed.
 
 module PhusionPassenger
 module Standalone
@@ -40,8 +36,11 @@ class StartCommand < Command
 		parse_my_options
 		sanity_check_options
 
-		@runtime_dirs = determine_runtime_dirs
-		ensure_nginx_installed
+		require 'phusion_passenger/standalone/runtime_locator'
+		@runtime_locator = RuntimeLocator.new(@options[:runtime_dir],
+			@options[:nginx_version])
+		ensure_runtime_installed
+		exit if @options[:runtime_check_only]
 		determine_various_resource_locations
 		require_app_finder
 		@app_finder = AppFinder.new(@args, @options)
@@ -215,6 +214,14 @@ private
 				wrap_desc("Directory to use for Phusion Passenger Standalone runtime files")) do |value|
 				@options[:runtime_dir] = File.expand_path(value)
 			end
+			opts.on("--runtime-check-only",
+				wrap_desc("Quit after checking whether the Phusion Passenger Standalone runtime files are installed")) do
+				@options[:runtime_check_only] = true
+			end
+			opts.on("--dont-compile-runtime",
+				wrap_desc("Abort if runtime must be compiled")) do
+				@options[:dont_compile_runtime] = true
+			end
 		end
 		@plugin.call_hook(:done_parsing_options)
 	end
@@ -351,58 +358,36 @@ private
 		end
 	end
 
-	def install_runtime(runtime_dirs)
+	def install_runtime(runtime_locator)
 		require 'phusion_passenger/standalone/runtime_installer'
 		installer = RuntimeInstaller.new(
-			:targets     => [:nginx, :ruby, :support_binaries],
-			:support_dir => runtime_dirs[:support_dir],
-			:nginx_dir   => runtime_dirs[:nginx_dir],
-			:ruby_dir    => runtime_dirs[:ruby_dir],
+			:targets     => runtime_locator.install_targets,
+			:support_dir => runtime_locator.support_dir_install_destination,
+			:nginx_dir   => runtime_locator.nginx_binary_install_destination,
+			:lib_dir     => runtime_locator.find_lib_dir || runtime_locator.support_dir_install_destination,
 			:nginx_version     => @options[:nginx_version],
 			:nginx_tarball     => @options[:nginx_tarball],
 			:binaries_url_root => @options[:binaries_url_root],
+			:dont_compile_runtime => @options[:dont_compile_runtime],
 			:plugin      => @plugin)
 		return installer.run
 	end
 
-	def determine_runtime_dirs
-		require_platform_info_binary_compatibility
-		if root = @options[:runtime_dir]
-			nginx_dir = determine_nginx_runtime_dir(root)
+	def ensure_runtime_installed
+		if @runtime_locator.everything_installed?
+			if !File.exist?(@runtime_locator.find_nginx_binary)
+				error "The Nginx binary '#{@runtime_locator.find_nginx_binary}' does not exist."
+				exit 1
+			end
 		else
-			root = "#{GLOBAL_STANDALONE_RESOURCE_DIR}/#{PhusionPassenger::VERSION_STRING}"
-			nginx_dir = determine_nginx_runtime_dir(root)
-			if !File.exist?("#{nginx_dir}/nginx") && Process.euid != 0
-				home      = Etc.getpwuid.dir
-				root      = "#{home}/#{LOCAL_STANDALONE_RESOURCE_DIR}/#{PhusionPassenger::VERSION_STRING}"
-				nginx_dir = determine_nginx_runtime_dir(root)
-			end
-		end
-		nginx_bin = @options[:nginx_bin] || "#{nginx_dir}/nginx"
-		result = {
-			:root => root,
-			:support_dir => "#{root}/support-#{PlatformInfo.cxx_binary_compatibility_id}",
-			:nginx_dir => nginx_dir,
-			:ruby_dir => "#{root}/rubyext-#{PlatformInfo.ruby_extension_binary_compatibility_id}",
-			:nginx_installed => File.exist?(nginx_bin)
-		}
-		result[:support_dir_installed] = File.exist?(result[:support_dir] + "/agents/PassengerWatchdog")
-		result[:everything_installed] = result[:nginx_installed] && result[:support_dir_installed]
-		return result
-	end
-
-	def determine_nginx_runtime_dir(runtime_dir)
-		return "#{runtime_dir}/nginx-#{@options[:nginx_version]}-#{PlatformInfo.cxx_binary_compatibility_id}"
-	end
-
-	def ensure_nginx_installed
-		if !@runtime_dirs[:everything_installed]
-			if !@runtime_dirs[:nginx_installed] && @options[:nginx_bin]
-				error "The given Nginx binary '#{@options[:nginx_bin]}' does not exist."
-				exit 1
-			elsif !install_runtime(@runtime_dirs)
+			if !@runtime_locator.find_support_dir && PhusionPassenger.natively_packaged?
+				error "Your Phusion Passenger Standalone installation is broken: the support " +
+					"files could not be found. Please reinstall Phusion Passenger Standalone. " +
+					"If this problem persists, please contact your packager."
 				exit 1
 			end
+			install_runtime(@runtime_locator) || exit(1)
+			@runtime_locator.reload
 		end
 	end
 

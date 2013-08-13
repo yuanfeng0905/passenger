@@ -175,18 +175,16 @@ private
 		locations_ini_fields =
 			PhusionPassenger::REQUIRED_LOCATIONS_INI_FIELDS +
 			PhusionPassenger::OPTIONAL_LOCATIONS_INI_FIELDS -
-			[:agents_dir]
+			[:agents_dir, :lib_dir]
 		
 		File.open(location_config_filename, 'w') do |f|
 			f.puts '[locations]'
 			f.puts "natively_packaged=false"
-			if debugging?
-				f.puts "agents_dir=#{PhusionPassenger.agents_dir}"
-			else
-				f.puts "agents_dir=#{@runtime_dirs[:support_dir]}/agents"
-			end
+			f.puts "lib_dir=#{@runtime_locator.find_lib_dir}"
+			f.puts "agents_dir=#{@runtime_locator.find_agents_dir}"
 			locations_ini_fields.each do |field|
-				f.puts "#{field}=#{PhusionPassenger.send(field)}"
+				value = PhusionPassenger.send(field)
+				f.puts "#{field}=#{value}" if value
 			end
 		end
 		puts File.read(location_config_filename) if debugging?
@@ -210,7 +208,7 @@ private
 		if @options[:nginx_bin]
 			nginx_bin = @options[:nginx_bin]
 		else
-			nginx_bin = "#{@runtime_dirs[:nginx_dir]}/nginx"
+			nginx_bin = @runtime_locator.find_nginx_binary
 		end
 		return "#{nginx_bin} -c '#{@config_filename}' -p '#{@temp_dir}/'"
 	end

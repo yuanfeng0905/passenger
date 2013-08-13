@@ -2,6 +2,8 @@ if GC.respond_to?(:copy_on_write_friendly?) && !GC.copy_on_write_friendly?
 	GC.copy_on_write_friendly = true
 end
 
+RUBY_VERSION_INT = RUBY_VERSION.split('.')[0..2].join.to_i
+
 source_root = File.expand_path(File.dirname(__FILE__) + "/../..")
 Dir.chdir("#{source_root}/test")
 
@@ -26,7 +28,9 @@ def boolean_option(name, default_value = false)
 end
 
 DEBUG = boolean_option('DEBUG')
-TEST_CLASSIC_RAILS = boolean_option('TEST_CLASSIC_RAILS', true)
+TEST_CLASSIC_RAILS = boolean_option('TEST_CLASSIC_RAILS', Gem::VERSION <= '1.9')
+
+ENV.delete('PASSENGER_DEBUG')
 
 $LOAD_PATH.unshift("#{source_root}/lib")
 $LOAD_PATH.unshift("#{source_root}/test")
