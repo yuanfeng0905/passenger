@@ -118,7 +118,7 @@ task 'package:release' => ['package:set_official', 'package:gem', 'package:tarba
 			sh "ssh app@shell.phusion.nl 'mkdir -p \"#{dir}/assets/#{subdir}\" && mv #{dir}/#{basename}.{gem,tar.gz,gem.asc,tar.gz.asc} \"#{dir}/assets/#{subdir}/\"'"
 			sh "cd ../passenger_autobuilder && " +
 				"git pull && " +
-				"./autobuild-osx TODO passenger-enterprise psg_autobuilder_chroot@juvia-helper.phusion.nl --tag=#{tag}"
+				"./autobuild-osx git@gitlab.phusion.nl:passenger/passenger_enterprise_server.git passenger-enterprise psg_autobuilder_chroot@juvia-helper.phusion.nl --tag=#{tag}"
 		end
 	else
 		puts "Did not upload anything."
