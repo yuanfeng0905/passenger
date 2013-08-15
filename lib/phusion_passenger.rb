@@ -137,10 +137,10 @@ module PhusionPassenger
 	
 	###### Other resource locations ######
 	
-	BINARIES_URL_ROOT  = nil
+	BINARIES_URL_ROOT  = "https://oss-binaries.phusionpassenger.com/binaries/enterprise-NQLVwRlu10n13/by_release"
 
 	def self.binaries_ca_cert_path
-		return "#{resources_dir}/enterprise-binaries.phusionpassenger.com.crt"
+		return "#{resources_dir}/oss-binaries.phusionpassenger.com.crt"
 	end
 	
 	
