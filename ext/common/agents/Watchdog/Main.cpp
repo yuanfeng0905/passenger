@@ -383,6 +383,7 @@ initializeBareEssentials(int argc, char *argv[]) {
 	 * forcefully redirect stdout to stderr so that everything ends up in the
 	 * same place.
 	 */
+	int oldStdout = dup(1);
 	dup2(2, 1);
 
 	/*
@@ -397,6 +398,12 @@ initializeBareEssentials(int argc, char *argv[]) {
 	oldOomScore = setOomScoreNeverKill();
 	
 	agentsOptions = initializeAgent(argc, argv, "PassengerWatchdog");
+
+	if (agentsOptions.get("test_binary", false) == "1") {
+		write(oldStdout, "PASS\n", 5);
+		exit(0);
+	}
+	close(oldStdout);
 }
 
 static void

@@ -11,6 +11,7 @@ require 'phusion_passenger'
 require 'phusion_passenger/abstract_installer'
 require 'phusion_passenger/packaging'
 require 'phusion_passenger/common_library'
+require 'phusion_passenger/platform_info'
 require 'phusion_passenger/platform_info/ruby'
 require 'phusion_passenger/platform_info/binary_compatibility'
 require 'phusion_passenger/standalone/utils'
@@ -136,25 +137,41 @@ private
 	end
 
 	def check_for_download_tool
-		# TODO
+		puts "<banner>Checking for basic prerequities...</banner>"
+		puts
+
+		require 'phusion_passenger/platform_info/depcheck'
+		PlatformInfo::Depcheck.load('depcheck_specs/utilities')
+		runner = PlatformInfo::Depcheck::ConsoleRunner.new
+		runner.add('download-tool')
+
+		if !runner.check_all
+			@download_binaries = false
+			puts
+			line
+			puts
+			render_template 'standalone/download_tool_missing',
+				:runner => runner
+			wait
+		end
 	end
 
 	def download_or_compile_binaries
 		if should_install_support_binaries?
-			support_binaries_path = download_support_binaries
+			support_binaries_downloaded = download_support_binaries
 		end
 		if should_install_nginx?
-			nginx_binary_path = download_nginx_binary
+			nginx_binary_downloaded = download_nginx_binary
 		end
 		
 		should_compile_support_binaries = should_install_support_binaries? &&
-			!support_binaries_path
-		should_compile_nginx = should_install_nginx? && !nginx_binary_path
+			!support_binaries_downloaded
+		should_compile_nginx = should_install_nginx? && !nginx_binary_downloaded
 
 		if should_compile_support_binaries || should_compile_nginx
 			if @dont_compile_runtime
 				@stderr.puts "*** ERROR: Refusing to compile the Phusion Passenger Standalone runtime " +
-					"because --dont-compile-runtime is given."
+					"because --no-compile-runtime is given."
 				exit(1)
 			end
 			check_dependencies(false) || exit(1)
@@ -194,7 +211,7 @@ private
 	end
 
 	def download_support_binaries
-		return nil if !should_download_binaries?
+		return false if !should_download_binaries?
 
 		puts "<banner>Downloading Passenger support binaries for your platform, if available...</banner>"
 		basename = "support-#{PlatformInfo.cxx_binary_compatibility_id}.tar.gz"
@@ -204,16 +221,38 @@ private
 			puts "<b>No binaries are available for your platform. But don't worry, the " +
 				"necessary binaries will be compiled from source instead.</b>"
 			puts
-			return nil
+			return false
 		end
 		
 		FileUtils.mkdir_p(@support_dir)
-		Dir.chdir(@support_dir) do
+		Dir.mkdir("#{@working_dir}/support")
+		Dir.chdir("#{@working_dir}/support") do
 			puts "Extracting tarball..."
-			return extract_tarball(tarball)
+			return false if !extract_tarball(tarball)
+			return false if !check_support_binaries
+		end
+
+		if system("mv '#{@working_dir}/support'/* '#{@support_dir}'/")
+			return true
+		else
+			@stderr.puts "Error: could not move extracted files to the support directory"
+			return false
 		end
 	rescue Interrupt
 		exit 2
+	end
+
+	def check_support_binaries
+		["PassengerWatchdog", "PassengerHelperAgent", "PassengerLoggingAgent"].each do |exe|
+			puts "Checking whether the downloaded #{exe} binary is usable..."
+			output = `env LD_BIND_NOW=1 DYLD_BIND_AT_LAUNCH=1 ./agents/#{exe} --test-binary 1`
+			if !$? || $?.exitstatus != 0 || output != "PASS\n"
+				@stderr.puts "Binary #{exe} is not usable."
+				return false
+			end
+		end
+		puts "Binaries are usable."
+		return true
 	end
 
 	def download_nginx_binary
@@ -227,16 +266,40 @@ private
 			puts "<b>No binary available for your platform. But don't worry, the " +
 				"necessary binary will be compiled from source instead.</b>"
 			puts
-			return nil
+			return false
 		end
 
 		FileUtils.mkdir_p(@nginx_dir)
-		Dir.chdir(@nginx_dir) do
+		Dir.mkdir("#{@working_dir}/nginx")
+		Dir.chdir("#{@working_dir}/nginx") do
 			puts "Extracting tarball..."
-			return extract_tarball(tarball)
+			result = extract_tarball(tarball)
+			return false if !result
+			if check_nginx_binary
+				if system("mv '#{@working_dir}/nginx'/* '#{@nginx_dir}'/")
+					return true
+				else
+					@stderr.puts "Error: could not move extracted Nginx binary to the right directory"
+					return false
+				end
+			else
+				return false
+			end
 		end
 	rescue Interrupt
 		exit 2
+	end
+
+	def check_nginx_binary
+		puts "Checking whether the downloaded binary is usable..."
+		output = `env LD_BIND_NOW=1 DYLD_BIND_AT_LAUNCH=1 ./nginx -v 2>&1`
+		if $? && $?.exitstatus == 0 && output =~ /nginx version:/
+			puts "Binary is usable."
+			return true
+		else
+			@stderr.puts "Binary is not usable."
+			return false
+		end
 	end
 
 	def download_and_extract_nginx_sources
