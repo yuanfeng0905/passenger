@@ -3,7 +3,7 @@ FILES = Dir[
 	"bin/*",
 	"build/*.rb",
 	"ext/{apache2,common,nginx,ruby}/**/*.{c,cpp,h,hpp,erb}",
-	"helper-scripts/*",
+	"helper-scripts/**/*",
 	"lib/**/*.rb",
 	"lib/**/*.py",
 ]
@@ -40,6 +40,7 @@ rescue EOFError
 end
 
 FILES.each do |filename|
+	next if File.directory?(filename)
 	printf("%-65s", filename)
 	STDOUT.flush
 	if change_license!(filename)
