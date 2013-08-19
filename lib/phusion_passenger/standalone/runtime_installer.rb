@@ -145,9 +145,10 @@ private
 		runner = PlatformInfo::Depcheck::ConsoleRunner.new
 		runner.add('download-tool')
 
-		if !runner.check_all
+		result = runner.check_all
+		puts
+		if !result
 			@download_binaries = false
-			puts
 			line
 			puts
 			render_template 'standalone/download_tool_missing',
@@ -251,7 +252,7 @@ private
 				return false
 			end
 		end
-		puts "Binaries are usable."
+		puts "All support binaries are usable."
 		return true
 	end
 
@@ -294,10 +295,10 @@ private
 		puts "Checking whether the downloaded binary is usable..."
 		output = `env LD_BIND_NOW=1 DYLD_BIND_AT_LAUNCH=1 ./nginx -v 2>&1`
 		if $? && $?.exitstatus == 0 && output =~ /nginx version:/
-			puts "Binary is usable."
+			puts "Nginx binary is usable."
 			return true
 		else
-			@stderr.puts "Binary is not usable."
+			@stderr.puts "Nginx binary is not usable."
 			return false
 		end
 	end
@@ -540,14 +541,12 @@ private
 		Dir.chdir(source_dir) do
 			shell = PlatformInfo.find_command('bash') || "sh"
 			command = ""
-			if @targets.include?(:support_binaries)
-				output_dir = "#{@support_dir}/common/libpassenger_common"
-				nginx_libs = COMMON_LIBRARY.only(*NGINX_LIBS_SELECTOR).
-					set_output_dir(output_dir).
-					link_objects_as_string
-				command << "env PASSENGER_INCLUDEDIR='#{PhusionPassenger.include_dir}'" <<
-					" PASSENGER_LIBS='#{nginx_libs} #{output_dir}/../libboost_oxt.a' "
-			end
+			lib_dir = "#{@lib_dir}/common/libpassenger_common"
+			nginx_libs = COMMON_LIBRARY.only(*NGINX_LIBS_SELECTOR).
+				set_output_dir(lib_dir).
+				link_objects_as_string
+			command << "env PASSENGER_INCLUDEDIR='#{PhusionPassenger.include_dir}' " <<
+				"PASSENGER_LIBS='#{nginx_libs} #{lib_dir}/../libboost_oxt.a' "
 			# RPM thinks it's being smart by scanning binaries for
 			# paths and refusing to create package if it detects any
 			# hardcoded thats that point to /usr or other important
