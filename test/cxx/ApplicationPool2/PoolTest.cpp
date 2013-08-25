@@ -962,7 +962,8 @@ namespace tut {
 	}
 
 	TEST_METHOD(41) {
-		// Disabling the sole process in a group should trigger a new process spawn.
+		// Disabling the sole process in a group, in case the pool settings allow
+		// spawning another process, should trigger a new process spawn.
 		ensureMinProcesses(1);
 		Options options = createOptions();
 		SessionPtr session = pool->get(options, &ticket);
@@ -988,6 +989,20 @@ namespace tut {
 	}
 
 	TEST_METHOD(42) {
+		// Disabling the sole process in a group, in case pool settings don't allow
+		// spawning another process, should fail.
+		pool->setMax(1);
+		ensureMinProcesses(1);
+
+		vector<ProcessPtr> processes = pool->getProcesses();
+		ensure_equals("(1)", processes.size(), 1u);
+
+		DisableResult result = pool->disableProcess(processes[0]->gupid);
+		ensure_equals("(2)", result, DR_ERROR);
+		ensure_equals("(3)", pool->getProcessCount(), 1u);
+	}
+
+	TEST_METHOD(43) {
 		// If there are no enabled processes in the group, then disabling should
 		// succeed after the new process has been spawned.
 		initPoolDebugging();
@@ -1032,7 +1047,7 @@ namespace tut {
 		}
 	}
 
-	TEST_METHOD(43) {
+	TEST_METHOD(44) {
 		// Suppose that a previous disable command triggered a new process spawn,
 		// and the spawn fails. Then any disabling processes should become enabled
 		// again, and the callbacks for the previous disable commands should be called.
@@ -1117,6 +1132,27 @@ namespace tut {
 	// TODO: Enabling a process that's disabling succeeds immediately. The disable
 	//       callbacks will be called with DR_CANCELED.
 	
+	TEST_METHOD(51) {
+		// If the number of processes is already at maximum, then disabling
+		// a process will cause that process to be disabled, without spawning
+		// a new process.
+		pool->setMax(2);
+		ensureMinProcesses(2);
+
+		vector<ProcessPtr> processes = pool->getProcesses();
+		ensure_equals(processes.size(), 2u);
+		DisableResult result = pool->disableProcess(processes[0]->gupid);
+		ensure_equals(result, DR_SUCCESS);
+
+		{
+			ScopedLock l(pool->syncher);
+			GroupPtr group = processes[0]->getGroup();
+			ensure_equals(group->enabledCount, 1);
+			ensure_equals(group->disablingCount, 0);
+			ensure_equals(group->disabledCount, 1);
+		}
+	}
+
 	
 	/*********** Other tests ***********/
 	

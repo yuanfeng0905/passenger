@@ -242,36 +242,7 @@ passenger_create_loc_conf(ngx_conf_t *cf)
      *     conf->upstream_config.store_values = NULL;
      */
 
-    conf->enabled = NGX_CONF_UNSET;
-    conf->friendly_error_pages = NGX_CONF_UNSET;
-    conf->union_station_support = NGX_CONF_UNSET;
-    conf->debugger = NGX_CONF_UNSET;
-    conf->show_version_in_header = NGX_CONF_UNSET;
-    conf->ruby.data = NULL;
-    conf->ruby.len = 0;
-    conf->python.data = NULL;
-    conf->python.len = 0;
-    conf->environment.data = NULL;
-    conf->environment.len = 0;
-    conf->spawn_method.data = NULL;
-    conf->spawn_method.len = 0;
-    conf->union_station_key.data = NULL;
-    conf->union_station_key.len = 0;
-    conf->user.data = NULL;
-    conf->user.len = 0;
-    conf->group.data = NULL;
-    conf->group.len = 0;
-    conf->app_group_name.data = NULL;
-    conf->app_group_name.len = 0;
-    conf->app_root.data = NULL;
-    conf->app_root.len = 0;
-    conf->app_rights.data = NULL;
-    conf->app_rights.len = 0;
-    conf->base_uris = NGX_CONF_UNSET_PTR;
-    conf->union_station_filters = NGX_CONF_UNSET_PTR;
-    conf->min_instances = NGX_CONF_UNSET;
-    conf->max_requests = NGX_CONF_UNSET;
-    conf->max_preloader_idle_time = NGX_CONF_UNSET;
+    #include "CreateLocationConfig.c"
 
     /******************************/
     conf->max_instances    = NGX_CONF_UNSET;
@@ -284,7 +255,8 @@ passenger_create_loc_conf(ngx_conf_t *cf)
     conf->resist_deployment_errors = NGX_CONF_UNSET;
     /******************************/
 
-    conf->upstream_config.pass_headers = ngx_array_create(cf->pool, 1, sizeof(ngx_keyval_t));
+    conf->upstream_config.pass_headers = NGX_CONF_UNSET_PTR;
+    conf->upstream_config.hide_headers = NGX_CONF_UNSET_PTR;
 
     conf->upstream_config.store = NGX_CONF_UNSET;
     conf->upstream_config.store_access = NGX_CONF_UNSET_UINT;
@@ -353,6 +325,12 @@ passenger_create_loc_conf(ngx_conf_t *cf)
     return conf;
 }
 
+static void
+cache_loc_conf_options(ngx_conf_t *cf, passenger_loc_conf_t *conf)
+{
+    #include "CacheLocationConfig.c"
+}
+
 char *
 passenger_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child)
 {
@@ -373,24 +351,11 @@ passenger_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child)
     ngx_http_script_compile_t     sc;
     ngx_http_script_copy_code_t  *copy;
 
-    ngx_conf_merge_value(conf->enabled, prev->enabled, 0);
-    ngx_conf_merge_value(conf->friendly_error_pages, prev->friendly_error_pages, 1);
-    ngx_conf_merge_value(conf->union_station_support, prev->union_station_support, 0);
-    ngx_conf_merge_value(conf->debugger, prev->debugger, 0);
-    ngx_conf_merge_value(conf->show_version_in_header, prev->show_version_in_header, 1);
-    ngx_conf_merge_str_value(conf->ruby, prev->ruby, NULL);
-    ngx_conf_merge_str_value(conf->python, prev->python, NULL);
-    ngx_conf_merge_str_value(conf->environment, prev->environment, "production");
-    ngx_conf_merge_str_value(conf->spawn_method, prev->spawn_method, "smart");
-    ngx_conf_merge_str_value(conf->union_station_key, prev->union_station_key, NULL);
-    ngx_conf_merge_str_value(conf->user, prev->user, "");
-    ngx_conf_merge_str_value(conf->group, prev->group, "");
-    ngx_conf_merge_str_value(conf->app_group_name, prev->app_group_name, NULL);
-    ngx_conf_merge_str_value(conf->app_root, prev->app_root, NULL);
-    ngx_conf_merge_str_value(conf->app_rights, prev->app_rights, NULL);
-    ngx_conf_merge_value(conf->min_instances, prev->min_instances, (ngx_int_t) -1);
-    ngx_conf_merge_value(conf->max_requests, prev->max_requests, (ngx_int_t) -1);
-    ngx_conf_merge_value(conf->max_preloader_idle_time, prev->max_preloader_idle_time, (ngx_int_t) -1);
+    #include "MergeLocationConfig.c"
+    if (prev->options_cache.data == NULL) {
+        cache_loc_conf_options(cf, prev);
+    }
+    cache_loc_conf_options(cf, conf);
     
     if (prev->base_uris != NGX_CONF_UNSET_PTR) {
         if (conf->base_uris == NGX_CONF_UNSET_PTR) {
@@ -662,108 +627,16 @@ passenger_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child)
                          prev->upstream_config.intercept_errors, 0);
 
 
+    hash.max_size = 512;
+    hash.bucket_size = ngx_align(64, ngx_cacheline_size);
+    hash.name = "passenger_hide_headers_hash";
 
-    if (conf->upstream_config.hide_headers == NULL
-        && conf->upstream_config.pass_headers == NULL)
-    {
-        conf->upstream_config.hide_headers = prev->upstream_config.hide_headers;
-        conf->upstream_config.pass_headers = prev->upstream_config.pass_headers;
-        conf->upstream_config.hide_headers_hash = prev->upstream_config.hide_headers_hash;
-
-        if (conf->upstream_config.hide_headers_hash.buckets) {
-            goto peers;
-        }
-
-    } else {
-        if (conf->upstream_config.hide_headers == NULL) {
-            conf->upstream_config.hide_headers = prev->upstream_config.hide_headers;
-        }
-
-        if (conf->upstream_config.pass_headers == NULL) {
-            conf->upstream_config.pass_headers = prev->upstream_config.pass_headers;
-        }
-    }
-
-    if (ngx_array_init(&hide_headers, cf->temp_pool, 4, sizeof(ngx_hash_key_t))
+    if (ngx_http_upstream_hide_headers_hash(cf, &conf->upstream_config,
+            &prev->upstream_config, headers_to_hide, &hash)
         != NGX_OK)
     {
         return NGX_CONF_ERROR;
     }
-
-    for (header = headers_to_hide; header->len; header++) {
-        hk = ngx_array_push(&hide_headers);
-        if (hk == NULL) {
-            return NGX_CONF_ERROR;
-        }
-
-        hk->key = *header;
-        hk->key_hash = ngx_hash_key_lc(header->data, header->len);
-        hk->value = (void *) 1;
-    }
-
-    if (conf->upstream_config.hide_headers) {
-
-        header = conf->upstream_config.hide_headers->elts;
-
-        for (i = 0; i < conf->upstream_config.hide_headers->nelts; i++) {
-
-            hk = hide_headers.elts;
-
-            for (j = 0; j < hide_headers.nelts; j++) {
-                if (ngx_strcasecmp(header[i].data, hk[j].key.data) == 0) {
-                    goto exist;
-                }
-            }
-
-            hk = ngx_array_push(&hide_headers);
-            if (hk == NULL) {
-                return NGX_CONF_ERROR;
-            }
-
-            hk->key = header[i];
-            hk->key_hash = ngx_hash_key_lc(header[i].data, header[i].len);
-            hk->value = (void *) 1;
-
-        exist:
-
-            continue;
-        }
-    }
-
-    if (conf->upstream_config.pass_headers) {
-
-        hk = hide_headers.elts;
-        header = conf->upstream_config.pass_headers->elts;
-
-        for (i = 0; i < conf->upstream_config.pass_headers->nelts; i++) {
-
-            for (j = 0; j < hide_headers.nelts; j++) {
-
-                if (hk[j].key.data == NULL) {
-                    continue;
-                }
-
-                if (ngx_strcasecmp(header[i].data, hk[j].key.data) == 0) {
-                    hk[j].key.data = NULL;
-                    break;
-                }
-            }
-        }
-    }
-
-    hash.hash = &conf->upstream_config.hide_headers_hash;
-    hash.key = ngx_hash_key_lc;
-    hash.max_size = 512;
-    hash.bucket_size = ngx_align(64, ngx_cacheline_size);
-    hash.name = "passenger_hide_headers_hash";
-    hash.pool = cf->pool;
-    hash.temp_pool = NULL;
-
-    if (ngx_hash_init(&hash, hide_headers.elts, hide_headers.nelts) != NGX_OK) {
-        return NGX_CONF_ERROR;
-    }
-
-peers:
 
     if (conf->upstream_config.upstream == NULL) {
         conf->upstream_config.upstream = prev->upstream_config.upstream;
@@ -1109,6 +982,13 @@ const ngx_command_t passenger_commands[] = {
       offsetof(passenger_main_conf_t, temp_dir),
       NULL },
 
+    { ngx_string("passenger_pre_start"),
+      NGX_HTTP_MAIN_CONF | NGX_CONF_TAKE1,
+      ngx_conf_set_str_array_slot,
+      NGX_HTTP_MAIN_CONF_OFFSET,
+      offsetof(passenger_main_conf_t, prestart_uris),
+      NULL },
+
     { ngx_string("passenger_abort_on_startup_error"),
       NGX_HTTP_MAIN_CONF | NGX_CONF_FLAG,
       ngx_conf_set_flag_slot,
@@ -1202,305 +1082,8 @@ const ngx_command_t passenger_commands[] = {
 
     /******** Per-location config ********/
 
-    { ngx_string("passenger_enabled"),
-      NGX_HTTP_SRV_CONF | NGX_HTTP_LOC_CONF | NGX_HTTP_LIF_CONF | NGX_CONF_FLAG,
-      passenger_enabled,
-      NGX_HTTP_LOC_CONF_OFFSET,
-      0,
-      NULL },
+    #include "ConfigurationCommands.c"
 
-    { ngx_string("passenger_ruby"),
-      NGX_HTTP_SRV_CONF | NGX_HTTP_LOC_CONF | NGX_HTTP_LIF_CONF | NGX_CONF_TAKE1,
-      ngx_conf_set_str_slot,
-      NGX_HTTP_LOC_CONF_OFFSET,
-      offsetof(passenger_loc_conf_t, ruby),
-      NULL },
-
-    { ngx_string("passenger_python"),
-      NGX_HTTP_MAIN_CONF | NGX_HTTP_SRV_CONF | NGX_HTTP_LOC_CONF | NGX_HTTP_LIF_CONF | NGX_CONF_TAKE1,
-      ngx_conf_set_str_slot,
-      NGX_HTTP_LOC_CONF_OFFSET,
-      offsetof(passenger_loc_conf_t, python),
-      NULL },
-
-    { ngx_string("passenger_friendly_error_pages"),
-      NGX_HTTP_MAIN_CONF | NGX_HTTP_SRV_CONF | NGX_HTTP_LOC_CONF | NGX_HTTP_LIF_CONF | NGX_CONF_FLAG,
-      ngx_conf_set_flag_slot,
-      NGX_HTTP_LOC_CONF_OFFSET,
-      offsetof(passenger_loc_conf_t, friendly_error_pages),
-      NULL },
-
-    { ngx_string("passenger_min_instances"),
-      NGX_HTTP_MAIN_CONF | NGX_HTTP_SRV_CONF | NGX_HTTP_LOC_CONF | NGX_HTTP_LIF_CONF | NGX_CONF_TAKE1,
-      ngx_conf_set_num_slot,
-      NGX_HTTP_LOC_CONF_OFFSET,
-      offsetof(passenger_loc_conf_t, min_instances),
-      NULL },
-
-    { ngx_string("passenger_max_requests"),
-      NGX_HTTP_MAIN_CONF | NGX_HTTP_SRV_CONF | NGX_HTTP_LOC_CONF | NGX_HTTP_LIF_CONF | NGX_CONF_TAKE1,
-      ngx_conf_set_num_slot,
-      NGX_HTTP_LOC_CONF_OFFSET,
-      offsetof(passenger_loc_conf_t, max_requests),
-      NULL },
-
-    { ngx_string("passenger_base_uri"),
-      NGX_HTTP_MAIN_CONF | NGX_HTTP_SRV_CONF | NGX_HTTP_LOC_CONF | NGX_HTTP_LIF_CONF | NGX_CONF_TAKE1,
-      ngx_conf_set_str_array_slot,
-      NGX_HTTP_LOC_CONF_OFFSET,
-      offsetof(passenger_loc_conf_t, base_uris),
-      NULL },
-
-    { ngx_string("passenger_user"),
-      NGX_HTTP_MAIN_CONF | NGX_HTTP_SRV_CONF | NGX_HTTP_LOC_CONF | NGX_HTTP_LIF_CONF | NGX_CONF_TAKE1,
-      ngx_conf_set_str_slot,
-      NGX_HTTP_LOC_CONF_OFFSET,
-      offsetof(passenger_loc_conf_t, user),
-      NULL },
-
-    { ngx_string("passenger_group"),
-      NGX_HTTP_MAIN_CONF | NGX_HTTP_SRV_CONF | NGX_HTTP_LOC_CONF | NGX_HTTP_LIF_CONF | NGX_CONF_TAKE1,
-      ngx_conf_set_str_slot,
-      NGX_HTTP_LOC_CONF_OFFSET,
-      offsetof(passenger_loc_conf_t, group),
-      NULL },
-
-    { ngx_string("passenger_app_group_name"),
-      NGX_HTTP_MAIN_CONF | NGX_HTTP_SRV_CONF | NGX_HTTP_LOC_CONF | NGX_HTTP_LIF_CONF | NGX_CONF_FLAG,
-      ngx_conf_set_str_slot,
-      NGX_HTTP_LOC_CONF_OFFSET,
-      offsetof(passenger_loc_conf_t, app_group_name),
-      NULL },
-    { ngx_string("passenger_app_root"),
-      NGX_HTTP_MAIN_CONF | NGX_HTTP_SRV_CONF | NGX_HTTP_LOC_CONF | NGX_HTTP_LIF_CONF | NGX_CONF_FLAG,
-      ngx_conf_set_str_slot,
-      NGX_HTTP_LOC_CONF_OFFSET,
-      offsetof(passenger_loc_conf_t, app_root),
-      NULL },
-
-    { ngx_string("passenger_app_rights"),
-      NGX_HTTP_MAIN_CONF | NGX_HTTP_SRV_CONF | NGX_HTTP_LOC_CONF | NGX_HTTP_LIF_CONF | NGX_CONF_FLAG,
-      ngx_conf_set_str_slot,
-      NGX_HTTP_LOC_CONF_OFFSET,
-      offsetof(passenger_loc_conf_t, app_rights),
-      NULL },
-
-    { ngx_string("union_station_support"),
-      NGX_HTTP_MAIN_CONF | NGX_HTTP_SRV_CONF | NGX_HTTP_LOC_CONF | NGX_HTTP_LIF_CONF | NGX_CONF_FLAG,
-      ngx_conf_set_flag_slot,
-      NGX_HTTP_LOC_CONF_OFFSET,
-      offsetof(passenger_loc_conf_t, union_station_support),
-      NULL },
-
-    { ngx_string("union_station_filter"),
-      NGX_HTTP_MAIN_CONF | NGX_HTTP_SRV_CONF | NGX_HTTP_LOC_CONF | NGX_HTTP_LIF_CONF | NGX_CONF_TAKE1,
-      union_station_filter,
-      NGX_HTTP_LOC_CONF_OFFSET,
-      offsetof(passenger_loc_conf_t, union_station_filters),
-      NULL },
-
-    { ngx_string("passenger_debugger"),
-      NGX_HTTP_MAIN_CONF | NGX_HTTP_SRV_CONF | NGX_HTTP_LOC_CONF | NGX_HTTP_LIF_CONF | NGX_CONF_FLAG,
-      ngx_conf_set_flag_slot,
-      NGX_HTTP_LOC_CONF_OFFSET,
-      offsetof(passenger_loc_conf_t, debugger),
-      NULL },
-
-    { ngx_string("passenger_show_version_in_header"),
-      NGX_HTTP_MAIN_CONF | NGX_HTTP_SRV_CONF | NGX_HTTP_LOC_CONF | NGX_HTTP_LIF_CONF | NGX_CONF_FLAG,
-      ngx_conf_set_flag_slot,
-      NGX_HTTP_LOC_CONF_OFFSET,
-      offsetof(passenger_loc_conf_t, show_version_in_header),
-      NULL },
-
-    { ngx_string("passenger_pre_start"),
-      NGX_HTTP_MAIN_CONF | NGX_CONF_TAKE1,
-      ngx_conf_set_str_array_slot,
-      NGX_HTTP_MAIN_CONF_OFFSET,
-      offsetof(passenger_main_conf_t, prestart_uris),
-      NULL },
-
-    { ngx_string("passenger_max_preloader_idle_time"),
-      NGX_HTTP_MAIN_CONF | NGX_HTTP_SRV_CONF | NGX_HTTP_LOC_CONF | NGX_HTTP_LIF_CONF | NGX_CONF_TAKE1,
-      ngx_conf_set_num_slot,
-      NGX_HTTP_LOC_CONF_OFFSET,
-      offsetof(passenger_loc_conf_t, max_preloader_idle_time),
-      NULL },
-
-    { ngx_string("passenger_ignore_headers"),
-      NGX_HTTP_MAIN_CONF | NGX_HTTP_SRV_CONF | NGX_HTTP_LOC_CONF | NGX_CONF_1MORE,
-      ngx_conf_set_bitmask_slot,
-      NGX_HTTP_LOC_CONF_OFFSET,
-      offsetof(passenger_loc_conf_t, upstream_config.ignore_headers),
-      &ngx_http_upstream_ignore_headers_masks },
-
-    { ngx_string("passenger_pass_header"),
-      NGX_HTTP_MAIN_CONF | NGX_HTTP_SRV_CONF | NGX_HTTP_LOC_CONF | NGX_HTTP_LIF_CONF | NGX_CONF_TAKE1,
-      ngx_conf_set_str_array_slot,
-      NGX_HTTP_LOC_CONF_OFFSET,
-      offsetof(passenger_loc_conf_t, upstream_config.pass_headers),
-      NULL },
-
-    { ngx_string("passenger_set_cgi_param"),
-      NGX_HTTP_MAIN_CONF | NGX_HTTP_SRV_CONF | NGX_HTTP_LOC_CONF | NGX_HTTP_LIF_CONF | NGX_CONF_TAKE2,
-      set_null_terminated_keyval_slot,
-      NGX_HTTP_LOC_CONF_OFFSET,
-      offsetof(passenger_loc_conf_t, vars_source),
-      NULL },
-
-    { ngx_string("passenger_ignore_client_abort"),
-      NGX_HTTP_MAIN_CONF | NGX_HTTP_SRV_CONF | NGX_HTTP_LOC_CONF | NGX_CONF_FLAG,
-      ngx_conf_set_flag_slot,
-      NGX_HTTP_LOC_CONF_OFFSET,
-      offsetof(passenger_loc_conf_t, upstream_config.ignore_client_abort),
-      NULL },
-
-    { ngx_string("passenger_buffer_response"),
-      NGX_HTTP_MAIN_CONF | NGX_HTTP_SRV_CONF | NGX_HTTP_LOC_CONF | NGX_CONF_FLAG,
-      ngx_conf_set_flag_slot,
-      NGX_HTTP_LOC_CONF_OFFSET,
-      offsetof(passenger_loc_conf_t, upstream_config.buffering),
-      NULL },
-
-    { ngx_string("passenger_buffer_size"),
-      NGX_HTTP_MAIN_CONF | NGX_HTTP_SRV_CONF | NGX_HTTP_LOC_CONF | NGX_CONF_TAKE1,
-      ngx_conf_set_size_slot,
-      NGX_HTTP_LOC_CONF_OFFSET,
-      offsetof(passenger_loc_conf_t, upstream_config.buffer_size),
-      NULL },
-
-    { ngx_string("passenger_buffers"),
-      NGX_HTTP_MAIN_CONF | NGX_HTTP_SRV_CONF | NGX_HTTP_LOC_CONF | NGX_CONF_TAKE2,
-      ngx_conf_set_bufs_slot,
-      NGX_HTTP_LOC_CONF_OFFSET,
-      offsetof(passenger_loc_conf_t, upstream_config.bufs),
-      NULL },
-
-    { ngx_string("passenger_busy_buffers_size"),
-      NGX_HTTP_MAIN_CONF | NGX_HTTP_SRV_CONF | NGX_HTTP_LOC_CONF | NGX_CONF_TAKE1,
-      ngx_conf_set_size_slot,
-      NGX_HTTP_LOC_CONF_OFFSET,
-      offsetof(passenger_loc_conf_t, upstream_config.busy_buffers_size_conf),
-      NULL },
-
-    { ngx_string("passenger_spawn_method"),
-      NGX_HTTP_MAIN_CONF | NGX_HTTP_SRV_CONF | NGX_HTTP_LOC_CONF | NGX_HTTP_LIF_CONF | NGX_CONF_TAKE1,
-      ngx_conf_set_str_slot,
-      NGX_HTTP_LOC_CONF_OFFSET,
-      offsetof(passenger_loc_conf_t, spawn_method),
-      NULL },
-
-    { ngx_string("union_station_key"),
-      NGX_HTTP_MAIN_CONF | NGX_HTTP_SRV_CONF | NGX_HTTP_LOC_CONF | NGX_HTTP_LIF_CONF | NGX_CONF_TAKE1,
-      ngx_conf_set_str_slot,
-      NGX_HTTP_LOC_CONF_OFFSET,
-      offsetof(passenger_loc_conf_t, union_station_key),
-      NULL },
-
-    { ngx_string("rails_env"),
-      NGX_HTTP_MAIN_CONF | NGX_HTTP_SRV_CONF | NGX_HTTP_LOC_CONF | NGX_HTTP_LIF_CONF | NGX_CONF_TAKE1,
-      ngx_conf_set_str_slot,
-      NGX_HTTP_LOC_CONF_OFFSET,
-      offsetof(passenger_loc_conf_t, environment),
-      NULL },
-
-    { ngx_string("rack_env"),
-      NGX_HTTP_MAIN_CONF | NGX_HTTP_SRV_CONF | NGX_HTTP_LOC_CONF | NGX_HTTP_LIF_CONF | NGX_CONF_TAKE1,
-      ngx_conf_set_str_slot,
-      NGX_HTTP_LOC_CONF_OFFSET,
-      offsetof(passenger_loc_conf_t, environment),
-      NULL },
-
-    /************************************/
-
-    { ngx_string("passenger_fly_with"),
-      NGX_HTTP_MAIN_CONF | NGX_CONF_TAKE1,
-      ngx_conf_set_str_slot,
-      NGX_HTTP_MAIN_CONF_OFFSET,
-      offsetof(passenger_main_conf_t, fly_with),
-      NULL },
-
-    { ngx_string("passenger_max_instances"),
-      NGX_HTTP_MAIN_CONF | NGX_HTTP_SRV_CONF | NGX_HTTP_LOC_CONF | NGX_HTTP_LIF_CONF | NGX_CONF_TAKE1,
-      ngx_conf_set_num_slot,
-      NGX_HTTP_LOC_CONF_OFFSET,
-      offsetof(passenger_loc_conf_t, max_instances),
-      NULL },
-
-    { ngx_string("passenger_max_request_time"),
-      NGX_HTTP_MAIN_CONF | NGX_HTTP_SRV_CONF | NGX_HTTP_LOC_CONF | NGX_HTTP_LIF_CONF | NGX_CONF_TAKE1,
-      ngx_conf_set_num_slot,
-      NGX_HTTP_LOC_CONF_OFFSET,
-      offsetof(passenger_loc_conf_t, max_request_time),
-      NULL },
-
-    { ngx_string("passenger_memory_limit"),
-      NGX_HTTP_MAIN_CONF | NGX_HTTP_SRV_CONF | NGX_HTTP_LOC_CONF | NGX_HTTP_LIF_CONF | NGX_CONF_TAKE1,
-      ngx_conf_set_num_slot,
-      NGX_HTTP_LOC_CONF_OFFSET,
-      offsetof(passenger_loc_conf_t, memory_limit),
-      NULL },
-
-    { ngx_string("passenger_concurrency_model"),
-      NGX_HTTP_MAIN_CONF | NGX_HTTP_SRV_CONF | NGX_HTTP_LOC_CONF | NGX_HTTP_LIF_CONF | NGX_CONF_TAKE1,
-      ngx_conf_set_str_slot,
-      NGX_HTTP_LOC_CONF_OFFSET,
-      offsetof(passenger_loc_conf_t, concurrency_model),
-      NULL },
-
-    { ngx_string("passenger_thread_count"),
-      NGX_HTTP_MAIN_CONF | NGX_HTTP_SRV_CONF | NGX_HTTP_LOC_CONF | NGX_HTTP_LIF_CONF | NGX_CONF_TAKE1,
-      ngx_conf_set_num_slot,
-      NGX_HTTP_LOC_CONF_OFFSET,
-      offsetof(passenger_loc_conf_t, thread_count),
-      NULL },
-
-    { ngx_string("passenger_rolling_restarts"),
-      NGX_HTTP_MAIN_CONF | NGX_HTTP_SRV_CONF | NGX_HTTP_LOC_CONF | NGX_HTTP_LIF_CONF | NGX_CONF_FLAG,
-      ngx_conf_set_flag_slot,
-      NGX_HTTP_LOC_CONF_OFFSET,
-      offsetof(passenger_loc_conf_t, rolling_restarts),
-      NULL },
-
-    { ngx_string("passenger_resist_deployment_errors"),
-      NGX_HTTP_MAIN_CONF | NGX_HTTP_SRV_CONF | NGX_HTTP_LOC_CONF | NGX_HTTP_LIF_CONF | NGX_CONF_FLAG,
-      ngx_conf_set_flag_slot,
-      NGX_HTTP_LOC_CONF_OFFSET,
-      offsetof(passenger_loc_conf_t, resist_deployment_errors),
-      NULL },
-
-    /************************************/
-
-    /******** Backward compatibility options ********/
-
-    { ngx_string("rails_spawn_method"),
-      NGX_HTTP_MAIN_CONF | NGX_HTTP_SRV_CONF | NGX_HTTP_LOC_CONF | NGX_HTTP_LIF_CONF | NGX_CONF_TAKE1,
-      ngx_conf_set_str_slot,
-      NGX_HTTP_LOC_CONF_OFFSET,
-      offsetof(passenger_loc_conf_t, spawn_method),
-      NULL },
-
-    { ngx_string("rails_framework_spawner_idle_time"),
-      NGX_HTTP_MAIN_CONF | NGX_HTTP_SRV_CONF | NGX_HTTP_LOC_CONF | NGX_HTTP_LIF_CONF | NGX_CONF_TAKE1,
-      rails_framework_spawner_idle_time,
-      NGX_HTTP_LOC_CONF_OFFSET,
-      0,
-      NULL },
-
-    { ngx_string("rails_app_spawner_idle_time"),
-      NGX_HTTP_MAIN_CONF | NGX_HTTP_SRV_CONF | NGX_HTTP_LOC_CONF | NGX_HTTP_LIF_CONF | NGX_CONF_TAKE1,
-      ngx_conf_set_num_slot,
-      NGX_HTTP_LOC_CONF_OFFSET,
-      offsetof(passenger_loc_conf_t, max_preloader_idle_time),
-      NULL },
-
-    { ngx_string("passenger_use_global_queue"),
-      NGX_HTTP_MAIN_CONF | NGX_HTTP_SRV_CONF | NGX_HTTP_LOC_CONF | NGX_HTTP_LIF_CONF | NGX_CONF_FLAG,
-      passenger_use_global_queue,
-      NGX_HTTP_LOC_CONF_OFFSET,
-      0,
-      NULL },
-
-      ngx_null_command
+    ngx_null_command
 };
 

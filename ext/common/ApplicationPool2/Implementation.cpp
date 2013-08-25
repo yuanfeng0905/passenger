@@ -438,7 +438,7 @@ Group::onSessionClose(const ProcessPtr &process, Session *session) {
 			removeProcessFromList(process, disablingProcesses);
 			addProcessToList(process, disabledProcesses);
 			removeFromDisableWaitlist(process, DR_SUCCESS, actions);
-			asyncOOBWRequestIfNeeded(process);
+			maybeInitiateOobw(process);
 		}
 		
 		pool->fullVerifyInvariants();
@@ -447,7 +447,7 @@ Group::onSessionClose(const ProcessPtr &process, Session *session) {
 
 	} else {
 		// This could change process->enabled.
-		asyncOOBWRequestIfNeeded(process);
+		maybeInitiateOobw(process);
 
 		if (!getWaitlist.empty() && process->enabled == Process::ENABLED) {
 			/* If there are clients on this group waiting for a process to
@@ -470,14 +470,30 @@ Group::requestOOBW(const ProcessPtr &process) {
 	}
 }
 
+bool
+Group::oobwAllowed() const {
+	return true;
+}
+
+bool
+Group::shouldInitiateOobw(const ProcessPtr &process) const {
+	return process->oobwStatus == Process::OOBW_REQUESTED
+		&& process->enabled != Process::DETACHED
+		&& process->isAlive()
+		&& oobwAllowed();
+}
+
+void
+Group::maybeInitiateOobw(const ProcessPtr &process) {
+	if (shouldInitiateOobw(process)) {
+		initiateOobw(process);
+	}
+}
+
 // The 'self' parameter is for keeping the current Group object alive
 void
-Group::lockAndAsyncOOBWRequestIfNeeded(const ProcessPtr &process, DisableResult result, GroupPtr self) {
+Group::lockAndMaybeInitiateOobw(const ProcessPtr &process, DisableResult result, GroupPtr self) {
 	TRACE_POINT();
-	
-	if (result != DR_SUCCESS && result != DR_CANCELED) {
-		return;
-	}
 	
 	// Standard resource management boilerplate stuff...
 	PoolPtr pool = getPool();
@@ -485,32 +501,60 @@ Group::lockAndAsyncOOBWRequestIfNeeded(const ProcessPtr &process, DisableResult 
 	if (OXT_UNLIKELY(!process->isAlive() || !isAlive())) {
 		return;
 	}
-	
-	P_DEBUG("Process " << process->inspect() << " disabled; proceeding with OOBW");
-	asyncOOBWRequestIfNeeded(process);
+
+	assert(process->oobwStatus == Process::OOBW_IN_PROGRESS);
+
+	if (result == DR_SUCCESS) {
+		P_DEBUG("Process " << process->inspect() << " disabled; proceeding " <<
+			"with out-of-band work");
+		process->oobwStatus = Process::OOBW_REQUESTED;
+		if (shouldInitiateOobw(process)) {
+			initiateOobw(process);
+		} else {
+			// We do not re-enable the process because it's likely that the
+			// administrator has explicitly changed the state.
+			P_DEBUG("Out-of-band work for process " << process->inspect() << " aborted "
+				"because the process no longer requests out-of-band work");
+			process->oobwStatus = Process::OOBW_NOT_ACTIVE;
+		}
+	} else {
+		P_DEBUG("Out-of-band work for process " << process->inspect() << " aborted "
+			"because the process could not be disabled");
+		process->oobwStatus = Process::OOBW_NOT_ACTIVE;
+	}
 }
 
 void
-Group::asyncOOBWRequestIfNeeded(const ProcessPtr &process) {
-	if (process->oobwStatus != Process::OOBW_REQUESTED
-		|| process->enabled == Process::DETACHED
-		|| !process->isAlive())
-	{
-		return;
-	}
-	if (process->enabled == Process::ENABLED) {
+Group::initiateOobw(const ProcessPtr &process) {
+	assert(process->oobwStatus == Process::OOBW_REQUESTED);
+
+	process->oobwStatus = Process::OOBW_IN_PROGRESS;
+
+	if (process->enabled == Process::ENABLED
+	 || process->enabled == Process::DISABLING) {
 		// We want the process to be disabled. However, disabling a process is potentially
 		// asynchronous, so we pass a callback which will re-aquire the lock and call this
 		// method again.
 		P_DEBUG("Disabling process " << process->inspect() << " in preparation for OOBW");
 		DisableResult result = disable(process,
-			boost::bind(&Group::lockAndAsyncOOBWRequestIfNeeded, this,
+			boost::bind(&Group::lockAndMaybeInitiateOobw, this,
 				_1, _2, shared_from_this()));
-		if (result == DR_DEFERRED) {
+		switch (result) {
+		case DR_SUCCESS:
+			// Continue code flow.
+			break;
+		case DR_DEFERRED:
+			// lockAndMaybeInitateOobw() will eventually be called.
 			return;
+		case DR_ERROR:
+		case DR_NOOP:
+			P_DEBUG("Out-of-band work for process " << process->inspect() << " aborted "
+				"because the process could not be disabled");
+			process->oobwStatus = Process::OOBW_NOT_ACTIVE;
+			return;
+		default:
+			P_BUG("Unexpected disable() result " << result);
 		}
-	} else if (process->enabled == Process::DISABLING) {
-		return;
 	}
 	
 	assert(process->enabled == Process::DISABLED);
@@ -563,7 +607,7 @@ Group::spawnThreadOOBWRequest(GroupPtr self, ProcessPtr process) {
 			return;
 		}
 		
-		assert(process->oobwStatus = Process::OOBW_IN_PROGRESS);
+		assert(process->oobwStatus == Process::OOBW_IN_PROGRESS);
 		assert(process->sessions == 0);
 		socket = process->sessionSockets.top();
 		assert(socket != NULL);
@@ -776,8 +820,8 @@ Group::spawnThreadRealMain(const SpawnerPtr &spawner, const Options &options, un
 		m_spawning = false;
 		
 		done = done
-			|| ((unsigned long) enabledCount >= options.minProcesses && getWaitlist.empty())
-			|| (options.maxProcesses != 0 && (unsigned int) enabledCount >= options.maxProcesses)
+			|| ((unsigned long) getProcessCount() >= options.minProcesses && getWaitlist.empty())
+			|| (options.maxProcesses != 0 && (unsigned int) getProcessCount() >= options.maxProcesses)
 			|| pool->atFullCapacity(false);
 		m_spawning = !done;
 		if (done) {
@@ -801,20 +845,23 @@ Group::spawnThreadRealMain(const SpawnerPtr &spawner, const Options &options, un
 
 bool
 Group::shouldSpawn() const {
-	return !m_spawning
+	return allowSpawn()
 		&& (
-			(unsigned long) enabledCount < options.minProcesses
+			(unsigned long) getProcessCount() < options.minProcesses
 			|| (enabledCount > 0 && pqueue.top()->atFullCapacity())
-		)
-		&& isAlive()
-		&& !poolAtFullCapacity()
-		&& (options.maxProcesses == 0 || enabledCount <= (int) options.maxProcesses)
-		&& !hasSpawnError;
+		);
 }
 
 bool
 Group::shouldSpawnForGetAction() const {
 	return enabledCount == 0 || shouldSpawn();
+}
+
+bool
+Group::allowSpawn() const {
+	return isAlive() && !poolAtFullCapacity()
+		&& (options.maxProcesses == 0 || (long) getProcessCount() <= options.maxProcesses)
+		&& !hasSpawnError;
 }
 
 void
