@@ -288,6 +288,12 @@ public:
 	long maxPreloaderIdleTime;
 
 	/**
+	 * The maximum number of processes inside a group that may be performing
+	 * out-of-band work at the same time.
+	 */
+	unsigned int maxOutOfBandWorkInstances;
+
+	/**
 	 * The maximum amount of memory (in MB) the spawned application may use.
 	 * A value of 0 (the default) means unlimited.
 	 */
@@ -396,6 +402,7 @@ public:
 		
 		minProcesses            = 1;
 		maxPreloaderIdleTime    = -1;
+		maxOutOfBandWorkInstances = 1;
 		
 		statThrottleRate        = 0;
 		maxRequests             = 0;
@@ -551,6 +558,7 @@ public:
 		if (fields & PER_GROUP_POOL_OPTIONS) {
 			appendKeyValue3(vec, "min_processes",       minProcesses);
 			appendKeyValue2(vec, "max_preloader_idle_time", maxPreloaderIdleTime);
+			appendKeyValue3(vec, "max_out_of_band_work_instances", maxOutOfBandWorkInstances);
 		}
 		
 		/*********************************/

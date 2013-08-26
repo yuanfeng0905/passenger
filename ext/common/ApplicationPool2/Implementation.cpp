@@ -472,7 +472,18 @@ Group::requestOOBW(const ProcessPtr &process) {
 
 bool
 Group::oobwAllowed() const {
-	return true;
+	unsigned int oobwInstances = 0;
+	foreach (const ProcessPtr &process, disablingProcesses) {
+		if (process->oobwStatus == Process::OOBW_IN_PROGRESS) {
+			oobwInstances += 1;
+		}
+	}
+	foreach (const ProcessPtr &process, disabledProcesses) {
+		if (process->oobwStatus == Process::OOBW_IN_PROGRESS) {
+			oobwInstances += 1;
+		}
+	}
+	return oobwInstances < options.maxOutOfBandWorkInstances;
 }
 
 bool
@@ -505,16 +516,24 @@ Group::lockAndMaybeInitiateOobw(const ProcessPtr &process, DisableResult result,
 	assert(process->oobwStatus == Process::OOBW_IN_PROGRESS);
 
 	if (result == DR_SUCCESS) {
-		P_DEBUG("Process " << process->inspect() << " disabled; proceeding " <<
-			"with out-of-band work");
-		process->oobwStatus = Process::OOBW_REQUESTED;
-		if (shouldInitiateOobw(process)) {
-			initiateOobw(process);
+		if (process->enabled == Process::DISABLED) {
+			P_DEBUG("Process " << process->inspect() << " disabled; proceeding " <<
+				"with out-of-band work");
+			process->oobwStatus = Process::OOBW_REQUESTED;
+			if (shouldInitiateOobw(process)) {
+				initiateOobw(process);
+			} else {
+				// We do not re-enable the process because it's likely that the
+				// administrator has explicitly changed the state.
+				P_DEBUG("Out-of-band work for process " << process->inspect() << " aborted "
+					"because the process no longer requests out-of-band work");
+				process->oobwStatus = Process::OOBW_NOT_ACTIVE;
+			}
 		} else {
 			// We do not re-enable the process because it's likely that the
 			// administrator has explicitly changed the state.
 			P_DEBUG("Out-of-band work for process " << process->inspect() << " aborted "
-				"because the process no longer requests out-of-band work");
+				"because the process was reenabled after disabling");
 			process->oobwStatus = Process::OOBW_NOT_ACTIVE;
 		}
 	} else {
@@ -531,7 +550,8 @@ Group::initiateOobw(const ProcessPtr &process) {
 	process->oobwStatus = Process::OOBW_IN_PROGRESS;
 
 	if (process->enabled == Process::ENABLED
-	 || process->enabled == Process::DISABLING) {
+	 || process->enabled == Process::DISABLING)
+	{
 		// We want the process to be disabled. However, disabling a process is potentially
 		// asynchronous, so we pass a callback which will re-aquire the lock and call this
 		// method again.
@@ -563,7 +583,7 @@ Group::initiateOobw(const ProcessPtr &process) {
 	P_DEBUG("Initiating OOBW request for process " << process->inspect());
 	interruptableThreads.create_thread(
 		boost::bind(&Group::spawnThreadOOBWRequest, this, shared_from_this(), process),
-		"OOB request thread for process " + process->inspect(),
+		"OOBW request thread for process " + process->inspect(),
 		POOL_HELPER_THREAD_STACK_SIZE);
 }
 
@@ -670,8 +690,10 @@ Group::spawnThreadOOBWRequest(GroupPtr self, ProcessPtr process) {
 			enable(process, actions);
 			assignSessionsToGetWaiters(actions);
 		}
-		
+
 		pool->fullVerifyInvariants();
+
+		initiateNextOobwRequest();
 	}
 	UPDATE_TRACE_POINT();
 	runAllActions(actions);
@@ -681,6 +703,20 @@ Group::spawnThreadOOBWRequest(GroupPtr self, ProcessPtr process) {
 	P_DEBUG("Finished OOBW request for process " << process->inspect());
 	if (debug != NULL && debug->oobw) {
 		debug->debugger->send("OOBW request finished");
+	}
+}
+
+void
+Group::initiateNextOobwRequest() {
+	ProcessList::const_iterator it, end = enabledProcesses.end();
+	for (it = enabledProcesses.begin(); it != end; it++) {
+		const ProcessPtr &process = *it;
+		if (shouldInitiateOobw(process)) {
+			// We keep an extra reference to processes to prevent premature destruction.
+			ProcessPtr p = process;
+			initiateOobw(p);
+			return;
+		}
 	}
 }
 
