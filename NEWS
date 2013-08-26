@@ -4,8 +4,10 @@ Release 4.0.15
  * Out-of-band work has been much improved. The number of processes which
    may perform out-of-band work concurrently has been limited to 1.
    Furthermore, processes which are performing out-of-band work are now
-   included in the max pool size constraint calculation. Partially fixes
-   issue #892.
+   included in the max pool size constraint calculation. However, this
+   means that in order to use out-of-band work, you need to have at least
+   2 application processes running. Out-of-band work will never be triggered
+   if you just have 1 process. Partially fixes issue #892.
  * Fix a crash when multiple passenger_pass_header directives are set.
    Fixes issue #934.
  * Permissions on the server instance directory are now explicitly set
@@ -14,6 +16,21 @@ Release 4.0.15
  * Fix permission problems when running `passenger start` with `--user`.
  * `passenger-config --detect-apache2` now correctly detects the eror log
    filename on Amazon Linux. Fixes issue #933.
+ * An environment variable `PASSENGER_THREAD_LOCAL_STORAGE` has been added
+   to the build system for forcefully disabling the use of thread-local
+   storage within the Phusion Passenger codebase. This flag useful on systems
+   that have broken support for thread-local storage, despite passing our build
+   system's check for proper thread-local storage support. At the time of
+   writing, one user has reported that Ubuntu 12.04 32-bit has broken
+   thread-local storage report although neither the reporter nor us were able
+   to reproduce the problem on any other systems running Ubuntu 12.04 32-bit.
+   Note that this flag has no effect on non-Phusion Passenger code. Fixes
+   issue #937.
+ * [Standalone] Fix a problem with the `passenger stop` command on Ruby 1.8.7.
+   The 'thread' library was not properly required, causing a crash.
+ * [Standalone] Memory usage optimization: when `passenger start` is run with
+   `--daemonize`, the frontend exits after starting the Nginx core. This saves
+   ~20 MB of memory per `passenger start` instance.
 
 
 Release 4.0.14
