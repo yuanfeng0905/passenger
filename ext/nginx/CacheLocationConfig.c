@@ -78,6 +78,17 @@ u_char int_buf[32], *end, *buf, *pos;
 	
 
 	
+		if (conf->start_timeout != NGX_CONF_UNSET) {
+			end = ngx_snprintf(int_buf,
+				sizeof(int_buf) - 1,
+				"%d",
+				conf->start_timeout);
+			len += 24;
+			len += end - int_buf + 1;
+		}
+	
+
+	
 		if (conf->user.data != NULL) {
 			len += 15;
 			len += conf->user.len + 1;
@@ -313,6 +324,23 @@ buf = pos = ngx_pnalloc(cf->pool, len);
 				sizeof(int_buf) - 1,
 				"%d",
 				conf->max_requests);
+			pos = ngx_copy(pos,
+				int_buf,
+				end - int_buf);
+			*pos = '\0';
+			pos++;
+		}
+	
+
+	
+		if (conf->start_timeout != NGX_CONF_UNSET) {
+			pos = ngx_copy(pos,
+				"PASSENGER_START_TIMEOUT",
+				24);
+			end = ngx_snprintf(int_buf,
+				sizeof(int_buf) - 1,
+				"%d",
+				conf->start_timeout);
 			pos = ngx_copy(pos,
 				int_buf,
 				end - int_buf);

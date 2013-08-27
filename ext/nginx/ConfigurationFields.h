@@ -37,6 +37,8 @@
 
 	ngx_int_t max_requests;
 
+	ngx_int_t start_timeout;
+
 	ngx_array_t *base_uris;
 
 	ngx_int_t memory_limit;

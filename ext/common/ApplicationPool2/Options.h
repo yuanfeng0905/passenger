@@ -293,6 +293,8 @@ public:
 	 */
 	unsigned int maxOutOfBandWorkInstances;
 
+	/*-----------------*/
+
 	/**
 	 * The maximum amount of memory (in MB) the spawned application may use.
 	 * A value of 0 (the default) means unlimited.
