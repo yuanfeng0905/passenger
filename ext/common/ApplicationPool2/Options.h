@@ -296,6 +296,15 @@ public:
 	/*-----------------*/
 
 	/**
+	 * The maximum number of application instances that may be spawned
+	 * for this app root. This option only has effect if it's lower than
+	 * the application pool's maxPerApp option and lower than its pool size.
+	 *
+	 * A value of 0 (the default) means unspecified, and has no effect.
+	 */
+	unsigned int maxProcesses;
+
+	/**
 	 * The maximum amount of memory (in MB) the spawned application may use.
 	 * A value of 0 (the default) means unlimited.
 	 */
@@ -352,15 +361,6 @@ public:
 
 	/*-----------------*/
 
-	/**
-	 * The maximum number of application instances that may be spawned
-	 * for this app root. This option only has effect if it's lower than
-	 * the application pool's maxPerApp option and lower than its pool size.
-	 *
-	 * A value of 0 (the default) means unspecified, and has no effect.
-	 */
-	unsigned int maxProcesses;
-	
 	/**
 	 * Whether rolling restarting should be used. Defaults to false.
 	 */
@@ -565,6 +565,9 @@ public:
 		
 		/*********************************/
 
+		if (fields & PER_GROUP_POOL_OPTIONS) {
+			appendKeyValue3(vec, "min_processes",       maxProcesses);
+		}
 		appendKeyValue (vec, "concurrency_model",  concurrencyModel);
 		appendKeyValue3(vec, "thread_count",       threadCount);
 	}
