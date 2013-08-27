@@ -28,7 +28,6 @@ class ThreadHandler
 	PING           = 'PING'.freeze
 	OOBW           = 'OOBW'.freeze
 	PASSENGER_CONNECT_PASSWORD  = 'PASSENGER_CONNECT_PASSWORD'.freeze
-	MAX_REQUEST_TIME            = 'PASSENGER_MAX_REQUEST_TIME'.freeze
 	CONTENT_LENGTH = 'CONTENT_LENGTH'.freeze
 	TRANSFER_ENCODING = 'TRANSFER_ENCODING'.freeze
 
@@ -292,12 +291,6 @@ private
 		end
 		
 		#################
-
-		max_request_time = headers[MAX_REQUEST_TIME].to_i
-		if max_request_time > 0
-			@timer = DeadlineTimer.new
-			@timer.start(max_request_time)
-		end
 	end
 	
 	def finalize_request(connection, headers, has_error)
@@ -351,12 +344,6 @@ private
 		end
 		
 		#################
-
-		if @timer
-			@timer.stop
-			@timer.cleanup
-			@timer = nil
-		end
 	end
 	
 	def log_analytics_exception(env, exception)

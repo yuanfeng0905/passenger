@@ -164,6 +164,8 @@ private:
 		responseHeaderSeen = false;
 		chunkedResponse = false;
 		appRoot.clear();
+
+		maxRequestTime = 0;
 	}
 
 	void freeScopeLogs() {
@@ -263,6 +265,8 @@ public:
 	bool chunkedResponse;
 	HttpHeaderBufferer responseHeaderBufferer;
 	Dechunker responseDechunker;
+
+	unsigned int maxRequestTime;
 
 
 	Client() {
@@ -1471,6 +1475,14 @@ private:
 		case Client::STILL_READING_CONNECT_PASSWORD:
 			disconnectWithError(client, "no connect password received within timeout");
 			break;
+		case Client::SENDING_HEADER_TO_APP:
+		case Client::FORWARDING_BODY_TO_APP:
+			RH_ERROR(client, "maximum request time of " << client->maxRequestTime <<
+				" seconds reached, killing process " << client->session->getPid());
+			client->session->kill(SIGKILL);
+			pool->detachProcess(client->session->getGupid());
+			disconnectWithError(client, "maximum request time reached");
+			break;
 		default:
 			disconnectWithError(client, "timeout");
 			break;
@@ -1725,6 +1737,13 @@ private:
 		}
 	}
 
+	void initializeMaxRequestTime(const ClientPtr &client) {
+		ScgiRequestParser::const_iterator it = client->scgiParser.getHeaderIterator("PASSENGER_MAX_REQUEST_TIME");
+		if (it != client->scgiParser.end()) {
+			client->maxRequestTime = stringToUint(it->second);
+		}
+	}
+
 	size_t state_readingHeader_onClientData(const ClientPtr &client, const char *data, size_t size) {
 		ScgiRequestParser &parser = client->scgiParser;
 		size_t consumed = parser.feed(data, size);
@@ -1756,6 +1775,7 @@ private:
 				return consumed;
 			}
 			initializeUnionStation(client);
+			initializeMaxRequestTime(client);
 			if (!client->connected()) {
 				return consumed;
 			}
@@ -1977,6 +1997,11 @@ private:
 		client->appInput->start();
 		client->appOutputWatcher.set(libev->getLoop());
 		client->appOutputWatcher.set(client->session->fd(), ev::WRITE);
+		if (client->maxRequestTime > 0) {
+			client->timeoutTimer.set(libev->getLoop());
+			client->timeoutTimer.set((ev_tstamp) client->maxRequestTime, 0.0);
+			client->timeoutTimer.start();
+		}
 		sendHeaderToApp(client);
 	}
 

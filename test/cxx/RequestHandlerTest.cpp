@@ -145,7 +145,7 @@ namespace tut {
 		}
 	};
 
-	DEFINE_TEST_GROUP(RequestHandlerTest);
+	DEFINE_TEST_GROUP_WITH_LIMIT(RequestHandlerTest, 100);
 
 	TEST_METHOD(1) {
 		// Test one normal request.
@@ -853,4 +853,27 @@ namespace tut {
 
 	// Test small response buffering.
 	// Test large response buffering.
+	
+	/***************************/
+
+	TEST_METHOD(60) {
+		set_test_name("It enforces a request time limit.");
+
+		setLogLevel(LVL_CRIT);
+		init();
+		connect();
+		sendHeaders(defaultHeaders,
+			"PASSENGER_APP_ROOT", wsgiAppPath.c_str(),
+			"PATH_INFO", "/sleep",
+			"PASSENGER_MAX_REQUEST_TIME", "1",
+			"HTTP_X_SLEEP", "5",
+			NULL);
+
+		Timer timer;
+		string result = readAll(connection);
+		ensure(timer.elapsed() <= 1100);
+
+		vector<ProcessPtr> processes = pool->getProcesses();
+		ensure_equals(processes.size(), 0u);
+	}
 }
