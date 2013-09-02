@@ -15,7 +15,7 @@ The steps for upgrading or downgrading Phusion Passenger is almost the same as t
 [[rubygems_generic_install]]
 === Generic installation, upgrade and downgrade method: via RubyGems
 
-RubyGems is only used as a method to obtain the Phusion Passenger files, so in case you have multiple Ruby versions it does not matter which Ruby's RubyGems you use for installation. Once installed, Phusion Passenger can work with all other Ruby versions on your system.
+RubyGems is only used as a method to obtain the Phusion Passenger files, so in case you have multiple Ruby versions it does not matter which Ruby's RubyGems you use for installation. Once installed, Phusion Passenger can work with all other Ruby versions on your system. This is explained in <<relationship_with_ruby,Phusion Passenger and its relationship with Ruby>>.
 
 [[is_ruby_home_or_system_wide_installed]]
 [float]
@@ -78,26 +78,8 @@ Next, download the *gem file* for the version you want (`passenger-enterprise-se
 gem install passenger-enterprise-server-x.x.x.gem
 -------------------------------------------------------
 
-[[add_rubygems_bin_dir_to_path]]
 [float]
-==== Step 3: add the RubyGems bin directory to your $PATH
-
-If all of the following are applicable to you:
-
-- You are on Debian or Ubuntu,
-- and you installed RubyGems through APT,
-- and your Ruby interpreter is installed system-wide,
-
-...then you must ensure that the RubyGems bin directory is in your $PATH, which is the environment variable that dictates where your command prompt will look for commands. If any of the above conditions do not apply to you, then you can skip this step.
-
-Open '/etc/bash.bashrc' or '/etc/bashrc' (whichever is available) and add the following to the end of the file. Also run this command in your terminal.
-
------------------------------------------------------------------
-export PATH=$PATH:/var/lib/gems/1.8/bin:/var/lib/gems/1.9/bin
------------------------------------------------------------------
-
-[float]
-==== Step 4: loosen permissions
+==== Step 3: loosen permissions
 
 If in step 1 you determined that your Ruby interpreter is installed in your home directory, then you need to make sure that the Phusion Passenger gem directory is accessible by your web server. To do that, you must ensure that the Phusion Passenger gem directory, as well as all parent directories, have the world-executable permission.
 
@@ -120,7 +102,7 @@ chmod o+x /home/phusion
 
 [[run_passenger_installer]]
 [float]
-==== Step 5: run the Phusion Passenger installer
+==== Step 4: run the Phusion Passenger installer
 
 ifdef::apache[]
 The Phusion Passenger gem only contains source files. In this step we will use the installer to compile the Phusion Passenger binaries, which include the various Phusion Passenger agent executables and the Phusion Passenger Apache module.
@@ -168,7 +150,7 @@ At some point it will ask you which prefix to install Nginx to. If you're upgrad
 endif::[]
 
 [float]
-==== Step 6: Restarting the Flying Passenger daemon
+==== Step 5: Restarting the Flying Passenger daemon
 
 If you are using <<flying_passenger,Flying Passenger>> then you must restart the Flying Passenger daemon by sending it the SIGTERM signal:
 
@@ -185,7 +167,7 @@ kill PID_OF_FLYING_PASSENGER
 
 [[verify_passenger_running]]
 [float]
-==== Step 7: Verifying that Phusion Passenger is running
+==== Step 6: Verifying that Phusion Passenger is running
 
 Restart your web server and run:
 
@@ -406,7 +388,33 @@ sudo /etc/init.d/nginx restart
 
 .Standalone
 
-Unfortunately, no packages are provided for Phusion Passenger Standalone right now. We're working on this.
+First register the Brightbox Apache PPA. Run this on Ubuntu:
+
+-----------------------------
+sudo apt-add-repository ppa:brightbox/passenger-experimental
+sudo apt-get update
+-----------------------------
+
+On Debian, the `apt-add-repository` command isn't available so you have to install the repository and the key by hand:
+
+-----------------------------
+echo deb http://ppa.launchpad.net/brightbox/passenger-experimental/ubuntu lucid main | sudo tee /etc/apt/sources.list.d/brightbox-passenger.list
+sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-keys C3173AA6
+sudo apt-get update
+-----------------------------
+
+Once the PPA is added, you can proceed with installing Phusion Passenger for Apache by running:
+
+---------------------------------------------
+sudo apt-get install ruby-passenger
+---------------------------------------------
+
+You can then proceed with starting Phusion Passenger Standalone:
+
+---------------------------------------------
+cd /path-to-your-app
+passenger start
+---------------------------------------------
 
 
 === Installing or upgrading on Red Hat, Fedora, CentOS or ScientificLinux
@@ -483,7 +491,38 @@ yum install passenger-standalone
 [float]
 ==== Building your own packages
 
-There are instructions for building your own packages and Yum repositories in the link:https://github.com/FooBarWidget/passenger/tree/master/rpm#readme[rpm directory ReadMe] within the link:https://github.com/FooBarWidget/passenger[GitHub repository].
+There are instructions for building your own packages and Yum repositories in the link:https://github.com/phusion/passenger/tree/master/rpm#readme[rpm directory ReadMe] within the link:https://github.com/phusion/passenger[GitHub repository].
+
+
+=== Installing or upgrading on Mac OS X with Homebrew
+
+.Open source
+
+Every time we release a new Phusion Passenger version, we make it available through Homebrew. Please note that the Homebrew maintainers have to merge our pull requests manually, so it may take a day or two before a new version shows up in the official Homebrew repository.
+
+ 1. Update the Homebrew recipes:
++
+---------------------------
+brew update
+---------------------------
+ 2. Run the following command and follow the instructions. This will give you access to link:Users%20guide%20Apache.html[Phusion Passenger for Apache] and link:Users%20guide%20Standalone.html[Phusion Passenger Standalone].
++
+---------------------------
+brew install passenger
+-OR-
+brew upgrade passenger
+---------------------------
+ 3. (Optional) If you want to use link:Users%20guide%20Nginx.html[Phusion Passenger for Nginx], run:
++
+---------------------------
+brew install nginx --with-passenger
+-OR-
+brew upgrade nginx --wtih-passenger
+---------------------------
+
+.Enterprise
+
+link:https://www.phusionpassenger.com/enterprise[Phusion Passenger Enterprise] is currently not available through Homebrew. Please try one of the other installation methods insteads.
 
 
 === Upgrading from open source to Enterprise
@@ -856,6 +895,7 @@ done this, you need to remove the Phusion Passenger files.
   in which you placed the extracted Phusion Passenger files. This directory is the
   same as the one pointed to the by `PassengerRoot`/`passenger_root` configuration directive.
 - If you installed Phusion Passenger through APT or YUM, then use them to uninstall Phusion Passenger.
+- If you installed Phusion Passenger through Homebrew, then run `brew uninstall passenger`.
 
 ifdef::nginx[]
 Nginx does not have to be recompiled. Altough it contains Phusion Passenger code, it will not do anything when all Phusion Passenger configuration directives are removed.

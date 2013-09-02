@@ -68,6 +68,8 @@
 
 	#define FEEDBACK_FD 3
 
+	#define STANDALONE_NGINX_CONFIGURE_OPTIONS "--with-cc-opt='-Wno-error' --without-http_fastcgi_module --without-http_scgi_module --without-http_uwsgi_module --with-http_gzip_static_module --with-http_stub_status_module"
+
 	#define PASSENGER_IS_ENTERPRISE 1
 
 
