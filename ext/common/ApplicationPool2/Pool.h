@@ -84,6 +84,7 @@ public:
 		bool spawning;
 		bool superGroup;
 		bool oobw;
+		bool testOverflowRequestQueue;
 		bool rollingRestarting;
 
 		// The following fields may only be accessed by Pool.
@@ -98,6 +99,7 @@ public:
 			spawning   = true;
 			superGroup = false;
 			oobw       = false;
+			testOverflowRequestQueue = false;
 			rollingRestarting = false;
 			spawnLoopIteration = 0;
 			spawnErrors = 0;

@@ -138,6 +138,18 @@
 	
 
 	
+		ngx_conf_merge_value(conf->max_request_queue_size,
+			prev->max_request_queue_size,
+			NGX_CONF_UNSET);
+	
+
+	
+		ngx_conf_merge_value(conf->request_queue_overflow_status_code,
+			prev->request_queue_overflow_status_code,
+			NGX_CONF_UNSET);
+	
+
+	
 		ngx_conf_merge_str_value(conf->fly_with,
 			prev->fly_with,
 			NULL);

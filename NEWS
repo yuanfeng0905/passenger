@@ -8,6 +8,10 @@ Release 4.0.15
    means that in order to use out-of-band work, you need to have at least
    2 application processes running. Out-of-band work will never be triggered
    if you just have 1 process. Partially fixes issue #892.
+ * Phusion Passenger now displays an error message to clients if too many
+   requests are queued up. By default, "too many" is 100. On Nginx you may
+   customize this with `passenger_max_request_queue_size` and
+   `passenger_request_queue_overflow_status_code`.
  * A new configuration option, `PassengerStartTimeout` (Apache) and
    `passenger_start_timeout` (Nginx), has been added. This option allows you
    to specify a timeout for application startup. The startup timeout has exited
@@ -16,6 +20,9 @@ Release 4.0.15
  * [Enterprise] The `PassengerMaxRequestTime`/`passenger_max_request_time`
    feature is now available for Python and Node.js as well, and is no longer
    limited to just Ruby. Fixes issue #938.
+ * [Nginx] Introduced a configuration option `passenger_intercept_errors`,
+   which decides if Nginx will intercept responses with HTTP status codes of
+   400 and higher. Its effect is similar to `proxy_intercept_errors`.
  * [Standalone] Memory usage optimization: when `passenger start` is run with
    `--daemonize`, the frontend exits after starting the Nginx core. This saves
    ~20 MB of memory per `passenger start` instance.

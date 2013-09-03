@@ -293,6 +293,12 @@ public:
 	 */
 	unsigned int maxOutOfBandWorkInstances;
 
+	/**
+	 * The maximum number of requests that may live in the Group.getWaitlist queue.
+	 * A value of 0 means unlimited.
+	 */
+	unsigned int maxRequestQueueSize;
+
 	/*-----------------*/
 
 	/**
@@ -405,6 +411,7 @@ public:
 		minProcesses            = 1;
 		maxPreloaderIdleTime    = -1;
 		maxOutOfBandWorkInstances = 1;
+		maxRequestQueueSize     = 100;
 		
 		statThrottleRate        = 0;
 		maxRequests             = 0;

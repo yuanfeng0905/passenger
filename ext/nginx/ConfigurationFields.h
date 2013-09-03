@@ -47,25 +47,29 @@
 
 	ngx_int_t max_instances;
 
-	ngx_array_t *vars_source;
+	ngx_int_t request_queue_overflow_status_code;
 
-	ngx_int_t max_preloader_idle_time;
+	ngx_int_t max_request_queue_size;
 
 	ngx_int_t union_station_support;
 
-	ngx_int_t show_version_in_header;
-
-	ngx_int_t debugger;
-
 	ngx_array_t *union_station_filters;
 
-	ngx_str_t app_rights;
+	ngx_array_t *vars_source;
 
-	ngx_str_t app_root;
+	ngx_int_t show_version_in_header;
+
+	ngx_int_t max_preloader_idle_time;
+
+	ngx_int_t debugger;
 
 	ngx_str_t spawn_method;
 
 	ngx_str_t union_station_key;
+
+	ngx_str_t app_rights;
+
+	ngx_str_t app_root;
 
 	ngx_str_t fly_with;
 

@@ -122,6 +122,14 @@
 	
 
 	
+		conf->max_request_queue_size = NGX_CONF_UNSET;
+	
+
+	
+		conf->request_queue_overflow_status_code = NGX_CONF_UNSET;
+	
+
+	
 		conf->fly_with.data = NULL;
 		conf->fly_with.len  = 0;
 	

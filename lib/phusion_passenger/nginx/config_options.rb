@@ -205,12 +205,25 @@ LOCATION_CONFIGURATION_OPTIONS = [
 		:field    => 'upstream_config.busy_buffers_size_conf'
 	},
 	{
+		:name     => 'passenger_intercept_errors',
+		:type     => :flag,
+		:field    => 'upstream_config.intercept_errors'
+	},
+	{
 		:name  => 'passenger_spawn_method',
 		:type  => :string
 	},
 	{
 		:name  => 'union_station_key',
 		:type  => :string
+	},
+	{
+		:name  => 'passenger_max_request_queue_size',
+		:type  => :integer
+	},
+	{
+		:name  => 'passenger_request_queue_overflow_status_code',
+		:type  => :integer
 	},
 
 	###### Enterprise features ######
