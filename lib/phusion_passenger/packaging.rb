@@ -61,7 +61,7 @@ module Packaging
 		'rpm/**/*',
 		'helper-scripts/**/*',
 		'ext/common/**/*.{cpp,c,h,hpp,md,erb}',
-		'ext/apache2/*.{cpp,h,hpp,c}',
+		'ext/apache2/*.{cpp,h,hpp,c,erb}',
 		'ext/nginx/*.{c,cpp,h,erb}',
 		'ext/nginx/config',
 		'ext/boost/**/*',

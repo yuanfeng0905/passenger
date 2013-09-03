@@ -5,7 +5,10 @@
 #
 #  See LICENSE file for license information.
 
-require 'rubygems'
+begin
+	require 'rubygems'
+rescue LoadError
+end
 require 'pathname'
 require 'fileutils'
 require 'phusion_passenger'
@@ -32,7 +35,7 @@ require 'build/cplusplus_support'
 class TemplateRenderer
 	def initialize(filename)
 		require 'erb' if !defined?(ERB)
-		@erb = ERB.new(File.read(filename))
+		@erb = ERB.new(File.read(filename), nil, "-")
 		@erb.filename = filename
 	end
 
@@ -47,7 +50,7 @@ class TemplateRenderer
 		# have write access to the source root (for example, when Passenger
 		# Standalone is compiling its runtime), so we only write to the file
 		# when necessary.
-		if File.writable?(filename) || File.read(filename) != text
+		if !File.exist?(filename) || File.writable?(filename) || File.read(filename) != text
 			File.open(filename, 'w') do |f|
 				f.write(text)
 			end

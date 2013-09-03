@@ -10,7 +10,7 @@
 /*
  * ConfigurationFields.h is automatically generated from ConfigurationFields.h.erb,
  * using definitions from lib/phusion_passenger/nginx/config_options.rb.
- * Edits to MergeLocationConfig.c will be lost.
+ * Edits to ConfigurationFields.h will be lost.
  *
  * To update ConfigurationFields.h:
  *   rake nginx

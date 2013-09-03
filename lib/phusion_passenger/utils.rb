@@ -6,7 +6,10 @@
 #
 #  See LICENSE file for license information.
 
-require 'rubygems'
+begin
+	require 'rubygems'
+rescue LoadError
+end
 require 'phusion_passenger/native_support'
 
 module PhusionPassenger
