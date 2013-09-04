@@ -1109,6 +1109,11 @@ private:
 		RH_DEBUG(client, "Application sent EOF");
 		client->endScopeLog(&client->scopeLogs.requestProxying);
 		client->clientOutputPipe->end();
+		if (client->timeoutTimer.is_active()) {
+			// Stop counting passenger_max_request_time, we don't care how long
+			// it takes to send to the client.
+			client->timeoutTimer.stop();
+		}
 	}
 
 	void onAppInputError(const ClientPtr &client, const char *message, int errorCode) {
