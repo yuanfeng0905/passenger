@@ -24,8 +24,6 @@ module PhusionPassenger
 
 	STANDALONE_INTERFACE_VERSION  = 1
 	
-	ENTERPRISE_SERVER = true
-	
 	
 	###### Directories ######
 	
