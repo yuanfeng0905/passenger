@@ -349,7 +349,7 @@
 	NGX_HTTP_MAIN_CONF | NGX_CONF_TAKE1,
 	ngx_conf_set_str_slot,
 	NGX_HTTP_MAIN_CONF_OFFSET,
-	offsetof(passenger_loc_conf_t, fly_with),
+	offsetof(passenger_main_conf_t, fly_with),
 	NULL
 },
 
