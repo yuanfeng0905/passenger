@@ -53,10 +53,12 @@ end
 desc "Build, sign & upload gem & tarball"
 task 'package:release' => ['package:set_official', 'package:gem', 'package:tarball', 'package:sign'] do
 	require 'phusion_passenger'
+	require 'phusion_passenger/platform_info'
 	require 'yaml'
 	require 'uri'
 	require 'net/http'
 	require 'net/https'
+	require 'digest/sha1'
 	basename   = "#{PhusionPassenger::PACKAGE_NAME}-#{PhusionPassenger::VERSION_STRING}"
 	version    = PhusionPassenger::VERSION_STRING
 	is_enterprise  = basename =~ /enterprise/
@@ -78,6 +80,11 @@ task 'package:release' => ['package:set_official', 'package:gem', 'package:tarba
 			"admin_password: ..."
 	end
 
+	if !PhusionPassenger.PlatformInfo.find_command("hub")
+		STDERR.puts "-------------------"
+		abort "*** ERROR: Please 'brew install hub' first"
+	end
+
 	tag = "#{tag_prefix}-#{version}"
 	sh "git tag -s #{tag} -u 0A212A8C -m 'Release #{version}'"
 
@@ -86,8 +93,9 @@ task 'package:release' => ['package:set_official', 'package:gem', 'package:tarba
 		sh "git push origin #{tag_prefix}-#{version}"
 		
 		if is_open_source
-			sh "s3cmd -P put pkg/passenger-#{version}.{gem,tar.gz,gem.asc,tar.gz.asc} s3://phusion-passenger/releases/"
-			sh "gem push pkg/passenger-#{version}.gem"
+			sh "s3cmd -P put #{PKG_DIR}/passenger-#{version}.{gem,tar.gz,gem.asc,tar.gz.asc} s3://phusion-passenger/releases/"
+			sh "gem push #{PKG_DIR}/passenger-#{version}.gem"
+			
 			puts "Updating version number on website..."
 			if is_beta
 				uri = URI.parse("https://www.phusionpassenger.com/latest_beta_version")
@@ -106,6 +114,30 @@ task 'package:release' => ['package:set_official', 'package:gem', 'package:tarba
 					"Status: #{response.code}\n\n" +
 					response.body
 			end
+
+			puts "Submitting Homebrew pull request..."
+			sha1 = File.open("#{PKG_DIR}/passenger-#{version}.tar.gz", "rb") do |f|
+				Digest::SHA1.hexdigest(f.read)
+			end
+			sh "rm -rf /tmp/homebrew"
+			sh "git clone https://github.com/mxcl/homebrew.git /tmp/homebrew"
+			formula = File.read("/tmp/homebrew/Library/Formula/passenger.rb")
+			formula.gsub!(/passenger-.+?\.tar\.gz/, "passenger-#{version}.tar.gz") ||
+				abort("Unable to substitute Homebrew formula tarball filename")
+			formula.gsub!(/sha1 .*/, "sha1 '#{sha1}'") ||
+				abort("Unable to substitute Homebrew formula SHA-1")
+			File.open("/tmp/homebrew/Library/Formula/passenger.rb", "w") do |f|
+				f.write(formula)
+			end
+			sh "cd /tmp/homebrew && hub pull-request 'Update passenger to version #{version}' -h release-#{version}"
+
+			puts "Initiating building of Debian packages"
+			command = "cd /srv/passenger_apt_automation && " +
+				"chpst -L /tmp/passenger_apt_automation.lock " +
+				"./new_release https://github.com/phusion/passenger.git passenger.repo passenger.apt release-#{version}"
+			sh "ssh psg_apt_automation@juvia-helper.phusion.nl at now <<<'#{command}'"
+
+			puts "Building OS X binaries..."
 			sh "cd ../passenger_autobuilder && " +
 				"git pull && " +
 				"./autobuild-osx https://github.com/phusion/passenger.git passenger psg_autobuilder_chroot@juvia-helper.phusion.nl --tag=#{tag}"
@@ -114,8 +146,16 @@ task 'package:release' => ['package:set_official', 'package:gem', 'package:tarba
 		else
 			dir = "/u/apps/passenger_website/shared"
 			subdir = string_option('NAME', version)
-			sh "scp pkg/#{basename}.{gem,tar.gz,gem.asc,tar.gz.asc} app@shell.phusion.nl:#{dir}/"
+			sh "scp #{PKG_DIR}/#{basename}.{gem,tar.gz,gem.asc,tar.gz.asc} app@shell.phusion.nl:#{dir}/"
 			sh "ssh app@shell.phusion.nl 'mkdir -p \"#{dir}/assets/#{subdir}\" && mv #{dir}/#{basename}.{gem,tar.gz,gem.asc,tar.gz.asc} \"#{dir}/assets/#{subdir}/\"'"
+			
+			puts "Initiating building of Debian packages"
+			git_url = `git config remote.origin.url`.strip
+			command = "cd /srv/passenger_apt_automation && " +
+				"chpst -L /tmp/passenger_apt_automation.lock " +
+				"./new_release #{git_url} passenger-enterprise.repo passenger-enterprise.apt enterprise-#{version}"
+			sh "ssh psg_apt_automation@juvia-helper.phusion.nl at now <<<'#{command}'"
+
 			sh "cd ../passenger_autobuilder && " +
 				"git pull && " +
 				"./autobuild-osx git@gitlab.phusion.nl:passenger/passenger_enterprise_server.git passenger-enterprise psg_autobuilder_chroot@juvia-helper.phusion.nl --tag=#{tag}"

@@ -9,10 +9,10 @@
 require 'phusion_passenger/constants'
 require 'build/preprocessor'
 
-ALL_DISTRIBUTIONS  = string_option("DEBIAN_DISTROS", "raring quantal precise lucid").split(/ ,/)
+ALL_DISTRIBUTIONS  = string_option("DEBIAN_DISTROS", "raring quantal precise lucid").split(/[ ,]/)
 DEBIAN_NAME        = "ruby-passenger"
 DEBIAN_EPOCH       = 1
-DEBIAN_ARCHS       = string_option("DEBIAN_ARCHS", "i386 amd64").split(/ ,/)
+DEBIAN_ARCHS       = string_option("DEBIAN_ARCHS", "i386 amd64").split(/[ ,]/)
 DEBIAN_ORIG_TARBALL_FILES = lambda { PhusionPassenger::Packaging.debian_orig_tarball_files }
 
 def create_debian_package_dir(distribution, output_dir = PKG_DIR)
@@ -117,17 +117,6 @@ task 'debian:source_packages' => 'debian:orig_tarball' do
 		abort "USE_CCACHE must be returned off when running the debian:source_packages task."
 	end
 
-	if filename = string_option('GPG_PASSPHRASE_FILE')
-		filename = File.expand_path(filename)
-		if !File.exist?(filename)
-			abort "GPG passphrase file #{filename} does not exist!"
-		end
-		if File.stat(filename).mode != 0100600
-			abort "The GPG passphrase file #{filename} must be chmodded 0600!"
-		end
-		gpg_options = "-p'gpg --passphrase-file #{filename} --no-use-agent'"
-	end
-
 	pkg_dir = "#{PKG_DIR}/official"
 	if File.exist?(pkg_dir)
 		abort "#{pkg_dir} must not already exist when running the debian:source_packages task."
@@ -139,7 +128,7 @@ task 'debian:source_packages' => 'debian:orig_tarball' do
 		create_debian_package_dir(distribution, pkg_dir)
 	end
 	ALL_DISTRIBUTIONS.each do |distribution|
-		sh "cd #{pkg_dir}/#{distribution} && debuild -S -sa #{gpg_options} -k#{PACKAGE_SIGNING_KEY}"
+		sh "cd #{pkg_dir}/#{distribution} && debuild -S -us -uc"
 	end
 end
 
