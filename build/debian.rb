@@ -9,7 +9,9 @@
 require 'phusion_passenger/constants'
 require 'build/preprocessor'
 
-ALL_DISTRIBUTIONS  = string_option("DEBIAN_DISTROS", "raring quantal precise lucid").split(/[ ,]/)
+# If you change the default distribution list, don't forget to update the configuration
+# file in passenger_apt_automation too: https://github.com/phusion/passenger_apt_automation
+ALL_DISTRIBUTIONS  = string_option("DEBIAN_DISTROS", "raring precise lucid").split(/[ ,]/)
 DEBIAN_NAME        = "ruby-passenger"
 DEBIAN_EPOCH       = 1
 DEBIAN_ARCHS       = string_option("DEBIAN_ARCHS", "i386 amd64").split(/[ ,]/)
