@@ -42,6 +42,40 @@ passenger_enterprise_license_init() {
 	licenseKey = NULL;
 }
 
+static FILE *
+open_license_file() {
+	const char *licenseData = getenv("PASSENGER_ENTERPRISE_LICENSE_DATA");
+	if (licenseData != NULL && *licenseData != '\0') {
+		char path[PATH_MAX] = "/tmp/passenger.XXXXXXXX";
+		int fd = mkstemp(path);
+		FILE *f;
+
+		if (fd == -1) {
+			int e = errno;
+			fprintf(stderr, "Error: Phusion Passenger Enterprise license detected "
+				"in environment variable PASSENGER_ENTERPRISE_LICENSE_DATA, "
+				"but unable to create a temporary file: %s (errno=%d)\n",
+				strerror(e), e);
+			return NULL;
+		}
+
+		unlink(path);
+		f = fdopen(fd, "r+");
+		if (f != NULL) {
+			size_t len = strlen(licenseData);
+
+			fwrite(licenseData, 1, len, f);
+			if (len > 0 && licenseData[len - 1] != '\n') {
+				fwrite("\n", 1, 1, f);
+			}
+			fseek(f, 0, SEEK_SET);
+		}
+		return f;
+	} else {
+		return fopen("/etc/passenger-enterprise-license", "r");
+	}
+}
+
 char *
 passenger_enterprise_license_check() {
 	FILE *f;
@@ -59,7 +93,7 @@ passenger_enterprise_license_check() {
 		return strdup("Phusion Passenger Enterprise license key already checked.");
 	}
 
-	f = fopen("/etc/passenger-enterprise-license", "r");
+	f = open_license_file();
 	if (f == NULL) {
 		return strdup("Could not open the Phusion Passenger Enterprise license file. "
 			"Please check whether it's installed correctly and whether it's world-readable.\n"
