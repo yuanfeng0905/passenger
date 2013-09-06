@@ -80,7 +80,7 @@ task 'package:release' => ['package:set_official', 'package:gem', 'package:tarba
 			"admin_password: ..."
 	end
 
-	if !PhusionPassenger.PlatformInfo.find_command("hub")
+	if !PhusionPassenger::PlatformInfo.find_command("hub")
 		STDERR.puts "-------------------"
 		abort "*** ERROR: Please 'brew install hub' first"
 	end
@@ -119,8 +119,12 @@ task 'package:release' => ['package:set_official', 'package:gem', 'package:tarba
 			sha1 = File.open("#{PKG_DIR}/passenger-#{version}.tar.gz", "rb") do |f|
 				Digest::SHA1.hexdigest(f.read)
 			end
-			sh "rm -rf /tmp/homebrew"
-			sh "git clone https://github.com/mxcl/homebrew.git /tmp/homebrew"
+			homebrew_dir = "/tmp/homebrew"
+			sh "rm -rf #{homebrew_dir}"
+			sh "git clone git@github.com:phusion/homebrew.git #{homebrew_dir}"
+			sh "cd #{homebrew_dir} && git remote add mxcl https://github.com/mxcl/homebrew.git"
+			sh "cd #{homebrew_dir} && git fetch mxcl"
+			sh "cd #{homebrew_dir} && git reset --hard mxcl/master"
 			formula = File.read("/tmp/homebrew/Library/Formula/passenger.rb")
 			formula.gsub!(/passenger-.+?\.tar\.gz/, "passenger-#{version}.tar.gz") ||
 				abort("Unable to substitute Homebrew formula tarball filename")
@@ -129,11 +133,14 @@ task 'package:release' => ['package:set_official', 'package:gem', 'package:tarba
 			File.open("/tmp/homebrew/Library/Formula/passenger.rb", "w") do |f|
 				f.write(formula)
 			end
-			sh "cd /tmp/homebrew && hub pull-request 'Update passenger to version #{version}' -h release-#{version}"
+			sh "cd #{homebrew_dir} && git commit -a -m 'Update passenger to #{version}'"
+			sh "cd #{homebrew_dir} && git push -f"
+			sh "cd #{homebrew_dir} && hub pull-request 'Update passenger to version #{version}' -b mxcl:master"
 
 			puts "Initiating building of Debian packages"
 			command = "cd /srv/passenger_apt_automation && " +
 				"chpst -L /tmp/passenger_apt_automation.lock " +
+				"/tools/silence-unless-failed " +
 				"./new_release https://github.com/phusion/passenger.git passenger.repo passenger.apt release-#{version}"
 			sh "ssh psg_apt_automation@juvia-helper.phusion.nl at now <<<'#{command}'"
 
@@ -155,6 +162,7 @@ task 'package:release' => ['package:set_official', 'package:gem', 'package:tarba
 			git_url = `git config remote.origin.url`.strip
 			command = "cd /srv/passenger_apt_automation && " +
 				"chpst -L /tmp/passenger_apt_automation.lock " +
+				"/tools/silence-unless-failed " +
 				"./new_release #{git_url} passenger-enterprise.repo passenger-enterprise.apt enterprise-#{version}"
 			sh "ssh psg_apt_automation@juvia-helper.phusion.nl at now <<<'#{command}'"
 
