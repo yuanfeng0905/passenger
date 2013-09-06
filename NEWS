@@ -1,5 +1,12 @@
-Release 4.0.15 and 4.0.16
--------------------------
+Release 4.0.16
+--------------
+
+ * Allow Phusion Passenger to work properly on systems where the user's GID
+   does not have a proper entry in /etc/group, such as Heroku.
+
+
+Release 4.0.15
+--------------
 
  * Out-of-band work has been much improved. The number of processes which
    may perform out-of-band work concurrently has been limited to 1.
@@ -9,9 +16,9 @@ Release 4.0.15 and 4.0.16
    2 application processes running. Out-of-band work will never be triggered
    if you just have 1 process. Partially fixes issue #892.
  * Phusion Passenger now displays an error message to clients if too many
-   requests are queued up. By default, "too many" is 100. On Nginx you may
-   customize this with `passenger_max_request_queue_size` and
-   `passenger_request_queue_overflow_status_code`.
+   requests are queued up. By default, "too many" is 100. You may customize
+   this with `PassengerMaxRequestQueueSize` (Apache) or
+   `passenger_max_request_queue_size` (Nginx).
  * A new configuration option, `PassengerStartTimeout` (Apache) and
    `passenger_start_timeout` (Nginx), has been added. This option allows you
    to specify a timeout for application startup. The startup timeout has exited
