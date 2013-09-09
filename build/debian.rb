@@ -12,7 +12,7 @@ require 'build/preprocessor'
 # If you change the default distribution list, don't forget to update the configuration
 # file in passenger_apt_automation too: https://github.com/phusion/passenger_apt_automation
 ALL_DISTRIBUTIONS  = string_option("DEBIAN_DISTROS", "raring precise lucid").split(/[ ,]/)
-DEBIAN_NAME        = "ruby-passenger-enterprise"
+DEBIAN_NAME        = "passenger-enterprise"
 DEBIAN_EPOCH       = 1
 DEBIAN_ARCHS       = string_option("DEBIAN_ARCHS", "i386 amd64").split(/[ ,]/)
 DEBIAN_ORIG_TARBALL_FILES = lambda { PhusionPassenger::Packaging.debian_orig_tarball_files }
@@ -92,8 +92,8 @@ end
 
 desc "(Re)install the Debian binary packages built for local testing"
 task 'debian:dev:reinstall' do
-	package_names = ["ruby-passenger-enterprise", "ruby-passenger-enterprise-dev",
-		"ruby-passenger-enterprise-doc", "libapache2-mod-passenger-enterprise"]
+	package_names = ["passenger-enterprise", "passenger-enterprise-dev",
+		"passenger-enterprise-doc", "libapache2-mod-passenger-enterprise"]
 	package_names.each do |name|
 		if Dir["#{PKG_DIR}/#{name}_*.deb"].size > 1
 			abort "Please ensure that #{PKG_DIR} only has 1 version of the Phusion Passenger packages."
