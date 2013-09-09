@@ -32,7 +32,6 @@ Breaks: libapache2-mod-passenger (<< <%= DEBIAN_EPOCH %>:<%= PACKAGE_VERSION %>)
 Replaces: libapache2-mod-passenger (<< <%= DEBIAN_EPOCH %>:<%= PACKAGE_VERSION %>), passenger-common,
  passenger-common1.8, passenger-common1.9.1, ruby-passenger, passenger
 Conflicts: ruby-passenger, ruby-passenger-dev, passenger, passenger-dev, libapache2-mod-passenger
-Provides: ruby-passenger, passenger
 Description: Rails and Rack support for Apache2 and Nginx
  Phusion Passenger — a.k.a. mod_rails or mod_rack — makes
  deployment of Ruby web applications, such as those built on the
@@ -45,7 +44,6 @@ Depends: ${shlibs:Depends}, ${misc:Depends}, ruby | ruby-interpreter,
 Suggests: python
 Replaces: ruby-passenger-dev, passenger-dev
 Conflicts: ruby-passenger-dev, passenger-dev
-Provides: ruby-passenger-dev, passenger-dev
 Description: Rails and Rack support for Apache2 and Nginx
  Phusion Passenger — a.k.a. mod_rails or mod_rack — makes
  deployment of Ruby web applications, such as those built on the
@@ -58,8 +56,7 @@ Architecture: any
 Section: web
 Depends: ${shlibs:Depends}, ${misc:Depends}, apache2-mpm-worker (>= 2.2.9-9) |
  apache2-mpm-prefork (>= 2.2.9-9) | apache2-mpm-itk (>= 2.2.9-9) | apache2-mpm-event (>= 2.2.9-9),
- ruby-passenger-enterprise (= ${binary:Version})
-Provides: libapache2-mod-passenger
+ passenger-enterprise (= ${binary:Version})
 Replaces: libapache2-mod-passenger
 Conflicts: libapache2-mod-passenger
 Description: Rails and Rack support for Apache2
@@ -74,7 +71,6 @@ Section: doc
 Architecture: all
 Depends: ${misc:Depends}
 Suggests: www-browser
-Provides: ruby-passenger-doc, passenger-doc
 Conflicts: ruby-passenger-doc, passenger-doc
 Replaces: ruby-passenger-doc, passenger-doc
 Description: Rails and Rack support for Apache2 - Documentation
