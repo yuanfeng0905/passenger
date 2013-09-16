@@ -35,6 +35,17 @@ module Packaging
 		'passenger-memory-stats',
 		'passenger-irb'
 	]
+
+	# Used during native packaging. Specifies executables for
+	# which the shebang should NOT be set to #!/usr/bin/ruby,
+	# so that these executables can be run with any Ruby interpreter
+	# the user desires.
+	EXECUTABLES_WITH_FREE_RUBY = [
+		'passenger',
+		'passenger-config',
+		'passenger-install-apache2-module',
+		'passenger-install-nginx-module'
+	]
 	
 	# A list of globs which match all files that should be packaged
 	# in the Phusion Passenger gem or tarball.
@@ -102,6 +113,11 @@ module Packaging
 	# Files that should be excluded from the Debian tarball.
 	DEBIAN_EXCLUDE_GLOB = [
 		"debian.template/**/*",
+	]
+
+	# Files and directories that should be excluded from the Homebrew installation.
+	HOMEBREW_EXCLUDE = [
+		"dev", "test", ".gitignore", ".travis.yml", "debian.template", "rpm"
 	]
 
 	def self.files

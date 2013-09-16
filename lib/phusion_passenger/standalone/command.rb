@@ -20,6 +20,8 @@ class Command
 		:max_pool_size => 6,
 		:min_instances => 1,
 		:spawn_method  => Kernel.respond_to?(:fork) ? 'smart' : 'direct',
+		:concurrency_model => DEFAULT_CONCURRENCY_MODEL,
+		:thread_count  => DEFAULT_THREAD_COUNT,
 		:nginx_version => PREFERRED_NGINX_VERSION,
 		:friendly_error_pages => true
 	}.freeze
@@ -171,6 +173,7 @@ private
 		@config_filename = "#{@temp_dir}/config"
 		location_config_filename = "#{@temp_dir}/locations.ini"
 		File.chmod(0755, @temp_dir)
+		Dir.mkdir("#{@temp_dir}/logs")
 
 		locations_ini_fields =
 			PhusionPassenger::REQUIRED_LOCATIONS_INI_FIELDS +

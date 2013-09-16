@@ -43,6 +43,24 @@ def recursive_copy_files(files, destination_dir, preprocess = false, variables =
 	end
 end
 
+def word_wrap(text, max = 72)
+	while index = (lines = text.split("\n")).find_index{ |line| line.size > max }
+		line = lines[index]
+		pos = max
+		while pos >= 0 && line[pos..pos] != " "
+			pos -= 1
+		end
+		if pos < 0
+			raise "Cannot wrap line: #{line}"
+		else
+			lines[index] = line[0 .. pos - 1]
+			lines.insert(index + 1, line[pos + 1 .. -1])
+			text = lines.join("\n")
+		end
+	end
+	return text
+end
+
 
 task :clobber => 'package:clean'
 
@@ -130,6 +148,12 @@ task 'package:release' => ['package:set_official', 'package:gem', 'package:tarba
 				abort("Unable to substitute Homebrew formula tarball filename")
 			formula.gsub!(/sha1 .*/, "sha1 '#{sha1}'") ||
 				abort("Unable to substitute Homebrew formula SHA-1")
+			necessary_dirs = ORIG_TARBALL_FILES.call.map{ |filename| filename.split("/").first }.uniq
+			necessary_dirs -= PhusionPassenger::Packaging::HOMEBREW_EXCLUDE
+			necessary_dirs += ["buildout"]
+			necessary_dirs_str = word_wrap(necessary_dirs.inspect).split("\n").join("\n      ")
+			formula.sub!(/necessary_files = .*?\]/m, "necessary_files = Dir#{necessary_dirs_str}") ||
+				abort("Unable to substitute file whitelist")
 			File.open("/tmp/homebrew/Library/Formula/passenger.rb", "w") do |f|
 				f.write(formula)
 			end
@@ -257,6 +281,16 @@ task 'package:clean' do
 	sh "rm -f pkg/#{basename}.{gem,gem.asc,tar.gz,tar.gz.asc}"
 end
 
+def change_shebang(filename, value)
+	contents = File.open(filename, "r") do |f|
+		f.read
+	end
+	contents.gsub!(/\A#\!.+$/, "#!#{value}")
+	File.open(filename, "w") do |f|
+		f.write(contents)
+	end
+end
+
 desc "Create a fakeroot, useful for building native packages"
 task :fakeroot => [:apache2, :nginx, :doc] do
 	require 'rbconfig'
@@ -347,12 +381,18 @@ task :fakeroot => [:apache2, :nginx, :doc] do
 	sh "mkdir -p #{fake_bindir}"
 	Packaging::USER_EXECUTABLES.each do |exe|
 		sh "cp bin/#{exe} #{fake_bindir}/"
+		if !Packaging::EXECUTABLES_WITH_FREE_RUBY.include?(exe)
+			change_shebang("#{fake_bindir}/#{exe}", "/usr/bin/ruby")
+		end
 	end
 	
 	# Superuser binaries
 	sh "mkdir -p #{fake_sbindir}"
 	Packaging::SUPER_USER_EXECUTABLES.each do |exe|
 		sh "cp bin/#{exe} #{fake_sbindir}/"
+		if !Packaging::EXECUTABLES_WITH_FREE_RUBY.include?(exe)
+			change_shebang("#{fake_sbindir}/#{exe}", "/usr/bin/ruby")
+		end
 	end
 	
 	# Apache 2 module

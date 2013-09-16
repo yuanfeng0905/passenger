@@ -6,6 +6,8 @@
 #
 #  See LICENSE file for license information.
 
+## Magic comment: set locations.ini ##
+
 PASSENGER_ROOT = File.expand_path(File.dirname(__FILE__) + "/..")
 $LOAD_PATH.unshift("#{PASSENGER_ROOT}/lib")
 require 'phusion_passenger'

@@ -109,6 +109,12 @@ class RequestHandler;
 #define RH_DEBUG(client, x) P_DEBUG("[Client " << client->name() << "] " << x)
 #define RH_TRACE(client, level, x) P_TRACE(level, "[Client " << client->name() << "] " << x)
 
+#define RH_LOG_EVENT(client, eventName) \
+	char _clientName[7 + 8]; \
+	snprintf(_clientName, sizeof(_clientName), "Client %d", client->fdnum); \
+	TRACE_POINT_WITH_DATA(_clientName); \
+	RH_TRACE(client, 3, "Event: " eventName)
+
 
 class Client: public enable_shared_from_this<Client> {
 private:
@@ -1057,6 +1063,7 @@ private:
 	}
 
 	size_t onAppInputData(const ClientPtr &client, const StaticString &data) {
+		RH_LOG_EVENT(client, "onAppInputData");
 		if (!client->connected()) {
 			return 0;
 		}
@@ -1098,10 +1105,12 @@ private:
 	}
 
 	void onAppInputChunk(const ClientPtr &client, const StaticString &data) {
+		RH_LOG_EVENT(client, "onAppInputChunk");
 		writeToClientOutputPipe(client, data);
 	}
 
 	void onAppInputEof(const ClientPtr &client) {
+		RH_LOG_EVENT(client, "onAppInputEof");
 		if (!client->connected()) {
 			return;
 		}
@@ -1117,6 +1126,7 @@ private:
 	}
 
 	void onAppInputError(const ClientPtr &client, const char *message, int errorCode) {
+		RH_LOG_EVENT(client, "onAppInputError");
 		if (!client->connected()) {
 			return;
 		}
@@ -1136,6 +1146,7 @@ private:
 	}
 
 	void onClientOutputPipeCommit(const ClientPtr &client) {
+		RH_LOG_EVENT(client, "onClientOutputPipeCommit");
 		if (!client->connected()) {
 			return;
 		}
@@ -1159,6 +1170,7 @@ private:
 	void onClientOutputPipeData(const ClientPtr &client, const char *data,
 		size_t size, const FileBackedPipe::ConsumeCallback &consumed)
 	{
+		RH_LOG_EVENT(client, "onClientOutputPipeData");
 		if (!client->connected()) {
 			return;
 		}
@@ -1189,6 +1201,7 @@ private:
 	}
 
 	void onClientOutputPipeEnd(const ClientPtr &client) {
+		RH_LOG_EVENT(client, "onClientOutputPipeEnd");
 		if (!client->connected()) {
 			return;
 		}
@@ -1199,6 +1212,7 @@ private:
 	}
 
 	void onClientOutputPipeError(const ClientPtr &client, int errorCode) {
+		RH_LOG_EVENT(client, "onClientOutputPipeError");
 		if (!client->connected()) {
 			return;
 		}
@@ -1211,6 +1225,7 @@ private:
 	}
 
 	void onClientOutputWritable(const ClientPtr &client) {
+		RH_LOG_EVENT(client, "onClientOutputWritable");
 		if (!client->connected()) {
 			return;
 		}
@@ -1316,7 +1331,7 @@ private:
 
 
 	size_t onClientInputData(const ClientPtr &client, const StaticString &data) {
-		RH_TRACE(client, 3, "Event: onClientInputData");
+		RH_LOG_EVENT(client, "onClientInputData");
 		if (!client->connected()) {
 			return 0;
 		}
@@ -1367,7 +1382,7 @@ private:
 	}
 
 	void onClientEof(const ClientPtr &client) {
-		RH_TRACE(client, 3, "Event: onClientEof; client sent EOF");
+		RH_LOG_EVENT(client, "onClientEof; client sent EOF");
 		switch (client->state) {
 		case Client::BUFFERING_REQUEST_BODY:
 			state_bufferingRequestBody_onClientEof(client);
@@ -1382,7 +1397,7 @@ private:
 	}
 
 	void onClientInputError(const ClientPtr &client, const char *message, int errnoCode) {
-		RH_TRACE(client, 3, "Event: onClientInputError");
+		RH_LOG_EVENT(client, "onClientInputError");
 		if (!client->connected()) {
 			return;
 		}
@@ -1403,7 +1418,7 @@ private:
 
 
 	void onClientBodyBufferData(const ClientPtr &client, const char *data, size_t size, const FileBackedPipe::ConsumeCallback &consumed) {
-		RH_TRACE(client, 3, "Event: onClientBodyBufferData");
+		RH_LOG_EVENT(client, "onClientBodyBufferData");
 		if (!client->connected()) {
 			return;
 		}
@@ -1418,7 +1433,7 @@ private:
 	}
 
 	void onClientBodyBufferError(const ClientPtr &client, int errorCode) {
-		RH_TRACE(client, 3, "Event: onClientBodyBufferError");
+		RH_LOG_EVENT(client, "onClientBodyBufferError");
 		if (!client->connected()) {
 			return;
 		}
@@ -1431,7 +1446,7 @@ private:
 	}
 
 	void onClientBodyBufferEnd(const ClientPtr &client) {
-		RH_TRACE(client, 3, "Event: onClientBodyBufferEnd");
+		RH_LOG_EVENT(client, "onClientBodyBufferEnd");
 		if (!client->connected()) {
 			return;
 		}
@@ -1446,7 +1461,7 @@ private:
 	}
 
 	void onClientBodyBufferCommit(const ClientPtr &client) {
-		RH_TRACE(client, 3, "Event: onClientBodyBufferCommit");
+		RH_LOG_EVENT(client, "onClientBodyBufferCommit");
 		if (!client->connected()) {
 			return;
 		}
@@ -1461,7 +1476,7 @@ private:
 	}
 
 	void onAppOutputWritable(const ClientPtr &client) {
-		RH_TRACE(client, 3, "Event: onAppOutputWritable");
+		RH_LOG_EVENT(client, "onAppOutputWritable");
 		if (!client->connected()) {
 			return;
 		}
@@ -1480,7 +1495,7 @@ private:
 
 
 	void onTimeout(const ClientPtr &client) {
-		RH_TRACE(client, 3, "Event: onTimeout");
+		RH_LOG_EVENT(client, "onTimeout");
 		if (!client->connected()) {
 			return;
 		}
