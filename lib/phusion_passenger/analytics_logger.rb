@@ -212,7 +212,7 @@ class AnalyticsLogger
 		end
 	end
 	
-	def new_transaction(group_name, category = :requests, union_station_key = nil)
+	def new_transaction(group_name, category = :requests, union_station_key = "-")
 		if !@server_address
 			return Log.new
 		elsif !group_name || group_name.empty?
@@ -271,7 +271,7 @@ class AnalyticsLogger
 		end
 	end
 	
-	def continue_transaction(txn_id, group_name, category = :requests, union_station_key = nil)
+	def continue_transaction(txn_id, group_name, category = :requests, union_station_key = "-")
 		if !@server_address
 			return Log.new
 		elsif !txn_id || txn_id.empty?

@@ -704,7 +704,7 @@ public:
 	
 	LoggerPtr newTransaction(const string &groupName,
 		const string &category = "requests",
-		const string &unionStationKey = string(),
+		const string &unionStationKey = "-",
 		const string &filters = string())
 	{
 		if (serverAddress.empty()) {
@@ -835,7 +835,7 @@ public:
 	LoggerPtr continueTransaction(const string &txnId,
 		const string &groupName,
 		const string &category = "requests",
-		const string &unionStationKey = string())
+		const string &unionStationKey = "-")
 	{
 		if (serverAddress.empty() || txnId.empty()) {
 			return createNullLogger();
