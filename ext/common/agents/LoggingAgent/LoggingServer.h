@@ -639,15 +639,6 @@ private:
 		char writeCountStr[sizeof(unsigned int) * 2 + 1];
 		integerToHexatri(transaction->writeCount, writeCountStr);
 		transaction->writeCount++;
-		transaction->data.reserve(transaction->data.size() +
-			transaction->txnId.size() +
-			1 +
-			timestamp.size() +
-			1 +
-			strlen(writeCountStr) +
-			1 +
-			data.size() +
-			1);
 		transaction->data.append(transaction->txnId);
 		transaction->data.append(" ");
 		transaction->data.append(timestamp);
@@ -863,7 +854,7 @@ protected:
 				}
 				
 				transaction = make_shared<Transaction>(this, ev_now(getLoop()));
-				if (unionStationKey.empty()) {
+				if (unionStationKey == "-") {
 					char tempNodeId[MD5_HEX_SIZE];
 					
 					if (nodeId == NULL) {

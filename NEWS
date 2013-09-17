@@ -7,8 +7,15 @@ Release 4.0.18
    is enabled in Nginx. This allows you to deploy Nginx binaries, that have
    Phusion Passenger Enterprise compiled in, to servers that are not
    actually running Phusion Passenger Enterprise.
+ * Fixed a performance bug in the Union Station support code. In certain cases
+   where a lot of data must be sent to Union Station, the code is now over
+   100 times faster.
  * `passenger-status --show=union_station` now displays all clients that
    are connected to the LoggingAgent.
+ * Added a workaround for Heroku so that exited processes are properly detected
+   as such.
+ * When using Phusion Passenger Standalone with Foreman, pressing Ctrl-C
+   in Foreman no longer results in runaway Nginx processes.
  * Fixed backtraces in the Apache module.
 
 
