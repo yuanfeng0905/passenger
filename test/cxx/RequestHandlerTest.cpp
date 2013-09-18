@@ -968,7 +968,8 @@ namespace tut {
 
 		Timer timer;
 		string result = readAll(connection);
-		ensure(timer.elapsed() <= 1100);
+		ensure("The request was terminated within the time limit",
+			timer.elapsed() <= 1200);
 
 		vector<ProcessPtr> processes = pool->getProcesses();
 		ensure_equals(processes.size(), 0u);
