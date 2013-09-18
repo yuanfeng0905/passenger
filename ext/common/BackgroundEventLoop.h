@@ -38,6 +38,7 @@ namespace Passenger {
 		
 		void start(const string &threadName = "", unsigned int stackSize = 1024 * 1024);
 		void stop();
+		bool isStarted() const;
 	};
 
 }
