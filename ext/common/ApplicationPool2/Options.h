@@ -573,7 +573,7 @@ public:
 		/*********************************/
 
 		if (fields & PER_GROUP_POOL_OPTIONS) {
-			appendKeyValue3(vec, "min_processes",       maxProcesses);
+			appendKeyValue3(vec, "max_processes",       maxProcesses);
 		}
 		appendKeyValue (vec, "concurrency_model",  concurrencyModel);
 		appendKeyValue3(vec, "thread_count",       threadCount);
