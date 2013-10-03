@@ -27,7 +27,8 @@ module Packaging
 		'passenger',
 		'passenger-install-apache2-module',
 		'passenger-install-nginx-module',
-		'passenger-config'
+		'passenger-config',
+		'flying-passenger'
 	]
 	
 	SUPER_USER_EXECUTABLES = [
@@ -44,7 +45,8 @@ module Packaging
 		'passenger',
 		'passenger-config',
 		'passenger-install-apache2-module',
-		'passenger-install-nginx-module'
+		'passenger-install-nginx-module',
+		'flying-passenger'
 	]
 	
 	# A list of globs which match all files that should be packaged
