@@ -223,11 +223,18 @@ module LoaderSharedHelpers
 		if options["debugger"]
 			if RUBY_VERSION < "1.9.0"
 				debug_libname = 'ruby-debug'
-			else
+			elsif RUBY_VERSION.start_with?('1.9')
 				debug_libname = 'debugger'
+			else
+				debug_libname = 'byebug'
 			end
 			require(debug_libname)
-			if !Debugger.respond_to?(:ctrl_port)
+			if defined?(Debugger)
+				up_to_date = Debugger.respond_to?(:ctrl_port)
+			else
+				up_to_date = Byebug.respond_to?(:actual_port)
+			end
+			if !up_to_date
 				raise "Your version of the '#{debug_libname}' gem is too old. Please upgrade to the latest version."
 			end
 		end
@@ -306,8 +313,12 @@ module LoaderSharedHelpers
 		end
 
 		if options["debugger"]
-			Debugger.start_remote('127.0.0.1', [0, 0])
-			Debugger.start
+			if defined?(Debugger)
+				Debugger.start_remote('127.0.0.1', [0, 0])
+				Debugger.start
+			else
+				Byebug.start_server('127.0.0.1', 0)
+			end
 		end
 		
 		# Fire off events.

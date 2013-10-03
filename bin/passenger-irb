@@ -139,6 +139,19 @@ def attach_debugger(process)
 		ensure
 			trap('INT', prev_int_handler)
 		end
+	elsif process.server_sockets[:byebug]
+		host, port = process.server_sockets[:byebug].address.sub(/^tcp:\/\//, '').split(/:/, 2)
+		begin
+			require 'byebug'
+		rescue LoadError
+			STDERR.puts "*** ERROR: Cannot load the 'byebug' gem. Please ensure that this gem is installed."
+			return false
+		end
+		puts "*** Attaching debugger to process #{process.pid}."
+		puts "*** Attaching will succeed as soon as process #{process.pid} reaches a 'byebug' call."
+		puts "*** Press Ctrl-D to exit debugger."
+		Byebug.start_client(host, port)
+		return true
 	else
 		STDERR.puts "*** ERROR: Debugging is not enabled for this application process."
 		return false
