@@ -10,7 +10,7 @@
 /*
  * CacheLocationConfig.c is automatically generated from CacheLocationConfig.c.erb,
  * using definitions from lib/phusion_passenger/nginx/config_options.rb.
- * Edits to MergeLocationConfig.c will be lost.
+ * Edits to CacheLocationConfig.c will be lost.
  *
  * To update CacheLocationConfig.c:
  *   rake nginx
@@ -159,6 +159,13 @@ u_char int_buf[32], *end, *buf, *pos;
 		if (conf->spawn_method.data != NULL) {
 			len += 23;
 			len += conf->spawn_method.len + 1;
+		}
+	
+
+	
+		if (conf->load_shell_envvars != NGX_CONF_UNSET) {
+			len += 29;
+			len += conf->load_shell_envvars ? sizeof("true") : sizeof("false");
 		}
 	
 
@@ -502,6 +509,19 @@ buf = pos = ngx_pnalloc(cf->pool, len);
 				conf->spawn_method.len);
 			*pos = '\0';
 			pos++;
+		}
+	
+
+	
+		if (conf->load_shell_envvars != NGX_CONF_UNSET) {
+			pos = ngx_copy(pos,
+				"PASSENGER_LOAD_SHELL_ENVVARS",
+				29);
+			if (conf->load_shell_envvars) {
+				pos = ngx_copy(pos, "true", sizeof("true"));
+			} else {
+				pos = ngx_copy(pos, "false", sizeof("false"));
+			}
 		}
 	
 

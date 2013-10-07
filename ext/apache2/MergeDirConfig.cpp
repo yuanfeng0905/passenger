@@ -85,3 +85,10 @@
 			base->maxRequestQueueSize :
 			add->maxRequestQueueSize;
 	
+
+	
+		config->loadShellEnvvars =
+			(add->loadShellEnvvars == DirConfig::UNSET) ?
+			base->loadShellEnvvars :
+			add->loadShellEnvvars;
+	

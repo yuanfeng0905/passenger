@@ -228,6 +228,10 @@ struct DirConfig {
 			return "smart";
 		}
 	}
+
+	bool getLoadShellEnvvars() const {
+		return loadShellEnvvars != DISABLED;
+	}
 	
 	unsigned long getMinInstances() const {
 		if (minInstances != UNSET_INT_VALUE) {

@@ -596,6 +596,24 @@ This option may occur in the following places:
 
 In each place, it may be specified at most once. The default value is 'smart'.
 
+[[PassengerLoadShellEnvvars]]
+=== passenger_load_shell_envvars <on|off> ===
+:version: 4.0.20
+include::users_guide_snippets/since_version.txt[]
+
+Enables or disables the loading of shell environment variables before spawning the application.
+
+If this option is turned on, and the user's shell is `bash`, then applications are loaded by running them with `bash -l -c`. Otherwise, they are loaded by running them directly from the `PassengerHelperAgent` process.
+
+This option may occur in the following places:
+
+ * In the 'http' configuration block.
+ * In a 'server' configuration block.
+ * In a 'location' configuration block.
+ * In an 'if' configuration scope.
+
+In each place, it may be specified at most once. The default value is 'on'.
+
 [[PassengerRollingRestarts]]
 === passenger_rolling_restarts <on|off> ===
 :version: 3.0.0
@@ -1655,13 +1673,14 @@ include::users_guide_snippets/alternative_for_flying_passenger.txt[]
 include::users_guide_snippets/enterprise_only.txt[]
 
 Turns support for application debugging on or off. In case of Ruby applications,
-turning this option on will cause them to load the `ruby-debug` gem (when on Ruby 1.8)
-or the `debugger` gem (when on Ruby 1.9). If you're using Bundler, you should add
-this to your Gemfile:
+turning this option on will cause them to load the `ruby-debug` gem (when on Ruby 1.8),
+the `debugger` gem (when on Ruby 1.9) or the `byebug` gem (when on Ruby 2.0). If you're
+using Bundler, you should add this to your Gemfile:
 
 -------------------------------------------
 gem 'ruby-debug', :platforms => :ruby_18
 gem 'debugger', :platforms => :ruby_19
+gem 'byebug', :platforms => :ruby_20
 -------------------------------------------
 
 Once debugging is turned on, you can use the command `passenger-irb --debug <PID>` to attach an rdebug console to the application process with the given PID. Attaching will succeed once the application process executes a `debugger` command.
