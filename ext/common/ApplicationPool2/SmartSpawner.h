@@ -143,7 +143,8 @@ private:
 		// remaining stderr output for at most 2 seconds.
 		if (errorKind != SpawnException::PRELOADER_STARTUP_TIMEOUT
 		 && errorKind != SpawnException::APP_STARTUP_TIMEOUT
-		 && stderrCapturer != NULL) {
+		 && stderrCapturer != NULL)
+		{
 			bool done = false;
 			unsigned long long timeout = 2000;
 			while (!done) {
@@ -170,7 +171,10 @@ private:
 		
 		// Now throw SpawnException with the captured stderr output
 		// as error response.
-		SpawnException e(msg, stderrOutput, false, errorKind);
+		SpawnException e(msg,
+			createErrorPageFromStderrOutput(msg, errorKind, stderrOutput),
+			true,
+			errorKind);
 		e.setPreloaderCommand(getPreloaderCommandString());
 		annotatePreloaderException(e, debugDir);
 		throw e;
@@ -513,11 +517,19 @@ private:
 	}
 	
 	void handleInvalidResponseType(StartupDetails &details, const string &line) {
-		throwPreloaderSpawnException("An error occurred while starting up "
-			"the preloader. It sent an unknown response type \"" +
-			cEscapeString(line) + "\".",
-			SpawnException::PRELOADER_STARTUP_PROTOCOL_ERROR,
-			details);
+		if (line.empty()) {
+			throwPreloaderSpawnException("An error occurred while starting up "
+				"the preloader. It did not signal successful startup back to "
+				PROGRAM_NAME ".",
+				SpawnException::PRELOADER_STARTUP_PROTOCOL_ERROR,
+				details);
+		} else {
+			throwPreloaderSpawnException("An error occurred while starting up "
+				"the preloader. It sent an unknown response type \"" +
+				cEscapeString(line) + "\".",
+				SpawnException::PRELOADER_STARTUP_PROTOCOL_ERROR,
+				details);
+		}
 	}
 	
 	string negotiatePreloaderStartup(StartupDetails &details) {

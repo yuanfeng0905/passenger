@@ -1998,8 +1998,8 @@ private:
 			RH_WARN(client, "Cannot checkout session. " << e->what());
 			writeErrorResponse(client, e->what());
 		} else {
-			RH_WARN(client, "Cannot checkout session. " << e->what() <<
-				"\nError page:\n" << e->getErrorPage());
+			RH_WARN(client, "Cannot checkout session.\nError page:\n" <<
+				e->getErrorPage());
 			writeErrorResponse(client, e->getErrorPage(), e.get());
 		}
 	}
