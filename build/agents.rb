@@ -25,7 +25,7 @@ file AGENT_OUTPUT_DIR + 'PassengerWatchdog' => dependencies do
 		"-o #{AGENT_OUTPUT_DIR}PassengerWatchdog.o " <<
 		"#{EXTRA_PRE_CXXFLAGS} " <<
 		"-Iext -Iext/common " <<
-		"#{PlatformInfo.portability_cflags} #{AGENT_CFLAGS} #{EXTRA_CXXFLAGS}")
+		"#{AGENT_CFLAGS} #{EXTRA_CXXFLAGS}")
 	create_executable(AGENT_OUTPUT_DIR + 'PassengerWatchdog',
 		"#{AGENT_OUTPUT_DIR}PassengerWatchdog.o " <<
 		"#{watchdog_libs.link_objects_as_string} " <<
@@ -33,7 +33,8 @@ file AGENT_OUTPUT_DIR + 'PassengerWatchdog' => dependencies do
 		"#{EXTRA_PRE_LDFLAGS} " <<
 		"#{PlatformInfo.portability_ldflags} " <<
 		"#{AGENT_LDFLAGS} " <<
-		"#{EXTRA_LDFLAGS}")
+		"#{EXTRA_LDFLAGS} " <<
+		"#{EXTRA_CXX_LDFLAGS}")
 end
 
 helper_agent_libs = COMMON_LIBRARY.
@@ -79,7 +80,6 @@ file AGENT_OUTPUT_DIR + 'PassengerHelperAgent' => dependencies do
 		"-Iext -Iext/common " <<
 		"#{AGENT_CFLAGS} #{LIBEV_CFLAGS} #{LIBEIO_CFLAGS} " <<
 		"#{PlatformInfo.curl_flags} " <<
-		"#{PlatformInfo.portability_cflags} " <<
 		"#{EXTRA_CXXFLAGS}")
 	create_executable("#{AGENT_OUTPUT_DIR}PassengerHelperAgent",
 		"#{AGENT_OUTPUT_DIR}PassengerHelperAgent.o",
@@ -91,7 +91,8 @@ file AGENT_OUTPUT_DIR + 'PassengerHelperAgent' => dependencies do
 		"#{PlatformInfo.curl_libs} " <<
 		"#{PlatformInfo.portability_ldflags} " <<
 		"#{AGENT_LDFLAGS} " <<
-		"#{EXTRA_LDFLAGS}")
+		"#{EXTRA_LDFLAGS} " <<
+		"#{EXTRA_CXX_LDFLAGS}")
 end
 
 logging_agent_libs = COMMON_LIBRARY.only(:base, :logging_agent, 'AgentsBase.o',
@@ -123,7 +124,7 @@ file AGENT_OUTPUT_DIR + 'PassengerLoggingAgent' => dependencies do
 		"#{AGENT_CFLAGS} #{LIBEV_CFLAGS} " <<
 		"#{PlatformInfo.curl_flags} " <<
 		"#{PlatformInfo.zlib_flags} " <<
-		"#{PlatformInfo.portability_cflags} #{EXTRA_CXXFLAGS}")
+		"#{EXTRA_CXXFLAGS}")
 	create_executable("#{AGENT_OUTPUT_DIR}PassengerLoggingAgent",
 		"#{AGENT_OUTPUT_DIR}PassengerLoggingAgent.o",
 		"#{logging_agent_libs.link_objects_as_string} " <<
@@ -134,7 +135,8 @@ file AGENT_OUTPUT_DIR + 'PassengerLoggingAgent' => dependencies do
 		"#{PlatformInfo.zlib_libs} " <<
 		"#{PlatformInfo.portability_ldflags} " <<
 		"#{AGENT_LDFLAGS} " <<
-		"#{EXTRA_LDFLAGS}")
+		"#{EXTRA_LDFLAGS} " <<
+		"#{EXTRA_CXX_LDFLAGS}")
 end
 
 spawn_preparer_libs = COMMON_LIBRARY.only('Utils/Base64.o')
@@ -149,11 +151,12 @@ file AGENT_OUTPUT_DIR + 'SpawnPreparer' => dependencies do
 		'ext/common/agents/SpawnPreparer.cpp',
 		"#{EXTRA_PRE_CXXFLAGS} #{EXTRA_PRE_LDFLAGS} " <<
 		"-Iext -Iext/common " <<
-		"#{AGENT_CFLAGS} #{PlatformInfo.portability_cflags} #{EXTRA_CXXFLAGS} " <<
+		"#{AGENT_CFLAGS} #{EXTRA_CXXFLAGS} " <<
 		"#{spawn_preparer_libs.link_objects_as_string} " <<
 		"#{LIBBOOST_OXT} " <<
 		"#{PlatformInfo.portability_ldflags} " <<
-		"#{EXTRA_LDFLAGS}")
+		"#{EXTRA_LDFLAGS} " <<
+		"#{EXTRA_CXX_LDFLAGS}")
 end
 
 file AGENT_OUTPUT_DIR + 'EnvPrinter' => 'ext/common/agents/EnvPrinter.c' do

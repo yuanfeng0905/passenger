@@ -10,7 +10,9 @@
 #include <set>
 #include <cerrno>
 #include <cstring>
+#include <string.h>
 #include <AgentsStarter.h>
+#include <Exceptions.h>
 
 using namespace std;
 using namespace boost;
@@ -98,7 +100,7 @@ pp_agents_starter_start(PP_AgentsStarter *as,
 	Passenger::AgentsStarter *agentsStarter = (Passenger::AgentsStarter *) as;
 	this_thread::disable_syscall_interruption dsi;
 	try {
-		function<void ()> afterForkFunctionObject;
+		boost::function<void ()> afterForkFunctionObject;
 		
 		if (afterFork != NULL) {
 			afterForkFunctionObject = boost::bind(afterFork, callbackArgument);

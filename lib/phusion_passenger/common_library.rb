@@ -86,7 +86,7 @@ class CommonLibraryBuilder
 
 	def define_tasks(extra_compiler_flags = nil)
 		flags =  "-Iext -Iext/common #{LIBEV_CFLAGS} #{extra_compiler_flags} "
-		flags << "#{PlatformInfo.portability_cflags} #{EXTRA_CXXFLAGS}"
+		flags << EXTRA_CXXFLAGS
 		flags.strip!
 
 		group_all_components_by_category.each_pair do |category, object_names|
@@ -303,6 +303,12 @@ COMMON_LIBRARY = CommonLibraryBuilder.new do
 		:deps     => %w(
 			Logging.cpp
 			Logging.h
+		)
+	define_component 'Exceptions.o',
+		:source   => 'Exceptions.cpp',
+		:category => :base,
+		:deps     => %w(
+			Exceptions.h
 		)
 	define_component 'Utils/SystemTime.o',
 		:source   => 'Utils/SystemTime.cpp',

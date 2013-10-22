@@ -10,6 +10,7 @@ require 'etc'
 require 'phusion_passenger'
 require 'phusion_passenger/plugin'
 require 'phusion_passenger/standalone/command'
+require 'phusion_passenger/platform_info/operating_system'
 
 # We lazy load as many libraries as possible not only to improve startup performance,
 # but also to ensure that we don't require libraries before we've passed the dependency
@@ -217,6 +218,11 @@ private
 				wrap_desc("Where to store the PID file")) do |value|
 				@options[:pid_file] = value
 			end
+			opts.on("--temp-dir PATH", String,
+				wrap_desc("Use the given temp dir")) do |value|
+				ENV['TMPDIR'] = value
+				@options[:temp_dir] = value
+			end
 
 			opts.separator ""
 			opts.on("--nginx-bin FILENAME", String,
@@ -348,7 +354,7 @@ private
 							socket.connect_nonblock(sockaddr)
 						rescue Errno::EISCONN
 						rescue Errno::EINVAL
-							if RUBY_PLATFORM =~ /freebsd/i
+							if PlatformInfo.os_name =~ /freebsd/i
 								raise Errno::ECONNREFUSED
 							else
 								raise
@@ -470,7 +476,7 @@ private
 		puts "PID file: #{@options[:pid_file]}"
 		puts "Log file: #{@options[:log_file]}"
 		puts "Environment: #{@options[:env]}"
-		
+
 		if @app_finder.multi_mode?
 			puts
 			if @apps.empty?
@@ -517,6 +523,7 @@ private
 		else
 			puts "You can stop Phusion Passenger Standalone by pressing Ctrl-C."
 		end
+		puts "Problems? Check #{STANDALONE_DOC_URL}#troubleshooting"
 		puts "==============================================================================="
 	end
 

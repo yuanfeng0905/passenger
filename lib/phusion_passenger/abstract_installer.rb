@@ -12,6 +12,7 @@ require 'phusion_passenger/platform_info'
 require 'phusion_passenger/platform_info/operating_system'
 require 'phusion_passenger/utils/ansi_colors'
 require 'fileutils'
+require 'etc'
 
 # IMPORTANT: do not directly or indirectly require native_support; we can't compile
 # it yet until we have a compiler, and installers usually check whether a compiler
@@ -54,12 +55,17 @@ class AbstractInstaller
 	rescue Abort
 		puts
 		return false
+	rescue SignalException, SystemExit
+		raise
 	rescue PlatformInfo::RuntimeError => e
 		new_screen
 		puts "<red>An error occurred</red>"
 		puts
 		puts e.message
 		exit 1
+	rescue Exception => e
+		show_support_options_for_installer_bug(e)
+		exit 2
 	ensure
 		after_install
 	end
@@ -89,6 +95,14 @@ protected
 	def after_install
 		STDOUT.write(Utils::AnsiColors::RESET)
 		STDOUT.flush
+	end
+
+	def users_guide_path
+		return PhusionPassenger.index_doc_path
+	end
+
+	def users_guide_url
+		return INDEX_DOC_URL
 	end
 	
 	def dependencies
@@ -133,18 +147,53 @@ protected
 				puts "   #{dep.install_instructions}"
 				puts
 			end
-			if respond_to?(:users_guide)
-				puts "If the aforementioned instructions didn't solve your problem, then please take"
-				puts "a look at the Users Guide:"
-				puts
-				puts "  <yellow>#{users_guide}</yellow>"
-			end
+			puts "If the aforementioned instructions didn't solve your problem, then please take"
+			puts "a look at the Users Guide:"
+			puts
+			puts "  <yellow>#{users_guide_path}</yellow>"
+			puts "  <yellow>#{users_guide_url}</yellow>"
 			return false
 		end
 	end
 
 	def check_whether_os_is_broken
 		# No known broken OSes at the moment.
+	end
+
+	def check_gem_install_permission_problems
+		return true if PhusionPassenger.natively_packaged?
+		begin
+			require 'rubygems'
+		rescue LoadError
+			return true
+		end
+
+		if Process.uid != 0 &&
+		   PhusionPassenger.source_root =~ /^#{Regexp.escape home_dir}\// &&
+		   PhusionPassenger.source_root =~ /^#{Regexp.escape Gem.dir}\// &&
+		   File.stat(PhusionPassenger.source_root).uid == 0
+			new_screen
+			render_template 'installer_common/gem_install_permission_problems'
+			return false
+		else
+			return true
+		end
+	end
+
+	def check_directory_accessible_by_web_server
+		return true if PhusionPassenger.natively_packaged?
+		inaccessible_directories = []
+		list_parent_directories(PhusionPassenger.source_root).each do |path|
+			if !world_executable?(path)
+				inaccessible_directories << path
+			end
+		end
+		if !inaccessible_directories.empty?
+			new_screen
+			render_template 'installer_common/world_inaccessible_directories',
+				:directories => inaccessible_directories
+			wait
+		end
 	end
 
 	def check_whether_system_has_enough_ram(required = 1024)
@@ -170,8 +219,31 @@ protected
 				:current => ram_mb + swap_mb,
 				:ram => ram_mb,
 				:swap => swap_mb,
-				:doc => users_guide
+				:doc_path => users_guide_path,
+				:doc_url => users_guide_url
 			wait
+		end
+	end
+
+	def show_support_options_for_installer_bug(e)
+		# We do not use template rendering here. Since we've determined that there's
+		# a bug, *anything* may be broken, so we use the safest codepath to ensure that
+		# the user sees the proper messages.
+		begin
+			line
+			@stderr.puts "*** EXCEPTION: #{e} (#{e.class})\n    " +
+				e.backtrace.join("\n    ")
+			new_screen
+			puts '<red>Oops, something went wrong :-(</red>'
+			puts
+			puts "We're sorry, but it looks like this installer ran into an unexpected problem.\n" +
+				"Please visit the following website for support. We'll do our best to help you.\n\n" +
+				"  <b>#{SUPPORT_URL}</b>\n\n" +
+				"When submitting a support inquiry, please copy and paste the entire installler\n" +
+				"output."
+		rescue Exception => e2
+			# Raise original exception so that it doesn't get lost.
+			raise e
 		end
 	end
 	
@@ -179,7 +251,7 @@ protected
 	def use_stderr
 		old_stdout = @stdout
 		begin
-			@stdout = STDERR
+			@stdout = @stderr
 			yield
 		ensure
 			@stdout = old_stdout
@@ -193,7 +265,7 @@ protected
 	
 	def puts(text = nil)
 		if text
-			@stdout.puts(Utils::AnsiColors.ansi_colorize(text))
+			@stdout.puts(Utils::AnsiColors.ansi_colorize(text.to_s))
 		else
 			@stdout.puts
 		end
@@ -283,6 +355,10 @@ protected
 	rescue Interrupt
 		raise Abort
 	end
+
+	def home_dir
+		Etc.getpwuid(Process.uid).dir
+	end
 	
 	
 	def sh(*args)
@@ -345,6 +421,25 @@ protected
 			end
 			return sh("curl", url, "-f", "-L", "-o", output, *args)
 		end
+	end
+
+	def list_parent_directories(dir)
+		dirs = []
+		components = File.expand_path(dir).split(File::SEPARATOR)
+		components.shift # Remove leading /
+		components.size.times do |i|
+			dirs << File::SEPARATOR + components[0 .. i].join(File::SEPARATOR)
+		end
+		return dirs.reverse
+	end
+
+	def world_executable?(dir)
+		begin
+			stat = File.stat(dir)
+		rescue Errno::EACCESS
+			return false
+		end
+		return stat.mode & 0000001 != 0
 	end
 end
 

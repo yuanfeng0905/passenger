@@ -10,6 +10,7 @@ module PhusionPassenger
 module Packaging
 	# A list of HTML files that are generated with Asciidoc.
 	ASCII_DOCS = [
+		'doc/Users guide.html',
 		'doc/Users guide Apache.html',
 		'doc/Users guide Nginx.html',
 		'doc/Users guide Standalone.html',
@@ -67,6 +68,7 @@ module Packaging
 		'lib/*.rb',
 		'lib/**/*.rb',
 		'lib/**/*.py',
+		'node_lib/**/*.js',
 		'bin/*',
 		'doc/**/*',
 		'man/*',
@@ -102,6 +104,7 @@ module Packaging
 		'test/cxx/**/*.{cpp,h}',
 		'test/oxt/*.{cpp,hpp}',
 		'test/ruby/**/*',
+		'test/node/**/*',
 		'test/integration_tests/**/*',
 		'test/stub/**/*',
 		'test/stub/**/.*'

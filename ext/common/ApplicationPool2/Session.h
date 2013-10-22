@@ -147,7 +147,7 @@ public:
 	}
 };
 
-typedef shared_ptr<Session> SessionPtr;
+typedef boost::shared_ptr<Session> SessionPtr;
 
 
 } // namespace ApplicationPool2

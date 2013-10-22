@@ -46,7 +46,7 @@ using namespace oxt;
  * tick.
  */
 template<size_t bufferSize = 1024 * 8>
-class EventedBufferedInput: public enable_shared_from_this< EventedBufferedInput<bufferSize> > {
+class EventedBufferedInput: public boost::enable_shared_from_this< EventedBufferedInput<bufferSize> > {
 private:
 	enum State {
 		LIVE,
@@ -125,7 +125,7 @@ private:
 
 	void onReadable(ev::io &watcher, int revents) {
 		// Keep 'this' alive until function exit.
-		shared_ptr< EventedBufferedInput<bufferSize> > self = EventedBufferedInput<bufferSize>::shared_from_this();
+		boost::shared_ptr< EventedBufferedInput<bufferSize> > self = EventedBufferedInput<bufferSize>::shared_from_this();
 
 		EBI_TRACE("onReadable");
 		verifyInvariants();
@@ -185,16 +185,16 @@ private:
 			nextTickInstalled = true;
 			libev->runLater(boost::bind(
 				realProcessBufferInNextTick,
-				weak_ptr< EventedBufferedInput<bufferSize> >(this->shared_from_this()),
+				boost::weak_ptr< EventedBufferedInput<bufferSize> >(this->shared_from_this()),
 				generation
 			));
 		}
 	}
 
-	static void realProcessBufferInNextTick(weak_ptr< EventedBufferedInput<bufferSize> > wself,
+	static void realProcessBufferInNextTick(boost::weak_ptr< EventedBufferedInput<bufferSize> > wself,
 		unsigned int generation)
 	{
-		shared_ptr< EventedBufferedInput<bufferSize> > self = wself.lock();
+		boost::shared_ptr< EventedBufferedInput<bufferSize> > self = wself.lock();
 		if (self != NULL && generation == self->generation) {
 			self->verifyInvariants();
 			self->nextTickInstalled = false;
@@ -306,8 +306,8 @@ protected:
 	}
 
 public:
-	typedef size_t (*DataCallback)(const shared_ptr< EventedBufferedInput<bufferSize> > &source, const StaticString &data);
-	typedef void (*ErrorCallback)(const shared_ptr< EventedBufferedInput<bufferSize> > &source, const char *message, int errnoCode);
+	typedef size_t (*DataCallback)(const boost::shared_ptr< EventedBufferedInput<bufferSize> > &source, const StaticString &data);
+	typedef void (*ErrorCallback)(const boost::shared_ptr< EventedBufferedInput<bufferSize> > &source, const char *message, int errnoCode);
 
 	DataCallback onData;
 	ErrorCallback onError;
@@ -435,7 +435,7 @@ public:
 	}
 };
 
-typedef shared_ptr< EventedBufferedInput<> > EventedBufferedInputPtr;
+typedef boost::shared_ptr< EventedBufferedInput<> > EventedBufferedInputPtr;
 
 } // namespace Passenger
 

@@ -3,6 +3,7 @@ set -e
 
 export VERBOSE=1
 export TRACE=1
+export DEVDEPS_DEFAULT=no
 export rvmsudo_secure_path=1
 
 sudo sh -c 'cat >> /etc/hosts' <<EOF
@@ -38,19 +39,30 @@ function apt_get_update() {
 	fi
 }
 
-function install_test_deps_without_rails_bundles()
+function install_test_deps_with_doctools()
 {
-	if [[ "$install_test_deps_without_rails_bundles" = "" ]]; then
-		install_test_deps_without_rails_bundles=1
-		run rake test:install_deps RAILS_BUNDLES=no
+	if [[ "$install_test_deps_with_doctools" = "" ]]; then
+		install_test_deps_with_doctools=1
+		run rake test:install_deps BASE_DEPS=yes DOCTOOLS=yes
 	fi
 }
 
-function install_test_deps_without_rails_bundles_without_doctools()
+function install_base_test_deps()
 {
-	if [[ "$install_test_deps_without_rails_bundles_without_doctools" = "" ]]; then
-		install_test_deps_without_rails_bundles_without_doctools=1
-		rake test:install_deps RAILS_BUNDLES=no DOCTOOLS=no
+	if [[ "$install_base_test_deps" = "" ]]; then
+		install_base_test_deps=1
+		rake test:install_deps BASE_DEPS=yes
+	fi
+}
+
+function install_node_and_modules()
+{
+	if [[ "$install_node_and_modules" = "" ]]; then
+		install_node_and_modules=1
+		wget http://nodejs.org/dist/v0.10.20/node-v0.10.20-linux-x64.tar.gz
+		tar xzvf node-v0.10.20-linux-x64.tar.gz
+		export PATH=`pwd`/node-v0.10.20-linux-x64/bin:$PATH
+		run rake test:install_deps NODE_MODULES=yes
 	fi
 }
 
@@ -92,18 +104,23 @@ if [[ "$TEST_RUBYGEMS_VERSION" != "" ]]; then
 fi
 
 if [[ "$TEST_CXX" = 1 ]]; then
-	run rake test:install_deps RAILS_BUNDLES=no DOCTOOLS=no
+	run rake test:install_deps BASE_DEPS=yes
 	run rake test:cxx
 	run rake test:oxt
 fi
 
 if [[ "$TEST_RUBY" = 1 ]]; then
-	run rake test:install_deps DOCTOOLS=no
+	run rake test:install_deps BASE_DEPS=yes RAILS_BUNDLES=yes
 	run rake test:ruby
 fi
 
+if [[ "$TEST_NODE" = 1 ]]; then
+	install_node_and_modules
+	run rake test:node
+fi
+
 if [[ "$TEST_NGINX" = 1 ]]; then
-	run rake test:install_deps RAILS_BUNDLES=no DOCTOOLS=no
+	install_base_test_deps
 	run ./bin/passenger-install-nginx-module --auto --prefix=/tmp/nginx --auto-download
 	run rake test:integration:nginx
 fi
@@ -112,14 +129,13 @@ if [[ "$TEST_APACHE2" = 1 ]]; then
 	apt_get_update
 	run sudo apt-get install -y --no-install-recommends \
 		apache2-mpm-worker apache2-threaded-dev
-	install_test_deps_without_rails_bundles_without_doctools
+	install_base_test_deps
 	run ./bin/passenger-install-apache2-module --auto
 	run rake test:integration:apache2
 fi
 
 if [[ "$TEST_STANDALONE" = 1 ]]; then
-	apt_get_update
-	install_test_deps_without_rails_bundles_without_doctools
+	install_base_test_deps
 	run rake test:integration:standalone
 fi
 
@@ -129,7 +145,7 @@ if [[ "$TEST_DEBIAN_PACKAGING" = 1 ]]; then
 		devscripts debhelper rake apache2-mpm-worker apache2-threaded-dev \
 		ruby1.8 ruby1.8-dev ruby1.9.1 ruby1.9.1-dev rubygems libev-dev gdebi-core \
 		source-highlight
-	install_test_deps_without_rails_bundles
+	install_test_deps_with_doctools
 	run rake debian:dev debian:dev:reinstall
 	run rake test:integration:native_packaging \
 		LOCATIONS_INI=/usr/lib/ruby/vendor_ruby/phusion_passenger/locations.ini \
@@ -141,6 +157,6 @@ fi
 if [[ "$TEST_SOURCE_PACKAGING" = 1 ]]; then
 	apt_get_update
 	run sudo apt-get install -y --no-install-recommends source-highlight
-	install_test_deps_without_rails_bundles
+	install_test_deps_with_doctools
 	run rspec -f s -c test/integration_tests/source_packaging_test.rb
 fi

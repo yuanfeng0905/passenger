@@ -162,11 +162,7 @@ task 'package:release' => ['package:set_official', 'package:gem', 'package:tarba
 			sh "cd #{homebrew_dir} && hub pull-request 'Update passenger to version #{version}' -b mxcl:master"
 
 			puts "Initiating building of Debian packages"
-			command = "cd /srv/passenger_apt_automation && " +
-				"chpst -l /tmp/passenger_apt_automation.lock " +
-				"/tools/silence-unless-failed " +
-				"./new_release https://github.com/phusion/passenger.git passenger.repo passenger.apt release-#{version}"
-			sh "ssh psg_apt_automation@juvia-helper.phusion.nl at now <<<'#{command}'"
+			Rake::Task['package:initiate_debian_building'].invoke
 
 			puts "Building OS X binaries..."
 			sh "cd ../passenger_autobuilder && " +
@@ -191,11 +187,7 @@ task 'package:release' => ['package:set_official', 'package:gem', 'package:tarba
 			sh "ssh psg_autobuilder_run@juvia-helper.phusion.nl at now <<<'#{command}'"
 
 			puts "Initiating building of Debian packages"
-			command = "cd /srv/passenger_apt_automation && " +
-				"chpst -l /tmp/passenger_apt_automation.lock " +
-				"/tools/silence-unless-failed " +
-				"./new_release #{git_url} passenger-enterprise.repo passenger-enterprise.apt enterprise-#{version}"
-			sh "ssh psg_apt_automation@juvia-helper.phusion.nl at now <<<'#{command}'"
+			Rake::Task['package:initiate_debian_building'].invoke
 
 			sh "cd ../passenger_autobuilder && " +
 				"git pull && " +
@@ -281,6 +273,27 @@ task 'package:sign' do
 	end
 end
 
+task 'package:initiate_debian_building' do
+	version        = PhusionPassenger::VERSION_STRING
+	is_enterprise  = PhusionPassenger::PACKAGE_NAME =~ /enterprise/
+	is_open_source = !is_enterprise
+
+	if is_open_source
+		command = "cd /srv/passenger_apt_automation && " +
+			"chpst -l /tmp/passenger_apt_automation.lock " +
+			"/tools/silence-unless-failed " +
+			"./new_release https://github.com/phusion/passenger.git passenger.repo passenger.apt release-#{version}"
+	else
+		git_url = `git config remote.origin.url`.strip
+		command = "cd /srv/passenger_apt_automation && " +
+			"chpst -l /tmp/passenger_apt_automation.lock " +
+			"/tools/silence-unless-failed " +
+			"./new_release #{git_url} passenger-enterprise.repo passenger-enterprise.apt enterprise-#{version}"
+	end
+
+	sh "ssh psg_apt_automation@juvia-helper.phusion.nl at now <<<'#{command}'"
+end
+
 desc "Remove gem, tarball and signatures"
 task 'package:clean' do
 	require 'phusion_passenger'
@@ -309,6 +322,7 @@ task :fakeroot => [:apache2, :nginx, :doc] do
 	# the files to be installed to /usr, and the Ruby interpreter
 	# on the packaging machine might be in /usr/local.
 	fake_rubylibdir = "#{fakeroot}/usr/lib/ruby/vendor_ruby"
+	fake_nodelibdir = "#{fakeroot}/usr/share/#{GLOBAL_NAMESPACE_DIRNAME}/node"
 	fake_libdir = "#{fakeroot}/usr/lib/#{GLOBAL_NAMESPACE_DIRNAME}"
 	fake_native_support_dir = "#{fakeroot}/usr/lib/ruby/#{CONFIG['ruby_version']}/#{CONFIG['arch']}"
 	fake_agents_dir = "#{fakeroot}/usr/lib/#{GLOBAL_NAMESPACE_DIRNAME}/agents"
@@ -330,6 +344,10 @@ task :fakeroot => [:apache2, :nginx, :doc] do
 	sh "mkdir -p #{fake_rubylibdir}"
 	sh "cp #{PhusionPassenger.ruby_libdir}/phusion_passenger.rb #{fake_rubylibdir}/"
 	sh "cp -R #{PhusionPassenger.ruby_libdir}/phusion_passenger #{fake_rubylibdir}/"
+
+	# Node.js sources
+	sh "mkdir -p #{fake_nodelibdir}"
+	sh "cp -R #{PhusionPassenger.node_libdir}/phusion_passenger #{fake_nodelibdir}/"
 
 	# Phusion Passenger common libraries
 	sh "mkdir -p #{fake_libdir}"
@@ -422,6 +440,7 @@ task :fakeroot => [:apache2, :nginx, :doc] do
 		f.puts "include_dir=/usr/share/#{GLOBAL_NAMESPACE_DIRNAME}/include"
 		f.puts "doc_dir=/usr/share/doc/#{GLOBAL_NAMESPACE_DIRNAME}"
 		f.puts "ruby_libdir=/usr/lib/ruby/vendor_ruby"
+		f.puts "node_libdir=/usr/share/#{GLOBAL_NAMESPACE_DIRNAME}/node"
 		f.puts "apache2_module_path=/usr/lib/apache2/modules/mod_passenger.so"
 		f.puts "ruby_extension_source_dir=/usr/share/#{GLOBAL_NAMESPACE_DIRNAME}/ruby_extension_source"
 		f.puts "nginx_module_source_dir=/usr/share/#{GLOBAL_NAMESPACE_DIRNAME}/ngx_http_passenger_module"

@@ -277,7 +277,7 @@ public:
 	}
 };
 
-typedef shared_ptr<MessageClient> MessageClientPtr;
+typedef boost::shared_ptr<MessageClient> MessageClientPtr;
 
 } // namespace Passenger
 

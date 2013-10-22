@@ -6,6 +6,7 @@
 #  See LICENSE file for license information.
 
 require 'phusion_passenger/platform_info'
+require 'phusion_passenger/platform_info/operating_system'
 
 module PhusionPassenger
 
@@ -25,7 +26,7 @@ module PlatformInfo
 	# distributions it is likely compatible with.
 	# Returns nil if the operating system is not Linux.
 	def self.linux_distro_tags
-		if RUBY_PLATFORM !~ /linux/
+		if os_name != "linux"
 			return nil
 		end
 		lsb_release = read_file("/etc/lsb-release")

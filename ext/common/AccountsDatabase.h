@@ -25,7 +25,7 @@ using namespace std;
 using namespace boost;
 
 class AccountsDatabase;
-typedef shared_ptr<AccountsDatabase> AccountsDatabasePtr;
+typedef boost::shared_ptr<AccountsDatabase> AccountsDatabasePtr;
 
 
 class AccountsDatabase {

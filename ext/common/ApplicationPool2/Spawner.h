@@ -195,16 +195,22 @@ protected:
 		}
 	};
 	
-	typedef shared_ptr<BackgroundIOCapturer> BackgroundIOCapturerPtr;
+	typedef boost::shared_ptr<BackgroundIOCapturer> BackgroundIOCapturerPtr;
 	
 	/**
 	 * A temporary directory for spawned child processes to write
 	 * debugging information to. It is removed after spawning has
 	 * determined to be successful or failed.
 	 */
-	struct DebugDir {
+	class DebugDir {
+	private:
 		string path;
 
+		static void doClosedir(DIR *dir) {
+			closedir(dir);
+		}
+
+	public:
 		DebugDir(uid_t uid, gid_t gid) {
 			char buf[PATH_MAX] = "/tmp/passenger.spawn-debug.XXXXXXXXXX";
 			const char *result = mkdtemp(buf);
@@ -231,7 +237,7 @@ protected:
 		map<string, string> readAll() {
 			map<string, string> result;
 			DIR *dir = opendir(path.c_str());
-			ScopeGuard guard(boost::bind(closedir, dir));
+			ScopeGuard guard(boost::bind(doClosedir, dir));
 			struct dirent *ent;
 
 			while ((ent = readdir(dir)) != NULL) {
@@ -249,7 +255,7 @@ protected:
 		}
 	};
 
-	typedef shared_ptr<DebugDir> DebugDirPtr;
+	typedef boost::shared_ptr<DebugDir> DebugDirPtr;
 
 	/**
 	 * Contains information that will be used after fork()ing but before exec()ing,
@@ -403,7 +409,7 @@ private:
 
 	ProcessPtr handleSpawnResponse(NegotiationDetails &details) {
 		TRACE_POINT();
-		SocketListPtr sockets = make_shared<SocketList>();
+		SocketListPtr sockets = boost::make_shared<SocketList>();
 		while (true) {
 			string line;
 			
@@ -491,7 +497,7 @@ private:
 				details);
 		}
 		
-		return make_shared<Process>(details.libev, details.pid,
+		return boost::make_shared<Process>(details.libev, details.pid,
 			details.gupid, details.connectPassword,
 			details.adminSocket, details.errorPipe,
 			sockets, creationTime, details.spawnStartTime,
@@ -926,6 +932,7 @@ protected:
 		
 		appendNullTerminatedKeyValue(result, "IN_PASSENGER", "1");
 		appendNullTerminatedKeyValue(result, "PYTHONUNBUFFERED", "1");
+		appendNullTerminatedKeyValue(result, "NODE_PATH", resourceLocator.getNodeLibDir());
 		appendNullTerminatedKeyValue(result, "RAILS_ENV", options.environment);
 		appendNullTerminatedKeyValue(result, "RACK_ENV", options.environment);
 		appendNullTerminatedKeyValue(result, "WSGI_ENV", options.environment);
@@ -1250,7 +1257,7 @@ public:
 		return config;
 	}
 };
-typedef shared_ptr<Spawner> SpawnerPtr;
+typedef boost::shared_ptr<Spawner> SpawnerPtr;
 
 
 } // namespace ApplicationPool2

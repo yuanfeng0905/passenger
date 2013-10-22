@@ -41,10 +41,14 @@ APACHE2_MODULE_INPUT_FILES = {
 APACHE2_MODULE_OBJECTS = APACHE2_MODULE_INPUT_FILES.keys
 APACHE2_MOD_PASSENGER_O = APACHE2_OUTPUT_DIR + "mod_passenger.o"
 
+APACHE2_MODULE_CFLAGS =
+	"#{EXTRA_PRE_CFLAGS} " <<
+	"-Iext -Iext/common #{PlatformInfo.apache2_module_cflags} " <<
+	"#{EXTRA_CFLAGS}"
 APACHE2_MODULE_CXXFLAGS =
 	"#{EXTRA_PRE_CXXFLAGS} " <<
 	"-Iext -Iext/common #{PlatformInfo.apache2_module_cflags} " <<
-	"#{PlatformInfo.portability_cflags} #{EXTRA_CXXFLAGS}"
+	"#{EXTRA_CXXFLAGS}"
 
 APACHE2_MODULE_BOOST_OXT_LIBRARY = define_libboost_oxt_task("apache2",
 	APACHE2_OUTPUT_DIR + "module_libboost_oxt",
@@ -62,7 +66,8 @@ auto_generated_sources = [
 	'ext/apache2/ConfigurationFields.hpp',
 	'ext/apache2/CreateDirConfig.cpp',
 	'ext/apache2/MergeDirConfig.cpp',
-	'ext/apache2/ConfigurationSetters.cpp'
+	'ext/apache2/ConfigurationSetters.cpp',
+	'ext/apache2/SetHeaders.cpp'
 ]
 
 
@@ -105,20 +110,19 @@ file APACHE2_MODULE => dependencies do
 	linkflags =
 		"#{EXTRA_PRE_CXXFLAGS} #{EXTRA_PRE_LDFLAGS} " <<
 		"#{PlatformInfo.apache2_module_cflags} " <<
-		"#{PlatformInfo.portability_cflags} " <<
 		"#{EXTRA_CXXFLAGS} " <<
 		"#{APACHE2_MODULE_COMMON_LIBRARIES.join(' ')} " <<
 		"#{APACHE2_MODULE_BOOST_OXT_LIBRARY} " <<
 		"#{PlatformInfo.apache2_module_ldflags} " <<
 		"#{PlatformInfo.portability_ldflags} " <<
-		"#{EXTRA_LDFLAGS} "
+		"#{EXTRA_LDFLAGS} #{EXTRA_CXX_LDFLAGS} "
 	
 	create_shared_library(APACHE2_MODULE, sources, linkflags)
 end
 
 file APACHE2_MOD_PASSENGER_O => ['ext/apache2/mod_passenger.c'] do
 	compile_c('ext/apache2/mod_passenger.c',
-		"#{APACHE2_MODULE_CXXFLAGS} -o #{APACHE2_MOD_PASSENGER_O}")
+		"#{APACHE2_MODULE_CFLAGS} -o #{APACHE2_MOD_PASSENGER_O}")
 end
 
 task :clean => 'apache2:clean'

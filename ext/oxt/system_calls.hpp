@@ -114,6 +114,7 @@
 
 namespace oxt {
 	static const int INTERRUPTION_SIGNAL = SIGUSR1; // SIGUSR2 is reserved by Valgrind...
+	#define OXT_MAX_ERROR_CHANCES 16
 	
 	struct ErrorChance {
 		double chance;
@@ -131,6 +132,8 @@ namespace oxt {
 	 * by oxt::thread::interrupt() or oxt::thread::interrupt_and_join().
 	 */
 	namespace syscalls {
+		using namespace std;
+
 		int open(const char *path, int oflag);
 		int open(const char *path, int oflag, mode_t mode);
 		ssize_t read(int fd, void *buf, size_t count);

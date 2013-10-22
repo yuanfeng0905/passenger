@@ -158,6 +158,10 @@ public:
 	
 	public:
 		~Generation() {
+			destroy();
+		}
+
+		void destroy() {
 			if (owner) {
 				removeDirTree(path);
 			}
@@ -178,7 +182,7 @@ public:
 		}
 	};
 	
-	typedef shared_ptr<Generation> GenerationPtr;
+	typedef boost::shared_ptr<Generation> GenerationPtr;
 	
 private:
 	string path;
@@ -299,6 +303,10 @@ public:
 	}
 	
 	~ServerInstanceDir() {
+		destroy();
+	}
+
+	void destroy() {
 		if (owner) {
 			GenerationPtr newestGeneration;
 			try {
@@ -345,7 +353,7 @@ public:
 	}
 	
 	GenerationPtr getGeneration(unsigned int number) const {
-		// Must not used make_shared() here because Watchdog.cpp
+		// Must not used boost::make_shared() here because Watchdog.cpp
 		// deletes the raw pointer in cleanupAgentsInBackground().
 		return ptr(new Generation(path, number));
 	}
@@ -380,7 +388,7 @@ public:
 	}
 };
 
-typedef shared_ptr<ServerInstanceDir> ServerInstanceDirPtr;
+typedef boost::shared_ptr<ServerInstanceDir> ServerInstanceDirPtr;
 
 } // namespace Passenger
 

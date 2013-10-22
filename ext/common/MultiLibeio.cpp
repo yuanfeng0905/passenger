@@ -25,7 +25,7 @@ namespace Passenger {
 using namespace oxt;
 
 static boost::mutex syncher;
-static condition_variable cond;
+static boost::condition_variable cond;
 static bool shouldPoll = false;
 static oxt::thread *thr = NULL;
 static bool quit = false;
@@ -57,7 +57,7 @@ struct CustomData: public Data {
 
 static void
 threadMain() {
-	unique_lock<boost::mutex> l(syncher);
+	boost::unique_lock<boost::mutex> l(syncher);
 	while (!quit) {
 		while (!shouldPoll && !quit) {
 			cond.wait(l);
@@ -116,7 +116,7 @@ MultiLibeio::init() {
 
 void
 MultiLibeio::shutdown() {
-	unique_lock<boost::mutex> l(syncher);
+	boost::unique_lock<boost::mutex> l(syncher);
 	quit = true;
 	cond.notify_one();
 	l.unlock();

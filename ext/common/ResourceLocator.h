@@ -36,6 +36,7 @@ private:
 	string resourcesDir;
 	string docDir;
 	string rubyLibDir;
+	string nodeLibDir;
 	
 	static string getOption(const string &file, const IniFileSectionPtr &section, const string &key) {
 		if (section->hasKey(key)) {
@@ -57,6 +58,7 @@ public:
 			resourcesDir        = getOption(file, options, "resources_dir");
 			docDir              = getOption(file, options, "doc_dir");
 			rubyLibDir          = getOption(file, options, "ruby_libdir");
+			nodeLibDir          = getOption(file, options, "node_libdir");
 		} else {
 			string root = rootOrFile;
 			binDir              = root + "/bin";
@@ -65,6 +67,7 @@ public:
 			resourcesDir        = root + "/resources";
 			docDir              = root + "/doc";
 			rubyLibDir          = root + "/lib";
+			nodeLibDir          = root + "/node_lib";
 		}
 	}
 	
@@ -92,9 +95,13 @@ public:
 	string getRubyLibDir() const {
 		return rubyLibDir;
 	}
+
+	string getNodeLibDir() const {
+		return nodeLibDir;
+	}
 };
 
-typedef shared_ptr<ResourceLocator> ResourceLocatorPtr;
+typedef boost::shared_ptr<ResourceLocator> ResourceLocatorPtr;
 
 
 }

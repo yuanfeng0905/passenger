@@ -149,7 +149,7 @@ public:
 		};
 	};
 
-	typedef shared_ptr<IniFileLexer::Token> TokenPtr;
+	typedef boost::shared_ptr<IniFileLexer::Token> TokenPtr;
 
 	
 
@@ -326,7 +326,7 @@ public:
 	TokenPtr peekToken() {
 		if (upcomingTokenPtrIsStale) {
 			Token upcomingToken = getToken();
-			upcomingTokenPtr = make_shared<Token>(upcomingToken);
+			upcomingTokenPtr = boost::make_shared<Token>(upcomingToken);
 			upcomingTokenPtrIsStale = false;
 		}
 	
@@ -380,7 +380,7 @@ public:
 	}
 };
 
-typedef shared_ptr<IniFileSection> IniFileSectionPtr;
+typedef boost::shared_ptr<IniFileSection> IniFileSectionPtr;
 
 
 class IniFile {

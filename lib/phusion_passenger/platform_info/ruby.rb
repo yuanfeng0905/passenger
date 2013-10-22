@@ -7,6 +7,7 @@
 
 require 'rbconfig'
 require 'phusion_passenger/platform_info'
+require 'phusion_passenger/platform_info/operating_system'
 
 module PhusionPassenger
 
@@ -123,10 +124,24 @@ module PlatformInfo
 	end
 	
 	# Returns the correct 'gem' command for this Ruby interpreter.
-	def self.gem_command
-		return locate_ruby_tool('gem')
+	# If `:sudo => true` is given, then the gem command is prefixed by a
+	# sudo command if filesystem permissions require this.
+	def self.gem_command(options = {})
+		command = locate_ruby_tool('gem')
+		if options[:sudo] && gem_install_requires_sudo?
+			command = "#{ruby_sudo_command} #{command}"
+		end
+		return command
 	end
 	memoize :gem_command
+
+	# Returns whether running 'gem install' as the current user requires sudo.
+	def self.gem_install_requires_sudo?
+		`#{gem_command} env` =~ /INSTALLATION DIRECTORY: (.+)/
+		install_dir = $1
+		return !File.writable?(install_dir)
+	end
+	memoize :gem_install_requires_sudo?
 	
 	# Returns the absolute path to the Rake executable that
 	# belongs to the current Ruby interpreter. Returns nil if it
@@ -319,7 +334,7 @@ module PlatformInfo
 
 private
 	def self.locate_ruby_tool_by_basename(name)
-		if RUBY_PLATFORM =~ /darwin/ &&
+		if os_name == "macosx" &&
 		   ruby_command =~ %r(\A/System/Library/Frameworks/Ruby.framework/Versions/.*?/usr/bin/ruby\Z)
 			# On OS X we must look for Ruby binaries in /usr/bin.
 			# RubyGems puts executables (e.g. 'rake') in there, not in

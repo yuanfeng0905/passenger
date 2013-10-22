@@ -60,6 +60,8 @@ class ApacheDetector
 		end
 	end
 
+	attr_reader :results
+
 	def initialize(output)
 		@output  = output
 		@results = []
@@ -159,25 +161,33 @@ class ApacheDetector
 			log "   <b>#{PhusionPassenger.bin_dir}/passenger-install-apache2-module</b>"
 			log ""
 			log "If you are sure that you have Apache installed, please read the documentation:"
-			log " * <b>#{PhusionPassenger.doc_dir}/Users guide Apache.html</b>, section"
+			log " * <b>#{PhusionPassenger.apache2_doc_path}</b>, section"
 			log "   section 'Installation' -> 'Customizing the compilation process' ->"
 			log "   'Forcing location of command line tools and dependencies'"
 			log " * Or visit the online version:"
-			log "   <b>http://www.modrails.com/documentation/Users%20guide%20Apache.html#_forcing_location_of_command_line_tools_and_dependencies</b>"
+			log "   <b>#{APACHE2_DOC_URL}#_forcing_location_of_command_line_tools_and_dependencies</b>"
 		elsif @results.size > 1
 			log "<yellow>WARNING: You have multiple Apache installations on your system!</yellow>"
 			log "You are strongly recommended to read this section of the documentation:"
-			log " * <b>#{PhusionPassenger.doc_dir}/Users guide Apache.html</b>, section"
+			log " * <b>#{PhusionPassenger.apache2_doc_path}</b>, section"
 			log "   section 'Installation' -> 'Customizing the compilation process' ->"
 			log "   'Forcing location of command line tools and dependencies'"
 			log " * Or visit the online version:"
-			log "   <b>http://www.modrails.com/documentation/Users%20guide%20Apache.html#_forcing_location_of_command_line_tools_and_dependencies</b>"
+			log "   <b>#{APACHE2_DOC_URL}#_forcing_location_of_command_line_tools_and_dependencies</b>"
 		end
+	end
+
+	def result_for(apxs2)
+		return @results.find { |r| r.apxs2 == apxs2 }
 	end
 
 private
 	def log(message)
-		@output.puts(Utils::AnsiColors.ansi_colorize(message))
+		if @output.tty?
+			@output.puts(Utils::AnsiColors.ansi_colorize(message))
+		else
+			@output.puts(Utils::AnsiColors.strip_color_tags(message))
+		end
 	end
 
 	# On Ubuntu, /usr/bin/apxs2 is a symlink to /usr/bin/apxs. We're only

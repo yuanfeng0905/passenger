@@ -22,19 +22,19 @@
 
 2.1. Synopsis	=>	synopsis-1uu3sqp
 
-2.2. Generic installation, upgrade and downgrade method: via RubyGems	=>	generic-installation-upgrade-and-downgrade-method-via-rubygems-76uol7
+2.2. Installing or upgrading on Mac OS X with Homebrew	=>	installing-or-upgrading-on-mac-os-x-with-homebrew-13ovvy9
 
-2.3. Generic installation, upgrade and downgrade method: via tarball	=>	generic-installation-upgrade-and-downgrade-method-via-tarball-2gkx43
+2.3. Installing or upgrading on Debian or Ubuntu	=>	installing-or-upgrading-on-ubuntu-fw5fvp
 
-2.4. Installing or upgrading on Debian or Ubuntu	=>	installing-or-upgrading-on-ubuntu-fw5fvp
+2.3.1. Adding our APT repository	=>	adding-our-apt-repository-p60cki
 
-2.4.1. Adding our APT repository	=>	adding-our-apt-repository-p60cki
+2.3.2. Installing packages	=>	installing-packages-j9glez
 
-2.4.2. Installing packages	=>	installing-packages-j9glez
+2.4. Installing or upgrading on Red Hat, Fedora, CentOS or ScientificLinux	=>	installing-or-upgrading-on-red-hat-fedora-centos-or-scientificlinux-1uus5a1
 
-2.5. Installing or upgrading on Red Hat, Fedora, CentOS or ScientificLinux	=>	installing-or-upgrading-on-red-hat-fedora-centos-or-scientificlinux-1uus5a1
+2.5. Generic installation, upgrade and downgrade method: via RubyGems	=>	generic-installation-upgrade-and-downgrade-method-via-rubygems-76uol7
 
-2.6. Installing or upgrading on Mac OS X with Homebrew	=>	installing-or-upgrading-on-mac-os-x-with-homebrew-13ovvy9
+2.6. Generic installation, upgrade and downgrade method: via tarball	=>	generic-installation-upgrade-and-downgrade-method-via-tarball-2gkx43
 
 2.7. Upgrading from open source to Enterprise	=>	upgrading-from-open-source-to-enterprise-1a58c2b
 
@@ -232,121 +232,139 @@
 
 6.18.1. rails_spawn_method	=>	rails-spawn-method-17vdnpt
 
-7. Analysis and system maintenance	=>	analysis-and-system-maintenance-1nnlnj8
+7. Troubleshooting	=>	troubleshooting-1pt0c76
 
-7.1. Inspecting memory usage	=>	inspecting-memory-usage-1k6y8v0
+7.1. Generic troubleshooting tips	=>	generic-troubleshooting-tips-xhe4nu
 
-7.2. Inspecting Phusion Passenger’s internal status	=>	inspecting-phusion-passenger-s-internal-status-v36wbc
+7.2. Why does the first request take a long time?	=>	why-does-the-first-request-take-a-long-time--1knj9fp
 
-7.3. Debugging frozen applications	=>	debugging-frozen-applications-qoctl8
+7.3. Upon accessing the web app, Nginx reports a "Permission denied" error	=>	upon-accessing-the-web-app-nginx-reports-a-permission-denied-error-1wgatlk
 
-7.4. Accessing individual application processes	=>	accessing-individual-application-processes-1qe4fqk
+7.4. The application thinks its not on SSL even though it is	=>	the-application-thinks-its-not-on-ssl-even-though-it-is-1e2m21h
 
-7.5. Attaching an IRB console to an application process	=>	attaching-an-irb-console-to-an-application-process-d36enw
+7.5. Ruby on Rails-specific troubleshooting	=>	ruby-on-rails-specific-troubleshooting-n8u5u1
 
-8. Tips	=>	tips-n4c22d
+7.5.1. The "About your application’s environment" link does not work	=>	the-about-your-application-s-environment-link-does-not-work-9p7b2g
 
-8.1. User Switching (security feature)	=>	user-switching-security--zmsy9o
+7.5.2. The Rails application reports that it’s unable to start because of a permission error	=>	the-rails-application-reports-that-it-s-unable-to-start-because-of-a-permission-error-58ww8s
 
-8.1.1. Requirements	=>	requirements-15ozqdj
+7.5.3. The Rails application’s log file is not being written to	=>	the-rails-application-s-log-file-is-not-being-written-to-9m2i5h
 
-8.1.2. Effects	=>	effects-nd2m44
+8. Analysis and system maintenance	=>	analysis-and-system-maintenance-1nnlnj8
 
-8.1.3. Caveats & troubleshooting	=>	caveats-troubleshooting-mbw582
+8.1. Inspecting memory usage	=>	inspecting-memory-usage-1k6y8v0
 
-8.1.4. Finding out what user an application is running as	=>	finding-out-what-user-an-application-is-running-as-1ni7zk6
+8.2. Inspecting Phusion Passenger’s internal status	=>	inspecting-phusion-passenger-s-internal-status-v36wbc
 
-8.2. Copy-on-write memory support (reducing memory consumption of Ruby applications)	=>	reducing-memory-consumption-of-ruby-on-rails-applications-by-33--1o3z66q
+8.3. Debugging frozen applications	=>	debugging-frozen-applications-qoctl8
 
-8.3. Capistrano recipe	=>	capistrano-recipe-pfn4qu
+8.4. Accessing individual application processes	=>	accessing-individual-application-processes-1qe4fqk
 
-8.4. Bundler support	=>	bundler-support-19v1h43
+8.5. Attaching an IRB console to an application process	=>	attaching-an-irb-console-to-an-application-process-d36enw
 
-8.4.1. Does Phusion Passenger itself need to be added to the Gemfile?	=>	does-phusion-passenger-itself-need-to-be-added-to-the-gemfile--xn1a11
+9. Tips	=>	tips-n4c22d
 
-8.5. Installing multiple Ruby on Rails versions	=>	installing-multiple-ruby-on-rails-versions-1bp1fff
+9.1. User Switching (security feature)	=>	user-switching-security--zmsy9o
 
-8.6. Making the application restart after each request	=>	making-the-application-restart-after-each-request-vimy48
+9.1.1. Requirements	=>	requirements-15ozqdj
 
-8.7. How to fix broken images/CSS/JavaScript URIs in sub-URI deployments	=>	how-to-fix-broken-images-css-javascript-uris-in-sub-uri-deployments-11mzwt6
+9.1.2. Effects	=>	effects-nd2m44
 
-8.8. Out-of-Band Work and Out-of-Band Garbage Collection	=>	out-of-band-work-and-out-of-band-garbage-collection-v89lu2
+9.1.3. Caveats & troubleshooting	=>	caveats-troubleshooting-mbw582
 
-8.9. Flying Passenger	=>	flying-passenger-137qg5e
+9.1.4. Finding out what user an application is running as	=>	finding-out-what-user-an-application-is-running-as-1ni7zk6
 
-8.9.1. Requirements	=>	requirements-194ysj6
+9.2. Copy-on-write memory support (reducing memory consumption of Ruby applications)	=>	reducing-memory-consumption-of-ruby-on-rails-applications-by-33--1o3z66q
 
-8.9.2. Basic usage	=>	basic-usage-1qtgvwx
+9.3. Capistrano recipe	=>	capistrano-recipe-pfn4qu
 
-8.9.3. Configuring Flying Passenger	=>	configuring-flying-passenger-n558np
+9.4. Bundler support	=>	bundler-support-19v1h43
 
-8.9.4. Managing the Flying Passenger daemon	=>	managing-the-flying-passenger-daemon-vjmzdh
+9.4.1. Does Phusion Passenger itself need to be added to the Gemfile?	=>	does-phusion-passenger-itself-need-to-be-added-to-the-gemfile--xn1a11
 
-8.9.5. Using Flying Passenger with MRI 1.8 or JRuby	=>	using-flying-passenger-with-mri-1-8-or-jruby-pxho35
+9.5. Installing multiple Ruby on Rails versions	=>	installing-multiple-ruby-on-rails-versions-1bp1fff
 
-8.9.6. Caveats and limitations	=>	caveats-and-limitations-15wakf
+9.6. Making the application restart after each request	=>	making-the-application-restart-after-each-request-vimy48
 
-9. Under the hood	=>	under-the-hood-8uney
+9.7. How to fix broken images/CSS/JavaScript URIs in sub-URI deployments	=>	how-to-fix-broken-images-css-javascript-uris-in-sub-uri-deployments-11mzwt6
 
-9.1. Page caching support	=>	page-caching-support-nafhf6
+9.8. Out-of-Band Work and Out-of-Band Garbage Collection	=>	out-of-band-work-and-out-of-band-garbage-collection-v89lu2
 
-9.2. Phusion Passenger and its relationship with Ruby	=>	phusion-passenger-and-its-relationship-with-ruby-1hub1pa
+9.9. Flying Passenger	=>	flying-passenger-137qg5e
 
-9.2.1. How Ruby is used	=>	how-ruby-is-used-j7g2a4
+9.9.1. Requirements	=>	requirements-194ysj6
 
-9.2.2. When the system has multiple Ruby interpreters	=>	when-the-system-has-multiple-ruby-interpreters-fwn3t
+9.9.2. Basic usage	=>	basic-usage-1qtgvwx
 
-9.3. How Phusion Passenger detects whether a virtual host is a web application	=>	how-phusion-passenger-detects-whether-a-virtual-host-is-a-web-application-13qbmhn
+9.9.3. Configuring Flying Passenger	=>	configuring-flying-passenger-n558np
 
-10. Appendix A: About this document	=>	appendix-a-about-this-document-zfvixm
+9.9.4. Managing the Flying Passenger daemon	=>	managing-the-flying-passenger-daemon-vjmzdh
 
-11. Appendix B: Terminology	=>	appendix-b-terminology-wzv5ro
+9.9.5. Using Flying Passenger with MRI 1.8 or JRuby	=>	using-flying-passenger-with-mri-1-8-or-jruby-pxho35
 
-11.1. Application root	=>	application-root-1fd6bqv
+9.9.6. Caveats and limitations	=>	caveats-and-limitations-15wakf
 
-11.2. Idle process	=>	idle-process-13byfw9
+10. Under the hood	=>	under-the-hood-8uney
 
-11.3. Inactive process	=>	inactive-process-1d2h0po
+10.1. Page caching support	=>	page-caching-support-nafhf6
 
-12. Appendix C: Spawning methods explained	=>	appendix-c-spawning-methods-explained-tcp8e6
+10.2. Phusion Passenger and its relationship with Ruby	=>	phusion-passenger-and-its-relationship-with-ruby-1hub1pa
 
-12.1. The most straightforward and traditional way: direct spawning	=>	the-most-straightforward-and-traditional-way-conservative-spawning-civ29z
+10.2.1. How Ruby is used	=>	how-ruby-is-used-j7g2a4
 
-12.2. The smart spawning method	=>	the-smart-spawning-method-7nhgtj
+10.2.2. When the system has multiple Ruby interpreters	=>	when-the-system-has-multiple-ruby-interpreters-fwn3t
 
-12.2.1. How it works	=>	how-it-works-f9umga
+10.3. How Phusion Passenger detects whether a virtual host is a web application	=>	how-phusion-passenger-detects-whether-a-virtual-host-is-a-web-application-13qbmhn
 
-12.2.2. Summary of benefits	=>	summary-of-benefits-qovyvk
+11. Appendix A: About this document	=>	appendix-a-about-this-document-zfvixm
 
-12.3. Smart spawning gotcha #1: unintentional file descriptor sharing	=>	smart-spawning-gotcha-1-unintentional-file-descriptor-sharing-cebw6q
+12. Appendix B: Terminology	=>	appendix-b-terminology-wzv5ro
 
-12.3.1. Example 1: Memcached connection sharing (harmful)	=>	example-1-memcached-connection-sharing-harmful--1wfs3ad
+12.1. Application root	=>	application-root-1fd6bqv
 
-12.3.2. Example 2: Log file sharing (not harmful)	=>	example-2-log-file-sharing-not-harmful--ox4yfy
+12.2. Idle process	=>	idle-process-13byfw9
 
-12.4. Smart spawning gotcha #2: the need to revive threads	=>	smart-spawning-gotcha-2-the-need-to-revive-threads-1ey176o
+12.3. Inactive process	=>	inactive-process-1d2h0po
 
-12.5. Smart spawning gotcha #3: code load order	=>	smart-spawning-gotcha-3-code-load-order-12ydsn8
+13. Appendix C: Spawning methods explained	=>	appendix-c-spawning-methods-explained-tcp8e6
 
-13. Appendix D: About environment variables	=>	appendix-d-about-environment-variables-1t2cuff
+13.1. The most straightforward and traditional way: direct spawning	=>	the-most-straightforward-and-traditional-way-conservative-spawning-civ29z
 
-13.1. Working with environment variables	=>	working-with-environment-variables-1kmvq8w
+13.2. The smart spawning method	=>	the-smart-spawning-method-7nhgtj
 
-13.2. The PATH environment variable	=>	the-path-environment-variable-vlp05e
+13.2.1. How it works	=>	how-it-works-f9umga
 
-13.2.1. Adding Phusion Passenger’s administration tools to PATH	=>	adding-phusion-passenger-s-administration-tools-to-path-1flz2tu
+13.2.2. Summary of benefits	=>	summary-of-benefits-qovyvk
 
-13.3. Making environment variables permanent	=>	making-environment-variables-permanent-1wjyhzt
+13.3. Smart spawning gotcha #1: unintentional file descriptor sharing	=>	smart-spawning-gotcha-1-unintentional-file-descriptor-sharing-cebw6q
 
-13.3.1. bash	=>	bash-19xsxec
+13.3.1. Example 1: Memcached connection sharing (harmful)	=>	example-1-memcached-connection-sharing-harmful--1wfs3ad
 
-13.3.2. Apache	=>	apache-9hqtyj
+13.3.2. Example 2: Log file sharing (not harmful)	=>	example-2-log-file-sharing-not-harmful--ox4yfy
 
-13.3.3. Nginx	=>	nginx-157dpwy
+13.4. Smart spawning gotcha #2: the need to revive threads	=>	smart-spawning-gotcha-2-the-need-to-revive-threads-1ey176o
 
-13.3.4. cron	=>	cron-1nuc9cz
+13.5. Smart spawning gotcha #3: code load order	=>	smart-spawning-gotcha-3-code-load-order-12ydsn8
 
-13.3.5. Phusion Passenger-served apps	=>	phusion-passenger-served-apps-uiewl5
+14. Appendix D: About environment variables	=>	appendix-d-about-environment-variables-1t2cuff
 
-13.4. Environment variables and sudo	=>	environment-variables-and-sudo-10lphxn
+14.1. Working with environment variables	=>	working-with-environment-variables-1kmvq8w
+
+14.2. The PATH environment variable	=>	the-path-environment-variable-vlp05e
+
+14.2.1. Adding Phusion Passenger’s administration tools to PATH	=>	adding-phusion-passenger-s-administration-tools-to-path-1flz2tu
+
+14.3. Making environment variables permanent	=>	making-environment-variables-permanent-1wjyhzt
+
+14.3.1. bash	=>	bash-19xsxec
+
+14.3.2. Apache	=>	apache-9hqtyj
+
+14.3.3. Nginx	=>	nginx-157dpwy
+
+14.3.4. cron	=>	cron-1nuc9cz
+
+14.3.5. Phusion Passenger-served apps	=>	phusion-passenger-served-apps-uiewl5
+
+14.4. Environment variables and sudo	=>	environment-variables-and-sudo-10lphxn
 

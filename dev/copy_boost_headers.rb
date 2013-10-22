@@ -1,6 +1,6 @@
 #!/usr/bin/env ruby
 #  Phusion Passenger - https://www.phusionpassenger.com/
-#  Copyright (c) 2010-2012 Phusion
+#  Copyright (c) 2010-2013 Phusion
 #
 #  "Phusion Passenger" is a trademark of Hongli Lai & Ninh Bui.
 #
@@ -30,18 +30,22 @@ ESSENTIALS = [
 	"boost/smart_ptr/detail/sp_counted_*",
 	"boost/smart_ptr/detail/atomic_count*",
 	"boost/smart_ptr/detail/spinlock*",
+	"boost/atomic",
+	"boost/unordered*",
 	"boost/thread",
 	"libs/thread/src",
 	"libs/system/src",
 	"boost/date_time/gregorian/formatters_limited.hpp",
 	"boost/date_time/date_formatting_limited.hpp",
+	"boost/type_traits/make_signed.hpp",
 	"boost/type_traits/detail/*",
 	"boost/non_type.hpp",
 	"boost/detail/fenv.hpp",
 	"boost/foreach.hpp"
 ]
 EXCLUDE = [
-	"libs/thread/src/win32/*"
+	"libs/thread/src/win32/*",
+	"boost/atomic/detail/windows.hpp"
 ]
 PROGRAM_SOURCE = %q{
 	#include <boost/shared_ptr.hpp>
@@ -55,7 +59,7 @@ PROGRAM_SOURCE = %q{
 	#include <boost/bind.hpp>
 	#include <boost/date_time/posix_time/posix_time.hpp>
 	#include <boost/foreach.hpp>
-	#include <boost/lambda/lambda.hpp>
+	#include <boost/unordered_map.hpp>
 }
 
 require 'fileutils'

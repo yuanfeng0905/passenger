@@ -70,7 +70,7 @@ private:
 	
 	typedef MessageServer::CommonClientContext CommonClientContext;
 	
-	shared_ptr<RequestHandler> requestHandler;
+	boost::shared_ptr<RequestHandler> requestHandler;
 	PoolPtr pool;
 	
 	
@@ -152,13 +152,13 @@ private:
 	}
 	
 public:
-	RemoteController(const shared_ptr<RequestHandler> &requestHandler, const PoolPtr &pool) {
+	RemoteController(const boost::shared_ptr<RequestHandler> &requestHandler, const PoolPtr &pool) {
 		this->requestHandler = requestHandler;
 		this->pool = pool;
 	}
 	
 	virtual MessageServer::ClientContextPtr newClient(CommonClientContext &commonContext) {
-		return make_shared<SpecificContext>();
+		return boost::make_shared<SpecificContext>();
 	}
 	
 	virtual bool processMessage(CommonClientContext &commonContext,
@@ -245,10 +245,10 @@ private:
 	AccountsDatabasePtr accountsDatabase;
 	MessageServerPtr messageServer;
 	ResourceLocator resourceLocator;
-	shared_ptr<RequestHandler> requestHandler;
-	shared_ptr<oxt::thread> prestarterThread;
-	shared_ptr<oxt::thread> messageServerThread;
-	shared_ptr<oxt::thread> eventLoopThread;
+	boost::shared_ptr<RequestHandler> requestHandler;
+	boost::shared_ptr<oxt::thread> prestarterThread;
+	boost::shared_ptr<oxt::thread> messageServerThread;
+	boost::shared_ptr<oxt::thread> eventLoopThread;
 	EventFd exitEvent;
 	
 	/**
@@ -430,12 +430,12 @@ public:
 		UPDATE_TRACE_POINT();
 		generation = serverInstanceDir.getGeneration(options.generationNumber);
 		startListening();
-		accountsDatabase = make_shared<AccountsDatabase>();
+		accountsDatabase = boost::make_shared<AccountsDatabase>();
 		accountsDatabase->add("_passenger-status", options.adminToolStatusPassword, false,
 			Account::INSPECT_BASIC_INFO | Account::INSPECT_SENSITIVE_INFO |
 			Account::INSPECT_BACKTRACES | Account::INSPECT_REQUESTS);
 		accountsDatabase->add("_web_server", options.exitPassword, false, Account::EXIT);
-		messageServer = make_shared<MessageServer>(
+		messageServer = boost::make_shared<MessageServer>(
 			parseUnixSocketAddress(options.adminSocketAddress), accountsDatabase);
 		
 		createFile(generation->getPath() + "/helper_agent.pid",
@@ -446,7 +446,7 @@ public:
 		}
 
 		UPDATE_TRACE_POINT();
-		randomGenerator = make_shared<RandomGenerator>();
+		randomGenerator = boost::make_shared<RandomGenerator>();
 		// Check whether /dev/urandom is actually random.
 		// https://code.google.com/p/phusion-passenger/issues/detail?id=516
 		if (randomGenerator->generateByteString(16) == randomGenerator->generateByteString(16)) {
@@ -455,21 +455,21 @@ public:
 		}
 
 		UPDATE_TRACE_POINT();
-		loggerFactory = make_shared<UnionStation::LoggerFactory>(options.loggingAgentAddress,
+		loggerFactory = boost::make_shared<UnionStation::LoggerFactory>(options.loggingAgentAddress,
 			"logging", options.loggingAgentPassword);
-		spawnerFactory = make_shared<SpawnerFactory>(poolLoop.safe,
-			resourceLocator, generation, make_shared<SpawnerConfig>(randomGenerator));
-		pool = make_shared<Pool>(poolLoop.safe.get(), spawnerFactory, loggerFactory,
+		spawnerFactory = boost::make_shared<SpawnerFactory>(poolLoop.safe,
+			resourceLocator, generation, boost::make_shared<SpawnerConfig>(randomGenerator));
+		pool = boost::make_shared<Pool>(poolLoop.safe.get(), spawnerFactory, loggerFactory,
 			randomGenerator);
 		pool->initialize();
 		pool->setMax(options.maxPoolSize);
 		//pool->setMaxPerApp(maxInstancesPerApp);
 		pool->setMaxIdleTime(options.poolIdleTime * 1000000);
 		
-		requestHandler = make_shared<RequestHandler>(requestLoop.safe,
+		requestHandler = boost::make_shared<RequestHandler>(requestLoop.safe,
 			requestSocket, pool, options);
 
-		messageServer->addHandler(make_shared<RemoteController>(requestHandler, pool));
+		messageServer->addHandler(boost::make_shared<RemoteController>(requestHandler, pool));
 		messageServer->addHandler(ptr(new ExitHandler(exitEvent)));
 
 		sigquitWatcher.set(requestLoop.loop);
@@ -484,7 +484,7 @@ public:
 			messageServer->getSocketFilename().c_str(),
 			NULL);
 		
-		function<void ()> func = boost::bind(prestartWebApps,
+		boost::function<void ()> func = boost::bind(prestartWebApps,
 			resourceLocator,
 			options.defaultRubyCommand,
 			options.prestartUrls
@@ -540,7 +540,7 @@ public:
 	
 	void mainLoop() {
 		TRACE_POINT();
-		function<void ()> func;
+		boost::function<void ()> func;
 
 		func = boost::bind(&MessageServer::mainLoop, messageServer.get());
 		messageServerThread = ptr(new oxt::thread(

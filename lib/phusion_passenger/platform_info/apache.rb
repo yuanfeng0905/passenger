@@ -7,6 +7,8 @@
 
 require 'phusion_passenger/platform_info'
 require 'phusion_passenger/platform_info/compiler'
+require 'phusion_passenger/platform_info/operating_system'
+require 'phusion_passenger/platform_info/linux'
 
 module PhusionPassenger
 
@@ -81,6 +83,30 @@ module PlatformInfo
 		end
 	end
 	memoize :httpd_version
+
+	# The Apache executable's architectural bits. Returns 32 or 64,
+	# or nil if unable to detect.
+	def self.httpd_architecture_bits(options = nil)
+		if options
+			httpd = options[:httpd] || self.httpd(options)
+		else
+			httpd = self.httpd
+		end
+		if httpd
+			`#{httpd} -V` =~ %r{Architecture:(.*)}
+			text = $1
+			if text =~ /32/
+				return 32
+			elsif text =~ /64/
+				return 64
+			else
+				return nil
+			end
+		else
+			return nil
+		end
+	end
+	memoize :httpd_architecture_bits
 
 	# The Apache root directory.
 	def self.httpd_root(options = nil)
@@ -398,7 +424,7 @@ module PlatformInfo
 			apxs2_flags.gsub!(/-O\d? /, '')
 
 			# Remove flags not supported by GCC
-			if RUBY_PLATFORM =~ /solaris/ # TODO: Add support for people using SunStudio
+			if os_name =~ /solaris/ # TODO: Add support for people using SunStudio
 				# The big problem is Coolstack apxs includes a bunch of solaris -x directives.
 				options = apxs2_flags.split
 				options.reject! { |f| f =~ /^\-x/ }
@@ -407,11 +433,22 @@ module PlatformInfo
 				options.reject! { |f| f =~ /^\-mt/ }
 				apxs2_flags = options.join(' ')
 			end
+
+			if os_name == "linux" &&
+			   linux_distro_tags.include?(:redhat) &&
+			   apxs2 == "/usr/sbin/apxs" &&
+			   httpd_architecture_bits == 64
+				# The Apache package in CentOS 5 x86_64 is broken.
+				# 'apxs -q CFLAGS' contains directives for compiling
+				# the module as 32-bit, even though httpd itself
+				# is 64-bit. Fix this.
+				apxs2_flags.gsub!('-m32 -march=i386 -mtune=generic', '')
+			end
 			
 			apxs2_flags.strip!
 			flags << apxs2_flags
 		end
-		if !httpd.nil? && RUBY_PLATFORM =~ /darwin/
+		if !httpd.nil? && os_name == "macosx"
 			# The default Apache install on OS X is a universal binary.
 			# Figure out which architectures it's compiled for and do the same
 			# thing for mod_passenger. We use the 'file' utility to do this.
@@ -497,7 +534,7 @@ module PlatformInfo
 		return !try_compile("whether APR is needed for building Apache modules",
 			:c, "#include <apr.h>\n", apache2_module_cflags(false))
 	end
-	memoize :apr_config_needed_for_building_apache_modules?
+	memoize :apr_config_needed_for_building_apache_modules?, true
 
 private
 	def self.determine_apr_info
@@ -507,10 +544,10 @@ private
 			flags = `#{apr_config} --cppflags --includes`.strip
 			libs = `#{apr_config} --link-ld`.strip
 			flags.gsub!(/-O\d? /, '')
-			if RUBY_PLATFORM =~ /solaris/
+			if os_name =~ /solaris/
 				# Remove flags not supported by GCC
 				flags = flags.split(/ +/).reject{ |f| f =~ /^\-mt/ }.join(' ')
-			elsif RUBY_PLATFORM =~ /aix/
+			elsif os_name =~ /aix/
 				libs << " -Wl,-G -Wl,-brtl"
 			end
 			return [flags, libs]
@@ -529,7 +566,7 @@ private
 			return [flags, libs]
 		end
 	end
-	memoize :determine_apu_info
+	memoize :determine_apu_info, true
 	private_class_method :determine_apu_info
 
 	# Run `httpd -V` and return its output. On some systems, such as Ubuntu 13.10,

@@ -10,12 +10,12 @@
 /**
  * Abstract base class for watching agent processes.
  */
-class AgentWatcher: public enable_shared_from_this<AgentWatcher> {
+class AgentWatcher: public boost::enable_shared_from_this<AgentWatcher> {
 private:
 	/** The watcher thread. */
 	oxt::thread *thr;
 	
-	void threadMain(shared_ptr<AgentWatcher> self) {
+	void threadMain(boost::shared_ptr<AgentWatcher> self) {
 		try {
 			pid_t pid, ret;
 			int status, e;
@@ -432,16 +432,17 @@ public:
 			name(), 256 * 1024);
 	}
 	
-	static void stopWatching(vector< shared_ptr<AgentWatcher> > &watchers) {
-		vector< shared_ptr<AgentWatcher> >::const_iterator it;
-		oxt::thread *threads[watchers.size()];
+	static void stopWatching(vector< boost::shared_ptr<AgentWatcher> > &watchers) {
+		vector< boost::shared_ptr<AgentWatcher> >::const_iterator it;
+		vector<oxt::thread *> threads;
 		unsigned int i = 0;
 		
 		for (it = watchers.begin(); it != watchers.end(); it++, i++) {
+			threads.push_back((*it)->thr);
 			threads[i] = (*it)->thr;
 		}
 		
-		oxt::thread::interrupt_and_join_multiple(threads, watchers.size());
+		oxt::thread::interrupt_and_join_multiple(&threads[0], threads.size());
 		for (it = watchers.begin(); it != watchers.end(); it++, i++) {
 			delete (*it)->thr;
 			(*it)->thr = NULL;
@@ -492,4 +493,4 @@ public:
 	}
 };
 
-typedef shared_ptr<AgentWatcher> AgentWatcherPtr;
+typedef boost::shared_ptr<AgentWatcher> AgentWatcherPtr;

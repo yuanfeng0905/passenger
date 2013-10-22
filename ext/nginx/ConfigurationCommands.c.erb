@@ -41,7 +41,7 @@ end
 
 def context_for(option)
 	context = option.fetch(:context, [:main, :srv, :loc, :lif])
-	return context.map{ |c| "NGX_HTTP_#{c.upcase}_CONF" }.join(" | ")
+	return context.map{ |c| "NGX_HTTP_#{c.to_s.upcase}_CONF" }.join(" | ")
 end
 
 def take_type_for(option)
@@ -73,6 +73,8 @@ def setter_function_for(option)
 		return "ngx_conf_set_str_array_slot"
 	when :string_keyval
 		return "set_null_terminated_keyval_slot"
+	when :path
+		return "ngx_conf_set_path_slot"
 	else
 		raise "Unknown type #{option[:type].inspect} for option #{option[:name]}"
 	end

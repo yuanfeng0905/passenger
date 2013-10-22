@@ -95,7 +95,7 @@ using namespace oxt;
  * Except for otherwise documented parts, this class is not thread-safe,
  * so only access it within the ApplicationPool lock.
  */
-class SuperGroup: public enable_shared_from_this<SuperGroup> {
+class SuperGroup: public boost::enable_shared_from_this<SuperGroup> {
 public:
 	enum State {
 		/** This SuperGroup is being initialized. `groups` is empty and
@@ -152,7 +152,7 @@ public:
 		CANCELED
 	};
 
-	typedef function<void (ShutdownResult result)> ShutdownCallback;
+	typedef boost::function<void (ShutdownResult result)> ShutdownCallback;
 	
 private:
 	friend class Pool;
@@ -177,7 +177,7 @@ private:
 	static void runAllActions(const vector<Callback> &actions);
 	string generateSecret() const;
 	
-	void createInterruptableThread(const function<void ()> &func, const string &name,
+	void createInterruptableThread(const boost::function<void ()> &func, const string &name,
 		unsigned int stackSize);
 	
 	void verifyInvariants() const {
@@ -312,7 +312,7 @@ private:
 		// Wait until 'detachedGroups' is empty.
 		UPDATE_TRACE_POINT();
 		PoolPtr pool = getPool();
-		unique_lock<boost::mutex> lock(getPoolSyncher(pool));
+		boost::unique_lock<boost::mutex> lock(getPoolSyncher(pool));
 		verifyInvariants();
 		while (true) {
 			if (OXT_UNLIKELY(this->generation != generation)) {
@@ -350,7 +350,7 @@ private:
 	
 public:
 	mutable boost::mutex backrefSyncher;
-	const weak_ptr<Pool> pool;
+	const boost::weak_ptr<Pool> pool;
 	
 	State state;
 	string name;

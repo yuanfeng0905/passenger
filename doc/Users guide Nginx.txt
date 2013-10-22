@@ -21,6 +21,7 @@ using the command line.
 
 include::users_guide_snippets/support_information.txt[]
 
+[[installation]]
 == Installation
 
 include::users_guide_snippets/installation.txt[]
@@ -806,6 +807,9 @@ passenger_set_cgi_param APP_NAME "my super blog";
 passenger_set_cgi_param EXTRA_REQUEST_METHOD method=$request_method;
 ------------------------------
 
+.Use CGI environment names
+[NOTE]
+===============================================
 If you want to set an HTTP header, then you must set it in the CGI environment name
 format, i.e. 'HTTP_*':
 
@@ -816,10 +820,38 @@ passenger_set_cgi_param X-Forwarded-For 127.0.0.2;
 # Instead, write it like this:
 passenger_set_cgi_param HTTP_X_FORWARDED_FOR 127.0.0.2;
 ------------------------------
+===============================================
+
+.This configuration option is NOT inherited across contexts
+[WARNING]
+===============================================
+In each new context (e.g. in each new 'location' block), you must re-specify `passenger_set_cgi_param`. Values set in parent contexts have no effect on subcontexts. For example:
+
+------------------------------
+server {
+    ...
+    passenger_set_cgi_param FOO foo;
+
+    location /users {
+        passenger_enabled_on;
+        # !!!THIS IS WRONG!!! The 'FOO' CGI variable will not
+        # be passed URLs beginning with /users because you didn't
+        # re-specify passenger_set_cgi_param.
+    }
+
+    location /apps {
+        passenger_enabled on;
+        # This is correct. Here we re-specify passenger_set_cgi_param,
+        # so the 'FOO' CGI variable will be correctly passed to URLs
+        # starting with /apps.
+        passenger_set_cgi_param FOO foo;
+    }
+}
+------------------------------
+===============================================
 
 This option may occur in the following places:
 
- * In the 'http' configuration block.
  * In a 'server' configuration block.
  * In a 'location' configuration block.
  * In an 'if' configuration scope.
@@ -1733,6 +1765,20 @@ compatibility reasons.
 Deprecated in favor of <<PassengerSpawnMethod,passenger_spawn_method>>.
 
 
+[[troubleshooting]]
+== Troubleshooting ==
+
+include::users_guide_snippets/troubleshooting/default.txt[]
+
+=== The application thinks its not on SSL even though it is
+
+Rails and many other frameworks infers whether it's running on SSL through the CGI
+environment variable `HTTPS`. This variable is *only* set if you set `ssl on`.
+Setting just `listen 443 ssl` is not enough.
+
+include::users_guide_snippets/troubleshooting/rails.txt[]
+
+
 == Analysis and system maintenance ==
 
 include::users_guide_snippets/analysis_and_system_maintenance.txt[]
@@ -1791,5 +1837,8 @@ include::users_guide_snippets/appendix_a_about.txt[]
 include::users_guide_snippets/appendix_b_terminology.txt[]
 
 include::users_guide_snippets/appendix_c_spawning_methods.txt[]
+
+[[about_environment_variables]]
+== Appendix D: About environment variables
 
 include::users_guide_snippets/environment_variables.txt[]

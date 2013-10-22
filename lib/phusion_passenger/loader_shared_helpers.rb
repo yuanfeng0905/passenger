@@ -1,6 +1,6 @@
 # encoding: binary
 #  Phusion Passenger - https://www.phusionpassenger.com/
-#  Copyright (c) 2011, 2012 Phusion
+#  Copyright (c) 2011-2013 Phusion
 #
 #  "Phusion Passenger" is a trademark of Hongli Lai & Ninh Bui.
 #
@@ -342,15 +342,18 @@ private
 	def running_bundler
 		yield
 	rescue Exception => e
-		if defined?(Bundler::GemNotFound) && e.is_a?(Bundler::GemNotFound)
+		if (defined?(Bundler::GemNotFound) && e.is_a?(Bundler::GemNotFound)) ||
+		   (defined?(Bundler::GitError) && e.is_a?(Bundler::GitError))
 			prepend_exception_comment(e, "It looks like Bundler could not find a gem. This " +
 				"is probably because your\n" +
 				"application is being run under a different environment than it's supposed to.\n" +
 				"Please check the following:\n\n" +
 				" * Is this app supposed to be run as the `#{whoami}` user?\n" +
 				" * Is this app being run on the correct Ruby interpreter? Below you will\n" +
-				"   see which Ruby interpreter Phusion Passenger attempted to use. If you \n" +
-				"   are using RVM, please also check whether the correct gemset is being used.\n")
+				"   see which Ruby interpreter Phusion Passenger attempted to use.\n" +
+				" * Are you using RVM? Please check whether the correct gemset is being used.\n" +
+				" * If all of the above fails, try resetting your RVM gemsets:\n" +
+				"   https://github.com/phusion/passenger/wiki/Resetting-RVM-gemsets\n")
 		end
 		raise e
 	end

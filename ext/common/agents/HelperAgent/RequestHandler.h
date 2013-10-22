@@ -104,6 +104,8 @@ using namespace ApplicationPool2;
 
 class RequestHandler;
 
+#define MAX_STATUS_HEADER_SIZE 64
+
 #define RH_ERROR(client, x) P_ERROR("[Client " << client->name() << "] " << x)
 #define RH_WARN(client, x) P_WARN("[Client " << client->name() << "] " << x)
 #define RH_DEBUG(client, x) P_DEBUG("[Client " << client->name() << "] " << x)
@@ -116,7 +118,7 @@ class RequestHandler;
 	RH_TRACE(client, 3, "Event: " eventName)
 
 
-class Client: public enable_shared_from_this<Client> {
+class Client: public boost::enable_shared_from_this<Client> {
 private:
 	struct ev_loop *getLoop() const;
 	const SafeLibevPtr &getSafeLibev() const;
@@ -278,19 +280,19 @@ public:
 	Client() {
 		fdnum = -1;
 
-		clientInput = make_shared< EventedBufferedInput<> >();
+		clientInput = boost::make_shared< EventedBufferedInput<> >();
 		clientInput->onData   = onClientInputData;
 		clientInput->onError  = onClientInputError;
 		clientInput->userData = this;
 		
-		clientBodyBuffer = make_shared<FileBackedPipe>("/tmp");
+		clientBodyBuffer = boost::make_shared<FileBackedPipe>("/tmp");
 		clientBodyBuffer->userData  = this;
 		clientBodyBuffer->onData    = onClientBodyBufferData;
 		clientBodyBuffer->onEnd     = onClientBodyBufferEnd;
 		clientBodyBuffer->onError   = onClientBodyBufferError;
 		clientBodyBuffer->onCommit  = onClientBodyBufferCommit;
 
-		clientOutputPipe = make_shared<FileBackedPipe>("/tmp");
+		clientOutputPipe = boost::make_shared<FileBackedPipe>("/tmp");
 		clientOutputPipe->userData  = this;
 		clientOutputPipe->onData    = onClientOutputPipeData;
 		clientOutputPipe->onEnd     = onClientOutputPipeEnd;
@@ -300,7 +302,7 @@ public:
 		clientOutputWatcher.set<Client, &Client::onClientOutputWritable>(this);
 
 		
-		appInput = make_shared< EventedBufferedInput<> >();
+		appInput = boost::make_shared< EventedBufferedInput<> >();
 		appInput->onData   = onAppInputData;
 		appInput->onError  = onAppInputError;
 		appInput->userData = this;
@@ -529,7 +531,7 @@ public:
 	}
 };
 
-typedef shared_ptr<Client> ClientPtr;
+typedef boost::shared_ptr<Client> ClientPtr;
 
 
 class RequestHandler {
@@ -885,15 +887,22 @@ private:
 		}
 		if (begin != string::npos && end != string::npos) {
 			StaticString statusValue(headerData.data() + begin + 1, end - begin);
-			char header[statusValue.size() + 20];
-			char *pos = header;
-			const char *end = header + statusValue.size() + 20;
+			if (statusValue.size() <= MAX_STATUS_HEADER_SIZE) {
+				char header[MAX_STATUS_HEADER_SIZE + sizeof("Status: \r\n")];
+				char *pos = header;
+				const char *end = header + sizeof(header);
 
-			pos = appendData(pos, end, "Status: ");
-			pos = appendData(pos, end, statusValue);
-			pos = appendData(pos, end, "\r\n");
-			headerData.append(StaticString(header, pos - header));
-			return true;
+				pos = appendData(pos, end, "Status: ");
+				pos = appendData(pos, end, statusValue);
+				pos = appendData(pos, end, "\r\n");
+				headerData.append(StaticString(header, pos - header));
+				return true;
+			} else {
+				disconnectWithError(client, "application sent malformed response: the Status header's (" +
+					statusValue + ") exceeds the allowed limit of " +
+					toString(MAX_STATUS_HEADER_SIZE) + " bytes.");
+				return false;
+			}
 		} else {
 			disconnectWithError(client, "application sent malformed response: the HTTP status line is invalid.");
 			return false;
@@ -1312,7 +1321,7 @@ private:
 					"\r\n"
 					"Benchmark point: after_accept\n");
 			} else {
-				ClientPtr client = make_shared<Client>();
+				ClientPtr client = boost::make_shared<Client>();
 				client->associate(this, fd);
 				clients.insert(make_pair<int, ClientPtr>(fd, client));
 				acceptedClients[count] = client;
@@ -1949,14 +1958,14 @@ private:
 		if (e != NULL) {
 			client->endScopeLog(&client->scopeLogs.getFromPool, false);
 			{
-				shared_ptr<RequestQueueFullException> e2 = dynamic_pointer_cast<RequestQueueFullException>(e);
+				boost::shared_ptr<RequestQueueFullException> e2 = dynamic_pointer_cast<RequestQueueFullException>(e);
 				if (e2 != NULL) {
 					writeRequestQueueFullExceptionErrorResponse(client);
 					return;
 				}
 			}
 			{
-				shared_ptr<SpawnException> e2 = dynamic_pointer_cast<SpawnException>(e);
+				boost::shared_ptr<SpawnException> e2 = dynamic_pointer_cast<SpawnException>(e);
 				if (e2 != NULL) {
 					writeSpawnExceptionErrorResponse(client, e2);
 					return;
@@ -1984,7 +1993,7 @@ private:
 			requestQueueOverflowStatusCode);
 	}
 
-	void writeSpawnExceptionErrorResponse(const ClientPtr &client, const shared_ptr<SpawnException> &e) {
+	void writeSpawnExceptionErrorResponse(const ClientPtr &client, const boost::shared_ptr<SpawnException> &e) {
 		if (strip(e->getErrorPage()).empty()) {
 			RH_WARN(client, "Cannot checkout session. " << e->what());
 			writeErrorResponse(client, e->what());
@@ -2018,7 +2027,7 @@ private:
 		response.append(typeName);
 		response.append("\nError message: ");
 		response.append(e->what());
-		shared_ptr<tracable_exception> e3 = dynamic_pointer_cast<tracable_exception>(e);
+		boost::shared_ptr<tracable_exception> e3 = dynamic_pointer_cast<tracable_exception>(e);
 		if (e3 != NULL) {
 			response.append("\nBacktrace:\n");
 			response.append(e3->backtrace());

@@ -18,7 +18,7 @@ require 'phusion_passenger/common_library'
 # Defines tasks for compiling a static library containing Boost and OXT.
 def define_libboost_oxt_task(namespace, output_dir, extra_compiler_flags = nil)
 	output_file = "#{output_dir}.a"
-	flags = "-Iext #{extra_compiler_flags} #{PlatformInfo.portability_cflags} #{EXTRA_CXXFLAGS}"
+	flags = "-Iext #{extra_compiler_flags} #{EXTRA_CXXFLAGS}"
 	
 	if false && boolean_option('RELEASE')
 		# Disable RELEASE support. Passenger Standalone wants to link to the
@@ -109,11 +109,16 @@ if USE_VENDORED_LIBEV
 		"ext/libev/Makefile.am"
 	]
 	file LIBEV_OUTPUT_DIR + "Makefile" => dependencies do
+		cc = PlatformInfo.cc
+		cxx = PlatformInfo.cxx
 		# Disable all warnings: http://pod.tst.eu/http://cvs.schmorp.de/libev/ev.pod#COMPILER_WARNINGS
-		cflags = "#{EXTRA_CXXFLAGS} -w"
+		cflags = "#{EXTRA_CFLAGS} -w"
 		sh "mkdir -p #{LIBEV_OUTPUT_DIR}" if !File.directory?(LIBEV_OUTPUT_DIR)
 		sh "cd #{LIBEV_OUTPUT_DIR} && sh #{LIBEV_SOURCE_DIR}configure " +
-			"--disable-shared --enable-static CFLAGS='#{cflags}' orig_CFLAGS=1"
+			"--disable-shared --enable-static " +
+			# libev's configure script may select a different default compiler than we
+			# do, so we force our compiler choice.
+			"CC='#{cc}' CXX='#{cxx}' CFLAGS='#{cflags}' orig_CFLAGS=1"
 	end
 	
 	libev_sources = Dir["ext/libev/{*.c,*.h}"]
@@ -156,12 +161,17 @@ if USE_VENDORED_LIBEIO
 		"ext/libeio/Makefile.am"
 	]
 	file LIBEIO_OUTPUT_DIR + "Makefile" => dependencies do
+		cc = PlatformInfo.cc
+		cxx = PlatformInfo.cxx
 		# Disable all warnings. The author has a clear standpoint on that:
 		# http://pod.tst.eu/http://cvs.schmorp.de/libev/ev.pod#COMPILER_WARNINGS
-		cflags = "#{EXTRA_CXXFLAGS} -w"
+		cflags = "#{EXTRA_CFLAGS} -w"
 		sh "mkdir -p #{LIBEIO_OUTPUT_DIR}" if !File.directory?(LIBEIO_OUTPUT_DIR)
 		sh "cd #{LIBEIO_OUTPUT_DIR} && sh #{LIBEIO_SOURCE_DIR}configure " +
-			"--disable-shared --enable-static CFLAGS='#{cflags}'"
+			"--disable-shared --enable-static " +
+			# libeio's configure script may select a different default compiler than we
+			# do, so we force our compiler choice.
+			"CC='#{cc}' CXX='#{cxx}' CFLAGS='#{cflags}'"
 	end
 	
 	libeio_sources = Dir["ext/libeio/{*.c,*.h}"]
@@ -203,7 +213,7 @@ end
 
 
 libboost_oxt_cflags = ""
-libboost_oxt_cflags << " -faddress-sanitizer" if USE_ASAN
+libboost_oxt_cflags << " #{PlatformInfo.adress_sanitizer_flag}" if USE_ASAN
 libboost_oxt_cflags.strip!
 LIBBOOST_OXT = define_libboost_oxt_task("common", COMMON_OUTPUT_DIR + "libboost_oxt", libboost_oxt_cflags)
 COMMON_LIBRARY.define_tasks(libboost_oxt_cflags)

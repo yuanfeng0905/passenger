@@ -239,7 +239,7 @@ private:
 		}
 	};
 	
-	typedef shared_ptr<Server> ServerPtr;
+	typedef boost::shared_ptr<Server> ServerPtr;
 	
 	string gatewayAddress;
 	unsigned short gatewayPort;
@@ -300,7 +300,7 @@ private:
 		P_INFO(ips.size() << " Union Station gateway servers found");
 		
 		for (it = ips.begin(); it != ips.end(); it++) {
-			ServerPtr server = make_shared<Server>(*it, gatewayAddress, gatewayPort,
+			ServerPtr server = boost::make_shared<Server>(*it, gatewayAddress, gatewayPort,
 				certificate, &proxyInfo);
 			if (server->ping()) {
 				servers.push_back(server);
@@ -356,7 +356,7 @@ private:
 	}
 	
 	void sendOut(const Item &item) {
-		unique_lock<boost::mutex> l(syncher);
+		boost::unique_lock<boost::mutex> l(syncher);
 		bool sent = false;
 		bool someServersWentDown = false;
 		

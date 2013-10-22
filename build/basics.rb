@@ -1,5 +1,5 @@
 #  Phusion Passenger - https://www.phusionpassenger.com/
-#  Copyright (c) 2010, 2011, 2012 Phusion
+#  Copyright (c) 2010-2013 Phusion
 #
 #  "Phusion Passenger" is a trademark of Hongli Lai & Ninh Bui.
 #
@@ -122,50 +122,44 @@ LIBEXT   = PlatformInfo.library_extension
 USE_DMALLOC = boolean_option('USE_DMALLOC')
 USE_EFENCE  = boolean_option('USE_EFENCE')
 USE_ASAN    = boolean_option('USE_ASAN')
-OPTIMIZATION_FLAGS = "#{PlatformInfo.debugging_cflags} -DPASSENGER_DEBUG -DBOOST_DISABLE_ASSERTS -fcommon".strip
-OPTIMIZATION_FLAGS << " -O" if OPTIMIZE
-OPTIMIZATION_FLAGS << " -feliminate-unused-debug-symbols -feliminate-unused-debug-types" if PlatformInfo.compiler_supports_feliminate_unused_debug?
-OPTIMIZATION_FLAGS << " -fvisibility=hidden -DVISIBILITY_ATTRIBUTE_SUPPORTED" if PlatformInfo.compiler_supports_visibility_flag?
-OPTIMIZATION_FLAGS << " -Wno-attributes" if PlatformInfo.compiler_supports_visibility_flag? &&
-	PlatformInfo.compiler_visibility_flag_generates_warnings? &&
-	PlatformInfo.compiler_supports_wno_attributes_flag?
-OPTIMIZATION_FLAGS << " -fno-omit-frame-pointers" if USE_ASAN
 
 # Agent-specific compiler flags.
 AGENT_CFLAGS  = ""
-AGENT_CFLAGS << " -faddress-sanitizer" if USE_ASAN
+AGENT_CFLAGS << " #{PlatformInfo.adress_sanitizer_flag}" if USE_ASAN
 AGENT_CFLAGS.strip!
 
 # Agent-specific linker flags.
 AGENT_LDFLAGS = ""
 AGENT_LDFLAGS << " #{PlatformInfo.dmalloc_ldflags}" if USE_DMALLOC
 AGENT_LDFLAGS << " #{PlatformInfo.electric_fence_ldflags}" if USE_EFENCE
-AGENT_LDFLAGS << " -faddress-sanitizer" if USE_ASAN
+AGENT_LDFLAGS << " #{PlatformInfo.adress_sanitizer_flag}" if USE_ASAN
 # Extra linker flags for backtrace_symbols() to generate useful output (see AgentsBase.cpp).
 AGENT_LDFLAGS << " #{PlatformInfo.export_dynamic_flags}"
 # Enable dead symbol elimination on OS X.
-AGENT_LDFLAGS << " -Wl,-dead_strip" if RUBY_PLATFORM =~ /darwin/
+AGENT_LDFLAGS << " -Wl,-dead_strip" if PlatformInfo.os_name == "macosx"
 AGENT_LDFLAGS.strip!
 
 # Extra compiler flags that should always be passed to the C/C++ compiler.
 # These should be included first in the command string, before anything else.
 EXTRA_PRE_CFLAGS = string_option('EXTRA_PRE_CFLAGS', '').gsub("\n", " ")
 EXTRA_PRE_CXXFLAGS = string_option('EXTRA_PRE_CXXFLAGS', '').gsub("\n", " ")
-# These should be included last in the command string, even after PlatformInfo.portability_cflags.
-EXTRA_CXXFLAGS = "-Wall -Wextra -Wno-unused-parameter -Wno-parentheses -Wpointer-arith -Wwrite-strings -Wno-long-long"
-EXTRA_CXXFLAGS << " -Wno-missing-field-initializers" if PlatformInfo.compiler_supports_wno_missing_field_initializers_flag?
-EXTRA_CXXFLAGS << " -mno-tls-direct-seg-refs" if PlatformInfo.requires_no_tls_direct_seg_refs? && PlatformInfo.compiler_supports_no_tls_direct_seg_refs_option?
-# Work around Clang warnings in ev++.h.
-EXTRA_CXXFLAGS << " -Wno-ambiguous-member-template" if PlatformInfo.cxx_is_clang?
-EXTRA_CXXFLAGS << " #{OPTIMIZATION_FLAGS}" if !OPTIMIZATION_FLAGS.empty?
+# These should be included last in the command string.
+EXTRA_CFLAGS = PlatformInfo.default_extra_cflags.dup
+EXTRA_CFLAGS << " " << string_option('EXTRA_CFLAGS').gsub("\n", " ") if string_option('EXTRA_CFLAGS')
+EXTRA_CXXFLAGS = PlatformInfo.default_extra_cxxflags.dup
 EXTRA_CXXFLAGS << " " << string_option('EXTRA_CXXFLAGS').gsub("\n", " ") if string_option('EXTRA_CXXFLAGS')
-EXTRA_CXXFLAGS << " -DPASSENGER_DISABLE_THREAD_LOCAL_STORAGE" if !boolean_option('PASSENGER_THREAD_LOCAL_STORAGE', true)
+[EXTRA_CFLAGS, EXTRA_CXXFLAGS].each do |flags|
+	flags << " -fno-omit-frame-pointers" if USE_ASAN
+	flags << " -DPASSENGER_DISABLE_THREAD_LOCAL_STORAGE" if !boolean_option('PASSENGER_THREAD_LOCAL_STORAGE', true)
+end
 
 # Extra linker flags that should always be passed to the linker.
 # These should be included first in the command string, before anything else.
 EXTRA_PRE_LDFLAGS  = string_option('EXTRA_PRE_LDFLAGS', '').gsub("\n", " ")
 # These should be included last in the command string, even after PlatformInfo.portability_ldflags.
-EXTRA_LDFLAGS  = string_option('EXTRA_LDFLAGS', '').gsub("\n", " ")
+EXTRA_LDFLAGS     = string_option('EXTRA_LDFLAGS', '').gsub("\n", " ")
+EXTRA_C_LDFLAGS   = string_option('EXTRA_C_LDFLAGS', '').gsub("\n", " ")
+EXTRA_CXX_LDFLAGS = string_option('EXTRA_CXX_LDFLAGS', '').gsub("\n", " ")
 
 
 AGENT_OUTPUT_DIR          = string_option('AGENT_OUTPUT_DIR', OUTPUT_DIR + "agents") + "/"

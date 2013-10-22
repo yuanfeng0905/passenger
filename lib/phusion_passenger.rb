@@ -10,14 +10,15 @@ module PhusionPassenger
 	FILE_LOCATION = File.expand_path(__FILE__)
 	
 	
-	###### Version numbers ######
+	###### Names and version numbers ######
 	
 	PACKAGE_NAME = 'passenger-enterprise-server'
+	PROGRAM_NAME = 'Phusion Passenger'
 	# Run 'rake ext/common/Constants.h' after changing this number.
 	VERSION_STRING = '4.0.20'
 	
-	PREFERRED_NGINX_VERSION = '1.4.2'
-	NGINX_SHA256_CHECKSUM = '5361ffb7b0ebf8b1a04369bc3d1295eaed091680c1c58115f88d56c8e51f3611'
+	PREFERRED_NGINX_VERSION = '1.4.3'
+	NGINX_SHA256_CHECKSUM = 'ae123885c923a6c3f5bab0a8b7296ef21c4fdf6087834667ebbc16338177de84'
 
 	PREFERRED_PCRE_VERSION  = '8.32'
 	PCRE_SHA256_CHECKSUM = 'd5d8634b36baf3d08be442a627001099583b397f456bc795304a013383b6423a'
@@ -47,6 +48,7 @@ module PhusionPassenger
 		:include_dir,
 		:doc_dir,
 		:ruby_libdir,
+		:node_libdir,
 		:apache2_module_path,
 		:ruby_extension_source_dir,
 		:nginx_module_source_dir
@@ -84,6 +86,7 @@ module PhusionPassenger
 			@include_dir           = "#{@source_root}/ext".freeze
 			@doc_dir               = "#{@source_root}/doc".freeze
 			@ruby_libdir           = File.dirname(FILE_LOCATION)
+			@node_libdir           = "#{@source_root}/node_lib".freeze
 			@apache2_module_path   = "#{@source_root}/buildout/apache2/mod_passenger.so".freeze
 			@ruby_extension_source_dir = "#{@source_root}/ext/ruby"
 			@nginx_module_source_dir   = "#{@source_root}/ext/nginx"
@@ -131,11 +134,36 @@ module PhusionPassenger
 		}
 	end
 	eval(getters_code, binding, __FILE__, __LINE__)
+
+	def self.index_doc_path
+		return "#{doc_dir}/#{INDEX_DOC_NAME}"
+	end
+
+	def self.apache2_doc_path
+		return "#{doc_dir}/#{APACHE2_DOC_NAME}"
+	end
+
+	def self.nginx_doc_path
+		return "#{doc_dir}/#{NGINX_DOC_NAME}"
+	end
+
+	def self.standalone_doc_path
+		return "#{doc_dir}/#{STANDALONE_DOC_NAME}"
+	end
 	
 	
 	###### Other resource locations ######
 	
 	BINARIES_URL_ROOT  = "https://oss-binaries.phusionpassenger.com/binaries/enterprise-NQLVwRlu10n13/by_release"
+	INDEX_DOC_NAME      = "Users guide.html"
+	APACHE2_DOC_NAME    = "Users guide Apache.html"
+	NGINX_DOC_NAME      = "Users guide Nginx.html"
+	STANDALONE_DOC_NAME = "Users guide Standalone.html"
+	INDEX_DOC_URL       = "http://www.modrails.com/documentation/Users%20guide.html"
+	APACHE2_DOC_URL     = "http://www.modrails.com/documentation/Users%20guide%20Apache.html"
+	NGINX_DOC_URL       = "http://www.modrails.com/documentation/Users%20guide%20Nginx.html"
+	STANDALONE_DOC_URL  = "http://www.modrails.com/documentation/Users%20guide%20Standalone.html"
+	SUPPORT_URL         = "http://www.phusionpassenger.com/support"
 
 	def self.binaries_ca_cert_path
 		return "#{resources_dir}/oss-binaries.phusionpassenger.com.crt"

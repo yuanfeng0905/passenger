@@ -56,6 +56,8 @@
 
 	#define MESSAGE_SERVER_MAX_USERNAME_SIZE 100
 
+	#define PASSENGER_IS_ENTERPRISE 1
+
 	#define PASSENGER_VERSION "4.0.20"
 
 	#define POOL_HELPER_THREAD_STACK_SIZE 262144
@@ -73,8 +75,6 @@
 	#define SERVER_INSTANCE_DIR_STRUCTURE_MINOR_VERSION 0
 
 	#define STANDALONE_NGINX_CONFIGURE_OPTIONS "--with-cc-opt='-Wno-error' --without-http_fastcgi_module --without-http_scgi_module --without-http_uwsgi_module --with-http_gzip_static_module --with-http_stub_status_module"
-
-	#define PASSENGER_IS_ENTERPRISE 1
 
 
 #endif /* _PASSENGER_CONSTANTS_H */

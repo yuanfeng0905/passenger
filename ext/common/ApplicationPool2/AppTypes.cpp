@@ -6,7 +6,10 @@
  *
  *  See LICENSE file for license information.
  */
+
 #include <ApplicationPool2/AppTypes.h>
+#include <exception>
+#include <string.h>
 
 namespace Passenger {
 namespace ApplicationPool2 {
@@ -16,7 +19,7 @@ const AppTypeDefinition appTypeDefinitions[] = {
 	{ PAT_RACK, "rack", "config.ru", "Passenger RackApp" },
 	{ PAT_WSGI, "wsgi", "passenger_wsgi.py", "Passenger WsgiApp" },
 	{ PAT_CLASSIC_RAILS, "classic-rails", "config/environment.rb", "Passenger ClassicRailsApp" },
-	{ PAT_NODE, "node", "passenger_node.js", "Passenger NodeApp" },
+	{ PAT_NODE, "node", "app.js", "Passenger NodeApp" },
 	{ PAT_METEOR, "meteor", ".meteor", "Passenger MeteorApp" },
 	{ PAT_NONE, NULL, NULL, NULL }
 };
@@ -30,7 +33,11 @@ using namespace Passenger::ApplicationPool2;
 
 PP_AppTypeDetector *
 pp_app_type_detector_new() {
-	return new AppTypeDetector();
+	try {
+		return new AppTypeDetector();
+	} catch (const std::bad_alloc &) {
+		return 0;
+	}
 }
 
 void
@@ -40,18 +47,29 @@ pp_app_type_detector_free(PP_AppTypeDetector *detector) {
 
 PassengerAppType
 pp_app_type_detector_check_document_root(PP_AppTypeDetector *_detector,
-	const char *documentRoot, unsigned int len, int resolveFirstSymlink)
+	const char *documentRoot, unsigned int len, int resolveFirstSymlink,
+	PP_Error *error)
 {
 	AppTypeDetector *detector = (AppTypeDetector *) _detector;
-	return detector->checkDocumentRoot(StaticString(documentRoot, len), resolveFirstSymlink);
+	try {
+		return detector->checkDocumentRoot(StaticString(documentRoot, len), resolveFirstSymlink);
+	} catch (const std::exception &e) {
+		pp_error_set(e, error);
+		return PAT_ERROR;
+	}
 }
 
 PassengerAppType
 pp_app_type_detector_check_app_root(PP_AppTypeDetector *_detector,
-	const char *appRoot, unsigned int len)
+	const char *appRoot, unsigned int len, PP_Error *error)
 {
 	AppTypeDetector *detector = (AppTypeDetector *) _detector;
-	return detector->checkAppRoot(StaticString(appRoot, len));
+	try {
+		return detector->checkAppRoot(StaticString(appRoot, len));
+	} catch (const std::exception &e) {
+		pp_error_set(e, error);
+		return PAT_ERROR;
+	}
 }
 
 const char *
