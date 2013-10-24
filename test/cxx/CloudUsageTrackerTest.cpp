@@ -76,7 +76,7 @@ namespace tut {
 
 	struct CloudUsageTrackerTest {
 		TempDir datadirGuard;
-		shared_ptr<TestTracker> tracker;
+		boost::shared_ptr<TestTracker> tracker;
 
 		CloudUsageTrackerTest()
 			: datadirGuard("tmp.clouddata")
@@ -90,7 +90,7 @@ namespace tut {
 		}
 
 		void init(const string &datadir = "tmp.clouddata") {
-			tracker = make_shared<TestTracker>(datadir);
+			tracker = boost::make_shared<TestTracker>(datadir);
 			tracker->abortHandler = abortHandler;
 		}
 

@@ -382,7 +382,7 @@ protected:
 
 public:
 	unsigned int threshold;
-	function<void (const string &message)> abortHandler;
+	boost::function<void (const string &message)> abortHandler;
 
 	CloudUsageTracker(const string &dir,
 		const string &baseUrl = string(),
