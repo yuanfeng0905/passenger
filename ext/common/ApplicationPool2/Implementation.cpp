@@ -898,7 +898,7 @@ Group::shouldSpawnForGetAction() const {
 bool
 Group::allowSpawn() const {
 	return isAlive() && !poolAtFullCapacity()
-		&& (options.maxProcesses == 0 || (long) getProcessCount() < options.maxProcesses)
+		&& (options.maxProcesses == 0 || getProcessCount() < options.maxProcesses)
 		&& !hasSpawnError;
 }
 
