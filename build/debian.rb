@@ -67,7 +67,8 @@ task 'debian:orig_tarball' => Packaging::PREGENERATED_FILES do
 		sh "mkdir -p #{PKG_DIR}/#{DEBIAN_NAME}_#{PACKAGE_VERSION}"
 		recursive_copy_files(DEBIAN_ORIG_TARBALL_FILES.call, "#{PKG_DIR}/#{DEBIAN_NAME}_#{PACKAGE_VERSION}")
 		sh "cd #{PKG_DIR}/#{DEBIAN_NAME}_#{PACKAGE_VERSION} && tar xzf #{local_nginx_tarball}"
-		sh "cd #{PKG_DIR} && tar -c #{DEBIAN_NAME}_#{PACKAGE_VERSION} | gzip --best > #{DEBIAN_NAME}_#{PACKAGE_VERSION}.orig.tar.gz"
+		sh "cd #{PKG_DIR} && find #{DEBIAN_NAME}_#{PACKAGE_VERSION} -print0 | xargs -0 touch -d '2013-10-27 00:00:00 UTC'"
+		sh "cd #{PKG_DIR} && tar -c #{DEBIAN_NAME}_#{PACKAGE_VERSION} | gzip --no-name --best > #{DEBIAN_NAME}_#{PACKAGE_VERSION}.orig.tar.gz"
 	end
 end
 
@@ -144,10 +145,15 @@ end
 
 def create_debian_binary_package_task(distribution, arch)
 	task "debian:binary_package:#{distribution}_#{arch}" => 'debian:binary_packages:check' do
+		require 'shellwords'
 		base_name = "#{DEBIAN_NAME}_#{PACKAGE_VERSION}-1~#{distribution}1"
-		sh "cd #{PKG_DIR}/official && " +
+		logfile = "#{PKG_DIR}/official/passenger_#{distribution}_#{arch}.log"
+		command = "cd #{PKG_DIR}/official && " +
 			"pbuilder-dist #{distribution} #{arch} build #{base_name}.dsc " +
-			"2>&1 | tee #{PKG_DIR}/official/passenger_#{distribution}_#{arch}.log"
+			"2>&1 | awk '{ print strftime(\"%Y-%m-%d %H:%M:%S -- \"), $0; fflush(); }'" +
+			" | tee #{logfile}"
+		sh "bash -c #{Shellwords.escape(command)}"
+		sh "echo Done >> #{logfile}"
 	end
 end
 

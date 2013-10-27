@@ -6,6 +6,7 @@
 #  See LICENSE file for license information.
 
 require 'phusion_passenger'
+require 'phusion_passenger/constants'
 require 'phusion_passenger/platform_info'
 require 'phusion_passenger/platform_info/ruby'
 require 'phusion_passenger/platform_info/apache'
