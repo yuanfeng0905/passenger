@@ -1,37 +1,12 @@
 #!/usr/bin/env ruby
 # encoding: binary
-<<<<<<< HEAD
-=======
 #  Phusion Passenger - https://www.phusionpassenger.com/
-#  Copyright (c) 2013 Phusion
+#  Copyright (c) 2010-2013 Phusion
 #
 #  "Phusion Passenger" is a trademark of Hongli Lai & Ninh Bui.
 #
 #  See LICENSE file for license information.
 
-#
-#  See LICENSE file for license information.
-
-#
-#  Permission is hereby granted, free of charge, to any person obtaining a copy
-#  of this software and associated documentation files (the "Software"), to deal
-#  in the Software without restriction, including without limitation the rights
-#  to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-#  copies of the Software, and to permit persons to whom the Software is
-#  furnished to do so, subject to the following conditions:
-#
-#  The above copyright notice and this permission notice shall be included in
-#  all copies or substantial portions of the Software.
-#
-#  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-#  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-#  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-#  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-#  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-#  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-#  THE SOFTWARE.
-
->>>>>>> local/master
 require 'socket'
 
 module PhusionPassenger
@@ -102,6 +77,13 @@ module App
 
 		production = options["environment"] == "production" ? "production" : ""
 		pid = fork do
+			# Meteor is quite !@#$% here: if we kill its start script
+			# with *any* signal, it'll leave a ton of garbage processes
+			# around. Apparently it expects the user to press Ctrl-C in a
+			# terminal which happens to send a signal to all processes
+			# in the session. We emulate that behavior here by giving
+			# Meteor its own process group, and sending signals to the
+			# entire process group.
 			Process.setpgrp
 			exec("meteor run -p #{port} #{production}")
 		end
@@ -122,6 +104,7 @@ module App
 		end
 		puts "!> Ready"
 		puts "!> socket: main;tcp://127.0.0.1:#{port};http_session;0"
+		puts "!> pid: #{pid}"
 		puts "!> "
 		begin
 			STDIN.readline
@@ -130,6 +113,7 @@ module App
 	ensure
 		Process.kill('INT', -pid) rescue nil
 		Process.waitpid(pid) rescue nil
+		Process.kill('INT', -pid) rescue nil
 	end
 	
 end # module App

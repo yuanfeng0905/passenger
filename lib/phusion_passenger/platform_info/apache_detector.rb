@@ -10,7 +10,8 @@ require 'phusion_passenger/constants'
 require 'phusion_passenger/platform_info'
 require 'phusion_passenger/platform_info/ruby'
 require 'phusion_passenger/platform_info/apache'
-require 'phusion_passenger/utils/ansi_colors'	
+require 'phusion_passenger/utils/ansi_colors'
+require 'pathname'
 
 module PhusionPassenger
 module PlatformInfo
@@ -179,6 +180,8 @@ class ApacheDetector
 	end
 
 	def result_for(apxs2)
+		# All the results use realpaths, so the input must too.
+		apxs2 = Pathname.new(apxs2).realpath
 		return @results.find { |r| r.apxs2 == apxs2 }
 	end
 
@@ -191,30 +194,21 @@ private
 		end
 	end
 
-	# On Ubuntu, /usr/bin/apxs2 is a symlink to /usr/bin/apxs. We're only
-	# supposed to detect one Apache in that case so we need to resolve symlinks.
+	# On Ubuntu, /usr/bin/apxs2 is a symlink to /usr/bin/apxs.
+	# On recent Arch Linux releases, /bin, /sbin etc are symlinks to
+	# /usr/bin and /usr/sbin.
+	# We're only supposed to detect one Apache in that case so we need to
+	# resolve symlinks.
 	def remove_symlink_duplications(filenames)
-		result = []
-		symlink_files = []
-
-		filenames.each do |filename|
-			if File.symlink?(filename)
-				symlink_files << filename
-			else
-				result << filename
-			end
+		old_size = filenames.size
+		filenames = filenames.map do |filename|
+			Pathname.new(filename).realpath
 		end
-
-		symlink_files.each do |filename|
-			full_filename = File.expand_path(File.readlink(filename), File.dirname(filename))
-			if result.include?(full_filename)
-				log "#{filename} is a symlink to #{full_filename}. Ignoring it."
-			else
-				result << full_filename
-			end
+		filenames.uniq!
+		if old_size != filenames.size
+			log "#{old_size - filenames.size} symlink duplicate(s) detected; ignoring them."
 		end
-
-		return result
+		return filenames
 	end
 
 	def add_result

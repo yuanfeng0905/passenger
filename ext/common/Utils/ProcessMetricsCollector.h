@@ -77,6 +77,7 @@ struct ProcessMetrics {
 	/** OS X Snow Leopard does not report the VM size correctly, so don't use this. */
 	size_t  vmsize;
 	pid_t   processGroupId;
+	uid_t   uid;
 	string  command;
 	
 	ProcessMetrics() {
@@ -365,6 +366,7 @@ private:
 			metrics.rss  = (size_t) readNextWordAsLongLong(&start);
 			metrics.vmsize  = (size_t) readNextWordAsLongLong(&start);
 			metrics.processGroupId = (pid_t) readNextWordAsLongLong(&start);
+			metrics.uid  = (uid_t) readNextWordAsLongLong(&start);
 			metrics.command = readRestOfLine(start);
 
 			bool pidAllowed;
@@ -436,9 +438,9 @@ public:
 		const char *command[] = {
 			"ps", "-o",
 			#if defined(sun) || defined(__sun)
-				"pid,ppid,pcpu,rss,vsz,pgid,args",
+				"pid,ppid,pcpu,rss,vsz,pgid,uid,args",
 			#else
-				"pid,ppid,%cpu,rss,vsize,pgid,command",
+				"pid,ppid,%cpu,rss,vsize,pgid,uid,command",
 			#endif
 			#ifdef PS_SUPPORTS_MULTIPLE_PIDS
 				pidsArg.c_str(),
