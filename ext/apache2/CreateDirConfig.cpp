@@ -23,6 +23,8 @@
 
 
 			config->ruby = NULL;
+				config->python = NULL;
+				config->nodejs = NULL;
 				config->minInstances = UNSET_INT_VALUE;
 				config->user = NULL;
 				config->group = NULL;

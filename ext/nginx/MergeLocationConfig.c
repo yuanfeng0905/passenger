@@ -42,6 +42,12 @@
 	
 
 	
+		ngx_conf_merge_str_value(conf->nodejs,
+			prev->nodejs,
+			NULL);
+	
+
+	
 		ngx_conf_merge_str_value(conf->environment,
 			prev->environment,
 			NULL);

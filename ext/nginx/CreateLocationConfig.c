@@ -38,6 +38,11 @@
 	
 
 	
+		conf->nodejs.data = NULL;
+		conf->nodejs.len  = 0;
+	
+
+	
 		conf->environment.data = NULL;
 		conf->environment.len  = 0;
 	

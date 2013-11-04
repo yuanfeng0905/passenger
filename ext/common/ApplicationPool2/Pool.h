@@ -102,6 +102,7 @@ public:
 			spawning   = true;
 			superGroup = false;
 			oobw       = false;
+			detachedProcessesChecker = false;
 			testOverflowRequestQueue = false;
 			detachedProcessesChecker = false;
 			rollingRestarting = false;

@@ -85,6 +85,7 @@ private:
 		
 		result.push_back(&ruby);
 		result.push_back(&python);
+		result.push_back(&nodejs);
 		result.push_back(&loggingAgentAddress);
 		result.push_back(&loggingAgentUsername);
 		result.push_back(&loggingAgentPassword);
@@ -231,6 +232,12 @@ public:
 	 * is a Python app.
 	 */
 	StaticString python;
+
+	/**
+	 * Path to the Node.js command to use, in case the application to spawn
+	 * is a Node.js app.
+	 */
+	StaticString nodejs;
 	
 	/**
 	 * Any rights that the spawned application process may have. The SpawnManager
@@ -402,6 +409,7 @@ public:
 		defaultUser             = "nobody";
 		ruby                    = DEFAULT_RUBY;
 		python                  = DEFAULT_PYTHON;
+		nodejs                  = DEFAULT_NODEJS;
 		rights                  = DEFAULT_BACKEND_ACCOUNT_RIGHTS;
 		debugger                = false;
 		loadShellEnvvars        = true;
@@ -555,6 +563,7 @@ public:
 			appendKeyValue (vec, "postexec_chroot",    postexecChroot);
 			appendKeyValue (vec, "ruby",               ruby);
 			appendKeyValue (vec, "python",             python);
+			appendKeyValue (vec, "nodejs",             nodejs);
 			appendKeyValue (vec, "logging_agent_address",  loggingAgentAddress);
 			appendKeyValue (vec, "logging_agent_username", loggingAgentUsername);
 			appendKeyValue (vec, "logging_agent_password", loggingAgentPassword);
@@ -614,7 +623,7 @@ public:
 		} else if (appType == "wsgi") {
 			return python + "\t" + resourceLocator.getHelperScriptsDir() + "/wsgi-loader.py";
 		} else if (appType == "node") {
-			return "node\t" + resourceLocator.getHelperScriptsDir() + "/node-loader.js";
+			return nodejs + "\t" + resourceLocator.getHelperScriptsDir() + "/node-loader.js";
 		} else if (appType == "meteor") {
 			return ruby + "\t" + resourceLocator.getHelperScriptsDir() + "/meteor-loader.rb";
 		} else {
