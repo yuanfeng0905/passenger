@@ -76,7 +76,9 @@ public:
 	typedef UnionStation::LoggerPtr LoggerPtr;
 
 	struct DebugSupport {
+		/** Mailbox for the unit tests to receive messages on. */
 		MessageBoxPtr debugger;
+		/** Mailbox for the ApplicationPool code to receive messages on. */
 		MessageBoxPtr messages;
 
 		// Choose aspects to debug.
@@ -85,6 +87,7 @@ public:
 		bool superGroup;
 		bool oobw;
 		bool testOverflowRequestQueue;
+		bool detachedProcessesChecker;
 		bool rollingRestarting;
 
 		// The following fields may only be accessed by Pool.
@@ -100,6 +103,7 @@ public:
 			superGroup = false;
 			oobw       = false;
 			testOverflowRequestQueue = false;
+			detachedProcessesChecker = false;
 			rollingRestarting = false;
 			spawnLoopIteration = 0;
 			spawnErrors = 0;
