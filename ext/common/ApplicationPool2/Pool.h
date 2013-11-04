@@ -690,7 +690,7 @@ public:
 			}
 
 			UPDATE_TRACE_POINT();
-			if (!oldProcess->isAlive()) {
+			if (!oldProcess->isAlive() || oldProcess->enabled == Process::DETACHED) {
 				/* Apparently the old process has gone away during the
 				 * time we spent on spawning a new one. But we can
 				 * replace another old process, if any.

@@ -186,7 +186,7 @@ namespace tut {
 		}
 	};
 	
-	DEFINE_TEST_GROUP_WITH_LIMIT(ApplicationPool2_PoolTest, 100);
+	DEFINE_TEST_GROUP_WITH_LIMIT(ApplicationPool2_PoolTest, 110);
 	
 	TEST_METHOD(1) {
 		// Test initial state.
@@ -1750,7 +1750,7 @@ namespace tut {
 
 	/*****************************/
 
-	TEST_METHOD(81) {
+	TEST_METHOD(91) {
 		// Test rolling restarts.
 		TempDirCopy dir("stub/wsgi", "tmp.wsgi");
 		Options options = createOptions();
@@ -1812,7 +1812,7 @@ namespace tut {
 		ensure_equals(pool->getProcessCount(), 1u);
 	}
 
-	TEST_METHOD(82) {
+	TEST_METHOD(92) {
 		// Test rolling restarting a group that's currently spawning a process.
 		TempDirCopy dir("stub/wsgi", "tmp.wsgi");
 		initPoolDebugging();
@@ -1882,7 +1882,7 @@ namespace tut {
 		);
 	}
 
-	TEST_METHOD(83) {
+	TEST_METHOD(93) {
 		// Test detaching a group after the rolling restarter thread has spawned
 		// a new process, but before it has attached the new process to the group.
 		initPoolDebugging();
@@ -1911,7 +1911,7 @@ namespace tut {
 		ensure_equals(pool->getProcessCount(), 0u);
 	}
 
-	TEST_METHOD(84) {
+	TEST_METHOD(94) {
 		// Test deployment error resistance. When ignoreSpawnErrors is set,
 		// and there are already processes, and a spawn error is encountered,
 		// then get() should never try to spawn another process until the group
@@ -1974,7 +1974,7 @@ namespace tut {
 		ensure_equals("(4)", pool->getProcessCount(), 1u);
 	}
 
-	TEST_METHOD(85) {
+	TEST_METHOD(95) {
 		// Test deployment error resistance. When ignoreSpawnErrors is set,
 		// and the first process fails to spawn, it throws a SpawnException.
 		TempDirCopy c1("stub/wsgi", "tmp.wsgi");
@@ -2000,7 +2000,7 @@ namespace tut {
 		}
 	}
 
-	TEST_METHOD(86) {
+	TEST_METHOD(96) {
 		// Upon encountering a spawn error, the rolling restarter thread should
 		// quit trying to restart that group.
 		initPoolDebugging();
@@ -2071,7 +2071,7 @@ namespace tut {
 		);
 	}
 
-	TEST_METHOD(87) {
+	TEST_METHOD(97) {
 		// Test that the maxProcesses option causes no more than the specified number
 		// of processes to be spawned per group.
 		Options options = createOptions();
@@ -2102,6 +2102,42 @@ namespace tut {
 		EVENTUALLY(5,
 			result = number == 3;
 		);
+	}
+
+	TEST_METHOD(98) {
+		// Test rolling restarting while a process is being shut down.
+		TempDirCopy dir("stub/wsgi", "tmp.wsgi");
+		Options options = createOptions();
+		options.appRoot = "tmp.wsgi";
+		options.appType = "wsgi";
+		options.spawnMethod = "direct";
+		options.minProcesses = 0;
+		options.rollingRestart = true;
+		initPoolDebugging();
+		debug->restarting = false;
+		debug->spawning = false;
+		debug->detachedProcessesChecker = true;
+		debug->rollingRestarting = true;
+
+		SystemTime::forceAll(1);
+		pool->get(options, &ticket);
+		vector<ProcessPtr> processes = pool->getProcesses();
+		GroupPtr group = processes[0]->getGroup();
+		pid_t origPid = processes[0]->pid;
+
+		SystemTime::forceAll(2);
+		pool->restartGroupsByAppRoot(options.appRoot);
+		debug->debugger->recv("About to attach rolling restarted process");
+		ensure(pool->detachProcess(processes[0]));
+		debug->debugger->recv("About to start detached processes checker");
+		debug->messages->send("Proceed with attaching rolling restarted process");
+
+		EVENTUALLY(5,
+			processes = pool->getProcesses();
+			result = processes.size() == 1u && processes[0]->pid != origPid;
+		);
+
+		debug->messages->send("Proceed with starting detached processes checker");
 	}
 	
 	#if 0
