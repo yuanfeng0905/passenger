@@ -9,7 +9,6 @@ require 'phusion_passenger/utils/file_system_watcher'
 module PhusionPassenger
 module Standalone
 
-# Security note: can run arbitrary ruby code by evaluating passenger.conf
 class AppFinder
 	attr_accessor :dirs
 	attr_reader :apps
@@ -18,7 +17,8 @@ class AppFinder
 		return File.exist?("#{dir}/config.ru") ||
 			File.exist?("#{dir}/config/environment.rb") ||
 			File.exist?("#{dir}/passenger_wsgi.py") ||
-			File.exist?("#{dir}/passenger_node.js")
+			File.exist?("#{dir}/app.js") ||
+			File.exist?("#{dir}/.meteor")
 	end
 	
 	def initialize(dirs, options = {})
@@ -38,7 +38,7 @@ class AppFinder
 			}
 			watchlist << app_root
 			watchlist << "#{app_root}/config" if File.exist?("#{app_root}/config")
-			watchlist << "#{app_root}/passenger.conf" if File.exist?("#{app_root}/passenger.conf")
+			watchlist << "#{app_root}/passenger-standalone.json" if File.exist?("#{app_root}/passenger-standalone.json")
 		else
 			dirs = @dirs.empty? ? ["."] : @dirs
 			dirs.each do |dir|
@@ -51,7 +51,7 @@ class AppFinder
 					}
 					watchlist << app_root
 					watchlist << "#{app_root}/config" if File.exist?("#{app_root}/config")
-					watchlist << "#{app_root}/passenger.conf" if File.exist?("#{app_root}/passenger.conf")
+					watchlist << "#{app_root}/passenger-standalone.json" if File.exist?("#{app_root}/passenger-standalone.json")
 				else
 					full_dir = File.expand_path(dir)
 					watchlist << full_dir
@@ -65,7 +65,7 @@ class AppFinder
 						end
 						watchlist << subdir
 						watchlist << "#{subdir}/config" if File.exist?("#{subdir}/config")
-						watchlist << "#{subdir}/passenger.conf" if File.exist?("#{subdir}/passenger.conf")
+						watchlist << "#{subdir}/passenger-standalone.json" if File.exist?("#{subdir}/passenger-standalone.json")
 					end
 				end
 			end
@@ -75,7 +75,7 @@ class AppFinder
 			a[:root] <=> b[:root]
 		end
 		apps.map! do |app|
-			config_filename = File.join(app[:root], "passenger.conf")
+			config_filename = File.join(app[:root], "passenger-standalone.json")
 			if File.exist?(config_filename)
 				local_options = load_config_file(:local_config, config_filename)
 				merged_options = @options.merge(app)
@@ -104,7 +104,7 @@ class AppFinder
 			watcher.close
 			if changed
 				old_apps = @apps
-				# The change could be caused by a write to some passenger.conf file.
+				# The change could be caused by a write to some passenger-standalone.json file.
 				# Wait for a short period so that the write has a chance to finish.
 				if wait_on_io(termination_pipe, 0.25)
 					return
@@ -150,8 +150,32 @@ private
 	end
 	
 	def load_config_file(context, filename)
-		require 'phusion_passenger/standalone/config_file' unless defined?(ConfigFile)
-		return ConfigFile.new(context, filename).options
+		require 'phusion_passenger/utils/json' if !defined?(PhusionPassenger::Utils::JSON)
+		begin
+			data = File.open(filename, "r:utf-8") do |f|
+				f.read
+			end
+		rescue SystemCallError => e
+			STDERR.puts "*** Warning: cannot load config file #{filename} (#{e})"
+			return {}
+		end
+
+		begin
+			config = PhusionPassenger::Utils::JSON.parse(data)
+		rescue => e
+			STDERR.puts "*** Warning: cannot parse config file #{filename} (#{e})"
+			return {}
+		end
+		if !config.is_a?(Hash)
+			STDERR.puts "*** Warning: cannot parse config file #{filename} (it does not contain an object)"
+			return {}
+		end
+
+		result = {}
+		config.each_pair do |key, val|
+			result[key.to_sym] = val
+		end
+		return result
 	end
 	
 	def looks_like_app_directory?(dir)
