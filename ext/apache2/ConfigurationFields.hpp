@@ -22,28 +22,30 @@
 
 
 
-	/** Whether to load environment variables from the shell before running the application. */
-	Threeway loadShellEnvvars;
-	/** Enable or disable Passenger's high performance mode. */
-	Threeway highPerformance;
 	/** Enable or disable Phusion Passenger. */
 	Threeway enabled;
-	/** The minimum number of application instances to keep when cleaning idle instances. */
-	int minInstances;
+	/** Allow Apache to handle error response. */
+	Threeway errorOverride;
+	/** Enable or disable Passenger's high performance mode. */
+	Threeway highPerformance;
+	/** Whether to load environment variables from the shell before running the application. */
+	Threeway loadShellEnvvars;
 	/** The maximum number of queued requests. */
 	int maxRequestQueueSize;
-	/** A timeout for application startup. */
-	int startTimeout;
 	/** The maximum number of requests that an application instance may process. */
 	int maxRequests;
+	/** The minimum number of application instances to keep when cleaning idle instances. */
+	int minInstances;
+	/** A timeout for application startup. */
+	int startTimeout;
 	/** The group that Ruby applications must run as. */
 	const char *group;
-	/** The user that Ruby applications must run as. */
-	const char *user;
 	/** The Node.js command to use. */
 	const char *nodejs;
 	/** The Python interpreter to use. */
 	const char *python;
 	/** The Ruby interpreter to use. */
 	const char *ruby;
+	/** The user that Ruby applications must run as. */
+	const char *user;
 

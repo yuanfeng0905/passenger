@@ -6,6 +6,7 @@
 #  See LICENSE file for license information.
 
 require 'rbconfig'
+require 'etc'
 require 'phusion_passenger/platform_info'
 require 'phusion_passenger/platform_info/operating_system'
 
@@ -305,6 +306,29 @@ module PlatformInfo
 			return "rvmsudo"
 		else
 			return "sudo"
+		end
+	end
+
+	# Returns a `sudo` or `rvmsudo` command that spawns a shell, depending
+	# on whether the current Ruby interpreter is managed by RVM.
+	def self.ruby_sudo_shell_command(args = nil)
+		if in_rvm?
+			shell = ENV['SHELL'].to_s
+			if shell.empty?
+				begin
+					user = Etc.getpwuid(0)
+				rescue ArgumentError
+					user = nil
+				end
+				shell = user.shell if user
+				shell = "bash" if !shell || shell.empty?
+			end
+			result = "rvmsudo "
+			result << "#{args} " if args
+			result << shell
+			return result
+		else
+			return "sudo -s #{args}".strip
 		end
 	end
 	

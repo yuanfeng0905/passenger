@@ -130,13 +130,15 @@
 
 6.3.3. PassengerPython <filename>	=>	passengerpython-filename--1ssesv3
 
-6.3.4. PassengerAppRoot <path/to/root>	=>	passengerapproot-path-to-root--uf24yd
+6.3.4. PassengerNodejs <filename>	=>	passengernodejs-filename--2mjb1j
 
-6.3.5. PassengerRestartDir <directory>	=>	passengerrestartdir-directory--1fmhmv0
+6.3.5. PassengerAppRoot <path/to/root>	=>	passengerapproot-path-to-root--uf24yd
 
-6.3.6. PassengerRollingRestarts <on|off>	=>	passengerrollingrestarts
+6.3.6. PassengerRestartDir <directory>	=>	passengerrestartdir-directory--1fmhmv0
 
-6.3.7. PassengerResistDeploymentErrors <on|off>	=>	passengerresistdeploymenterrors
+6.3.7. PassengerRollingRestarts <on|off>	=>	passengerrollingrestarts
+
+6.3.8. PassengerResistDeploymentErrors <on|off>	=>	passengerresistdeploymenterrors
 
 6.4. Process spawning options	=>	process-spawning-options-v2vscm
 
@@ -194,7 +196,9 @@
 
 6.7.1. PassengerBufferResponse <on|off>	=>	passengerbufferresponse-on-off--1y7ilka
 
-6.7.2. PassengerMaxRequestQueueSize <number>	=>	passenger-max-request-queue-size-number--1f1uocd
+6.7.2. PassengerErrorOverride <on|off>	=>	passengererroroverride-on-off--1pq9nez
+
+6.7.3. PassengerMaxRequestQueueSize <number>	=>	passenger-max-request-queue-size-number--1f1uocd
 
 6.8. Compatibility options	=>	compatibility-options-8jve5a
 

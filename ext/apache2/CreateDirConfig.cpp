@@ -28,6 +28,7 @@
 				config->minInstances = UNSET_INT_VALUE;
 				config->user = NULL;
 				config->group = NULL;
+				config->errorOverride = DirConfig::UNSET;
 				config->maxRequests = UNSET_INT_VALUE;
 				config->startTimeout = UNSET_INT_VALUE;
 				config->highPerformance = DirConfig::UNSET;

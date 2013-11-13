@@ -7,4 +7,7 @@ This installer must be able to write to the following directory:
 But it can't do that, because you're running the installer as <b><%= `whoami`.strip %></b>.
 Please re-run this installer using <%= @sudo %>:
 
-  <b><%= @sudo_e %> <%= @ruby %> <%= @installer %></b>
+  <b>export ORIG_PATH="$PATH"
+  <%= @sudo_s_e %>
+  export PATH="$ORIG_PATH"
+  <%= @ruby %> <%= @installer %></b>
