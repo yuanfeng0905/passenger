@@ -65,7 +65,8 @@ module PhusionPassenger
 			"--without-http_scgi_module " <<
 			"--without-http_uwsgi_module " <<
 			"--with-http_gzip_static_module " <<
-			"--with-http_stub_status_module"
+			"--with-http_stub_status_module " <<
+			"--with-http_ssl_module"
 		PASSENGER_IS_ENTERPRISE = 1
 	end
 
