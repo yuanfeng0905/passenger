@@ -43,10 +43,10 @@ struct AgentOptions {
 
 	bool testBinary;
 	string requestSocketLink;
-	string cloudLicensingDataDir;
-	string cloudLicensingBaseUrl;
-	string cloudLicensingCert;
-	string cloudLicensingProxy;
+	string licensingDataDir;
+	string licensingBaseUrl;
+	string licensingServerCert;
+	string licensingProxy;
 
 	AgentOptions() { }
 
@@ -85,11 +85,11 @@ struct AgentOptions {
 		// Optional options.
 		prestartUrls          = options.getStrSet("prestart_urls", false);
 		requestSocketLink     = options.get("request_socket_link", false);
-		cloudLicensingDataDir = options.get("cloud_licensing_data_dir", false,
-			getHomeDir() + "/.passenger-enterprise/cloud_usage_data");
-		cloudLicensingCert    = options.get("cloud_licensing_cert", false);
-		cloudLicensingBaseUrl = options.get("cloud_licensing_base_url", false);
-		cloudLicensingProxy   = options.get("cloud_licensing_proxy", false);
+		licensingDataDir = options.get("licensing_data_dir", false,
+			getHomeDir() + "/.passenger-enterprise/usage_data");
+		licensingServerCert = options.get("licensing_server_cert", false);
+		licensingBaseUrl = options.get("licensing_base_url", false);
+		licensingProxy   = options.get("licensing_proxy", false);
 	}
 };
 

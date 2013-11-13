@@ -554,24 +554,24 @@ public:
 
 		/* Initialize cloud usage tracker. */
 		UPDATE_TRACE_POINT();
-		if (passenger_enterprise_on_cloud_license()) {
+		if (passenger_enterprise_should_track_usage()) {
 			string certificate;
-			if (options.cloudLicensingCert.empty()) {
-				certificate = resourceLocator.getResourcesDir() + "/cloud_service.crt";
-			} else if (options.cloudLicensingCert != "-") {
-				certificate = options.cloudLicensingCert;
+			if (options.licensingServerCert.empty()) {
+				certificate = resourceLocator.getResourcesDir() + "/licensing_server.crt";
+			} else if (options.licensingServerCert != "-") {
+				certificate = options.licensingServerCert;
 			}
 
-			P_INFO("Starting Phusion Passenger Cloud usage tracker using data directory " <<
-				options.cloudLicensingDataDir << " and certificate " <<
+			P_INFO("Starting Phusion Passenger usage tracker using data directory " <<
+				options.licensingDataDir << " and certificate " <<
 				(certificate.empty() ? "(none)" : certificate));
-			makeDirTree(options.cloudLicensingDataDir);
+			makeDirTree(options.licensingDataDir);
 			
 			CloudUsageTracker *tracker = new CloudUsageTracker(
-				options.cloudLicensingDataDir,
-				options.cloudLicensingBaseUrl,
+				options.licensingDataDir,
+				options.licensingBaseUrl,
 				certificate,
-				options.cloudLicensingProxy);
+				options.licensingProxy);
 			tracker->abortHandler = boost::bind(&Server::cloudTrackerAbortHandler, this, _1);
 			tracker->start();
 		}

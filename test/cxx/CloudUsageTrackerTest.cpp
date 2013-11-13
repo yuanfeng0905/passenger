@@ -130,7 +130,7 @@ namespace tut {
 			tracker->runOneCycle();
 			fail("AbortException expected");
 		} catch (const AbortException &e) {
-			ensure(StaticString(e.what()).find("Cannot write to the Phusion Passenger Enterprise cloud licensing data directory")
+			ensure(StaticString(e.what()).find("Cannot write to the Phusion Passenger Enterprise licensing data directory")
 				!= string::npos);
 		}
 		chmod("tmp.clouddata", 0600);
@@ -147,7 +147,7 @@ namespace tut {
 			tracker->runOneCycle();
 			fail("AbortException expected");
 		} catch (const AbortException &e) {
-			ensure(StaticString(e.what()).find("An I/O error occurred while recording a cloud usage point")
+			ensure(StaticString(e.what()).find("An I/O error occurred while recording a usage point")
 				!= string::npos);
 		}
 		ensure_equals(listDir("tmp.clouddata").size(), 0u);

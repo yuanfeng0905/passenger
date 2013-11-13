@@ -172,9 +172,20 @@ passenger_enterprise_license_check() {
 	return message;
 }
 
-int
+static int
 passenger_enterprise_on_cloud_license() {
 	return strstr(licenseKey, "Cloud license") != NULL;
+}
+
+static int
+passenger_enterprise_on_heroku_license() {
+	return strstr(licenseKey, "Heroku license") != NULL;
+}
+
+int
+passenger_enterprise_should_track_usage() {
+	return passenger_enterprise_on_cloud_license()
+		|| passenger_enterprise_on_heroku_license();
 }
 
 #ifdef __cplusplus

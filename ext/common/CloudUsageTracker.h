@@ -85,7 +85,7 @@ protected:
 		if (f == NULL) {
 			stringstream message;
 			message << "Cannot write to the Phusion Passenger Enterprise " <<
-				"cloud licensing data directory (" << datadir << "). Please " <<
+				"licensing data directory (" << datadir << "). Please " <<
 				"ensure that that directory exists and is writable by user '" <<
 				getProcessUsername() << "'.";
 			abortWithError(message.str());
@@ -97,7 +97,7 @@ protected:
 			fclose(f);
 			unlink(filename.c_str());
 			stringstream message;
-			message << "An I/O error occurred while recording a cloud usage point: " <<
+			message << "An I/O error occurred while recording a usage point: " <<
 				strerror(errno) << " (errno=" << e << ")";
 			abortWithError(message.str());
 		} else {
@@ -112,7 +112,7 @@ protected:
 		if (dir == NULL) {
 			stringstream message;
 			message << "Cannot read the Phusion Passenger Enterprise " <<
-				"cloud licensing data directory (" << dir << "). Please " <<
+				"licensing data directory (" << dir << "). Please " <<
 				"ensure that that directory exists and is readable by user '" <<
 				getProcessUsername() << "'.";
 			abortWithError(message.str());
@@ -199,16 +199,16 @@ protected:
 			Json::Value response;
 
 			if (!reader.parse(responseData, response, false) || !validateResponse(response)) {
-				P_WARN("Could not contact the Phusion Passenger Enterprise cloud licensing server "
+				P_WARN("Could not contact the Phusion Passenger Enterprise licensing server "
 					"(parse error: " << reader.getFormattedErrorMessages().c_str() << "; data: \"" <<
 					cEscapeString(responseData) << "\"). This problem may be temporary, "
 					"but if it persists for more than 3 days then Phusion Passenger Enterprise "
-					"will be disabled until the cloud licensing server could be contacted again. "
-					"To ensure proper access to the cloud licensing server, please try these:\n"
+					"will be disabled until the licensing server could be contacted again. "
+					"To ensure proper access to the licensing server, please try these:\n"
 					"- Ensure that your network connection to https://www.phusionpassenger.com works.\n"
 					"- If you can only access https://www.phusionpassenger.com via a proxy, "
-					"please set the config option 'PassengerCtl cloud_licensing_proxy PROXY_URL' (Apache) "
-					"or 'passenger_ctl cloud_licensing_proxy PROXY_URL' (Nginx). 'PROXY_URL' takes the format of "
+					"please set the config option 'PassengerCtl licensing_proxy PROXY_URL' (Apache) "
+					"or 'passenger_ctl licensing_proxy PROXY_URL' (Nginx). 'PROXY_URL' takes the format of "
 					"protocol://username:password@hostname:port, where 'protocol' is either 'http' or 'socks5'.\n"
 					"Please contact support@phusion.nl if you require any assistance.");
 				return false;
@@ -218,7 +218,7 @@ protected:
 				// response == error
 				stringstream message;
 				message << "There is a problem with your Phusion Passenger Enterprise "
-					"cloud license. Phusion Passenger Enterprise has been disabled until "
+					"license. Phusion Passenger Enterprise has been disabled until "
 					"this problem is resolved. Please contact support@phusion.nl if you "
 					"require assistance. The problem is as follows: " <<
 					response["message"].asString();
@@ -226,15 +226,15 @@ protected:
 				return false; // Not reached; avoid compiler warning.
 			}
 		} else {
-			P_WARN("Could not contact the Phusion Passenger Enterprise cloud licensing server "
+			P_WARN("Could not contact the Phusion Passenger Enterprise licensing server "
 				"(HTTP error: " << lastErrorMessage << "). This problem may be temporary, "
 				"but if it persists for more than 3 days then Phusion Passenger Enterprise "
-				"will be disabled until the cloud licensing server could be contacted again. "
-				"To ensure proper access to the cloud licensing server, please try these:\n"
+				"will be disabled until the licensing server could be contacted again. "
+				"To ensure proper access to the licensing server, please try these:\n"
 				"- Ensure that your network connection to https://www.phusionpassenger.com works.\n"
 				"- If you can only access https://www.phusionpassenger.com via a proxy, "
-				"please set the config option 'PassengerCtl cloud_licensing_proxy PROXY_URL' (Apache) "
-				"or 'passenger_ctl cloud_licensing_proxy PROXY_URL' (Nginx). 'PROXY_URL' takes the format of "
+				"please set the config option 'PassengerCtl licensing_proxy PROXY_URL' (Apache) "
+				"or 'passenger_ctl licensing_proxy PROXY_URL' (Nginx). 'PROXY_URL' takes the format of "
 				"protocol://username:password@hostname:port, where 'protocol' is either 'http' or 'socks5'.\n"
 				"Please contact support@phusion.nl if you require any assistance.");
 			return false;
@@ -406,7 +406,7 @@ public:
 		try {
 			proxyInfo = prepareCurlProxy(proxyAddress);
 		} catch (const ArgumentException &e) {
-			throw RuntimeException("Invalid cloud license tracking proxy address \"" +
+			throw RuntimeException("Invalid license tracking proxy address \"" +
 				proxyAddress + "\": " + e.what());
 		}
 		thr = NULL;
@@ -434,22 +434,22 @@ public:
 
 	void runOneCycle() {
 		TRACE_POINT();
-		P_DEBUG("Begin tracking cloud usage cycle");
+		P_DEBUG("Begin tracking usage cycle");
 		recordUsagePoint();
 		vector<string> usagePoints = listUsagePoints();
 		unsigned int sent = sendUsagePoints(usagePoints);
 		if (usagePoints.size() - sent > threshold) {
 			abortWithError("Phusion Passenger Enterprise hasn't been able to contact "
-				"the cloud licensing server (https://www.phusionpassenger.com) for "
+				"the licensing server (https://www.phusionpassenger.com) for "
 				"more than 3 days.\n"
 				"- Please ensure that your network connection to https://www.phusionpassenger.com works.\n"
 				"- If you can only access https://www.phusionpassenger.com via a proxy, "
-				"please set the config option 'PassengerCtl cloud_licensing_proxy PROXY_URL' (Apache) "
-				"or 'passenger_ctl cloud_licensing_proxy PROXY_URL' (Nginx). 'PROXY_URL' takes the format of "
+				"please set the config option 'PassengerCtl licensing_proxy PROXY_URL' (Apache) "
+				"or 'passenger_ctl licensing_proxy PROXY_URL' (Nginx). 'PROXY_URL' takes the format of "
 				"protocol://username:password@hostname:port, where 'protocol' is either 'http' or 'socks5'.\n"
 				"If the problem persists, please contact support@phusion.nl.");
 		}
-		P_DEBUG("Done tracking cloud usage cycle");
+		P_DEBUG("Done tracking usage cycle");
 	}
 };
 
