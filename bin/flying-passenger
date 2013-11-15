@@ -181,8 +181,9 @@ private
 	def create_arguments
 		args = {
 			"web_server_type" => "nginx",
-			"web_server_pid" => $$.to_s,
-			"passenger_root" => PhusionPassenger.source_root,
+			"web_server_pid"  => $$.to_s,
+			"web_server_passenger_version" => PhusionPassenger::VERSION_STRING,
+			"passenger_root"  => PhusionPassenger.source_root,
 			"ruby" => PlatformInfo.ruby_command,
 			"setsid" => "true",
 			"request_socket_password" => "-"
