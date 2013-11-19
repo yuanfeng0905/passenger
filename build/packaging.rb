@@ -379,15 +379,19 @@ task :fakeroot => [:apache2, :nginx, :doc] do
 	sh "mkdir -p #{fake_include_dir}"
 	# Infer headers that the Nginx module needs
 	headers = [
-		["ext/common/Exceptions.h", "Exceptions.h"]
+		["ext/common/Exceptions.h", "common/Exceptions.h"],
+		["ext/common/Utils/License.h", "common/Utils/License.h"],
+		["ext/common/Utils/License.c", "common/Utils/License.c"],
+		["ext/common/Utils/MD5.h", "common/Utils/MD5.h"],
+		["ext/boost/detail/endian.hpp", "boost/detail/endian.hpp"]
 	]
 	Dir["ext/nginx/*.[ch]"].each do |filename|
 		File.read(filename).split("\n").grep(%r{#include "common/(.+)"}) do |match|
-			headers << ["ext/common/#{$1}", $1]
+			headers << ["ext/common/#{$1}", "common/#{$1}"]
 		end
 	end
 	headers.each do |header|
-		target = "#{fake_include_dir}/common/#{header[1]}"
+		target = "#{fake_include_dir}/#{header[1]}"
 		dir = File.dirname(target)
 		if !File.directory?(dir)
 			sh "mkdir -p #{dir}"

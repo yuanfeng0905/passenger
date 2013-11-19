@@ -43,8 +43,8 @@
 #include "ngx_http_passenger_module.h"
 #include "Configuration.h"
 #include "ContentHandler.h"
-#include "../common/Utils/License.c"
-#include "../common/Utils/MD5.cpp" /* File is C compatible. */
+#include "common/Utils/License.c"
+#include "common/Utils/MD5.cpp" /* File is C compatible. */
 
 
 #define HELPER_SERVER_MAX_SHUTDOWN_TIME 5
