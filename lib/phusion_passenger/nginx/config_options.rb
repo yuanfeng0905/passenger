@@ -234,6 +234,19 @@ LOCATION_CONFIGURATION_OPTIONS = [
 		:name  => 'passenger_request_queue_overflow_status_code',
 		:type  => :integer
 	},
+	{
+		:name  => 'passenger_restart_dir',
+		:type  => :string
+	},
+	{
+		:name   => 'passenger_app_type',
+		:type   => :string,
+		:header => nil
+	},
+	{
+		:name   => 'passenger_startup_file',
+		:type   => :string
+	},
 
 	###### Enterprise features ######
 	{

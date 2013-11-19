@@ -206,6 +206,20 @@ u_char int_buf[32], *end, *buf, *pos;
 	
 
 	
+		if (conf->restart_dir.data != NULL) {
+			len += 22;
+			len += conf->restart_dir.len + 1;
+		}
+	
+
+	
+		if (conf->startup_file.data != NULL) {
+			len += 23;
+			len += conf->startup_file.len + 1;
+		}
+	
+
+	
 		if (conf->fly_with.data != NULL) {
 			len += 19;
 			len += conf->fly_with.len + 1;
@@ -587,6 +601,32 @@ buf = pos = ngx_pnalloc(cf->pool, len);
 			pos = ngx_copy(pos,
 				int_buf,
 				end - int_buf);
+			*pos = '\0';
+			pos++;
+		}
+	
+
+	
+		if (conf->restart_dir.data != NULL) {
+			pos = ngx_copy(pos,
+				"PASSENGER_RESTART_DIR",
+				22);
+			pos = ngx_copy(pos,
+				conf->restart_dir.data,
+				conf->restart_dir.len);
+			*pos = '\0';
+			pos++;
+		}
+	
+
+	
+		if (conf->startup_file.data != NULL) {
+			pos = ngx_copy(pos,
+				"PASSENGER_STARTUP_FILE",
+				23);
+			pos = ngx_copy(pos,
+				conf->startup_file.data,
+				conf->startup_file.len);
 			*pos = '\0';
 			pos++;
 		}

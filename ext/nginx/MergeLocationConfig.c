@@ -162,6 +162,24 @@
 	
 
 	
+		ngx_conf_merge_str_value(conf->restart_dir,
+			prev->restart_dir,
+			NULL);
+	
+
+	
+		ngx_conf_merge_str_value(conf->app_type,
+			prev->app_type,
+			NULL);
+	
+
+	
+		ngx_conf_merge_str_value(conf->startup_file,
+			prev->startup_file,
+			NULL);
+	
+
+	
 		ngx_conf_merge_str_value(conf->fly_with,
 			prev->fly_with,
 			NULL);

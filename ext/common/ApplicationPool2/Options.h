@@ -632,11 +632,15 @@ public:
 	}
 	
 	StaticString getStartupFile() const {
-		const char *result = getAppTypeStartupFile(getAppType(appType));
-		if (result == NULL) {
-			return startupFile;
+		if (startupFile.empty()) {
+			const char *result = getAppTypeStartupFile(getAppType(appType));
+			if (result == NULL) {
+				return "";
+			} else {
+				return result;
+			}
 		} else {
-			return result;
+			return startupFile;
 		}
 	}
 	

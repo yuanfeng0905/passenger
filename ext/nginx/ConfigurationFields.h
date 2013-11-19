@@ -71,6 +71,8 @@
 
 	ngx_str_t app_root;
 
+	ngx_str_t app_type;
+
 	ngx_str_t concurrency_model;
 
 	ngx_str_t environment;
@@ -83,9 +85,13 @@
 
 	ngx_str_t python;
 
+	ngx_str_t restart_dir;
+
 	ngx_str_t ruby;
 
 	ngx_str_t spawn_method;
+
+	ngx_str_t startup_file;
 
 	ngx_str_t union_station_key;
 

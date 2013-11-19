@@ -94,6 +94,11 @@ public:
 				toString(SERVER_INSTANCE_DIR_GENERATION_STRUCTURE_MINOR_VERSION),
 				S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
 			
+			string passengerVersionFile = path + "/passenger_version.txt";
+			createFile(passengerVersionFile,
+				PASSENGER_VERSION "\n",
+				S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+			
 			
 			/* We want the upload buffer directory to be only writable by the web
 			 * server's worker processs. Other users may not have any access to this
@@ -106,17 +111,17 @@ public:
 				makeDirTree(path + "/buffered_uploads", "u=rwx,g=,o=");
 			}
 			
-			/* The web server must be able to directly connect to a backend. */
+			/* The HelperAgent must be able to connect to an application. */
 			if (runningAsRoot) {
 				if (userSwitching) {
-					/* Each backend process may be running as a different user,
+					/* Each application process may be running as a different user,
 					 * so the backends subdirectory must be world-writable.
 					 * However we don't want everybody to be able to know the
 					 * sockets' filenames, so the directory is not readable.
 					 */
 					makeDirTree(path + "/backends", "u=rwx,g=wx,o=wx,+t");
 				} else {
-					/* All backend processes are running as defaultUser/defaultGroup,
+					/* All application processes are running as defaultUser/defaultGroup,
 					 * so make defaultUser/defaultGroup the owner and group of the
 					 * subdirecory.
 					 *
@@ -127,30 +132,10 @@ public:
 					makeDirTree(path + "/backends", "u=rwx,g=x,o=x", defaultUid, defaultGid);
 				}
 			} else {
-				/* All backend processes are running as the same user as the web server,
+				/* All application processes are running as the same user as the web server,
 				 * so only allow access for this user.
 				 */
 				makeDirTree(path + "/backends", "u=rwx,g=,o=");
-			}
-			
-			/* The helper server (containing the application pool) must be able to access
-			 * the spawn server's socket.
-			 */
-			if (runningAsRoot) {
-				if (userSwitching) {
-					/* Both the helper server and the spawn server are
-					 * running as root.
-					 */
-					makeDirTree(path + "/spawn-server", "u=rwx,g=,o=");
-				} else {
-					/* Both the helper server and the spawn server are
-					 * running as defaultUser/defaultGroup.
-					 */
-					makeDirTree(path + "/spawn-server", "u=rwx,g=,o=",
-						defaultUid, defaultGid);
-				}
-			} else {
-				makeDirTree(path + "/spawn-server", "u=rwx,g=,o=");
 			}
 			
 			owner = true;

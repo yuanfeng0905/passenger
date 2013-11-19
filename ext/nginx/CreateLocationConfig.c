@@ -139,6 +139,21 @@
 	
 
 	
+		conf->restart_dir.data = NULL;
+		conf->restart_dir.len  = 0;
+	
+
+	
+		conf->app_type.data = NULL;
+		conf->app_type.len  = 0;
+	
+
+	
+		conf->startup_file.data = NULL;
+		conf->startup_file.len  = 0;
+	
+
+	
 		conf->fly_with.data = NULL;
 		conf->fly_with.len  = 0;
 	
