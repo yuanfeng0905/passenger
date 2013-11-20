@@ -22,6 +22,8 @@
 
 
 
+	/** Whether to buffer file uploads. */
+	Threeway bufferUpload;
 	/** Enable or disable Phusion Passenger. */
 	Threeway enabled;
 	/** Allow Apache to handle error response. */

@@ -1,3 +1,13 @@
+Release 4.0.26
+--------------
+
+ * Introduced the `PassengerBufferUpload` option for Apache. This option allows one
+   to disable upload buffering, e.g. in order to be able to track upload progress.
+ * [Nginx] The `HTTPS` variable is now set correctly for HTTPS connections, even
+   without setting `ssl on`. Fixes issue #401.
+ * [Standalone] It is now possible to listen on both a normal HTTP and an HTTPS port.
+
+
 Release 4.0.25
 --------------
 

@@ -242,4 +242,15 @@
 			return NULL;
 		}
 	
+	
+		static const char *
+		cmd_passenger_buffer_upload(cmd_parms *cmd, void *pcfg, const char *arg) {
+			DirConfig *config = (DirConfig *) pcfg;
+			config->bufferUpload =
+				arg ?
+				DirConfig::ENABLED :
+				DirConfig::DISABLED;
+			return NULL;
+		}
+	
 

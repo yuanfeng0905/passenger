@@ -114,3 +114,10 @@
 			add->loadShellEnvvars;
 	
 
+	
+		config->bufferUpload =
+			(add->bufferUpload == DirConfig::UNSET) ?
+			base->bufferUpload :
+			add->bufferUpload;
+	
+
