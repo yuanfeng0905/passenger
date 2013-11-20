@@ -567,6 +567,7 @@ public:
 		return distanceOfTimeInWords(spawnEndTime / 1000000);
 	}
 
+	bool isBeingRollingRestarted() const;
 	string inspect() const;
 
 	template<typename Stream>
@@ -583,6 +584,9 @@ public:
 		stream << "<spawn_end_time>" << spawnEndTime << "</spawn_end_time>";
 		stream << "<last_used>" << lastUsed << "</last_used>";
 		stream << "<uptime>" << uptime() << "</uptime>";
+		if (isBeingRollingRestarted()) {
+			stream << "<rolling_restarting/>";
+		}
 		switch (lifeStatus) {
 		case ALIVE:
 			stream << "<life_status>ALIVE</life_status>";

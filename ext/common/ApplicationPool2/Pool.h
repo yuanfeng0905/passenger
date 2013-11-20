@@ -186,6 +186,7 @@ public:
 
 	bool restarterThreadActive;
 	string restarterThreadStatus;
+	string restarterThreadGupid;
 
 	static void runAllActions(const vector<Callback> &actions) {
 		vector<Callback>::const_iterator it, end = actions.end();
@@ -450,6 +451,9 @@ public:
 					distanceOfTimeInWords(process->lastUsed / 1000000).c_str());
 			result << buf << endl;
 
+			if (process->isBeingRollingRestarted()) {
+				result << "    Rolling restarting..." << endl;
+			}
 			if (process->enabled == Process::DISABLING) {
 				result << "    Disabling..." << endl;
 			} else if (process->enabled == Process::DISABLED) {
@@ -537,6 +541,7 @@ public:
 			P_DEBUG("Starting rolling restarter thread");
 			restarterThreadActive = true;
 			restarterThreadStatus = "Looking for process for rolling restart...";
+			restarterThreadGupid.clear();
 			interruptableThreads.create_thread(
 				boost::bind(&Pool::restarterThreadMain, this),
 				"Restarter thread",
@@ -596,6 +601,7 @@ public:
 		ScopedLock l(syncher);
 		restarterThreadActive = false;
 		restarterThreadStatus.clear();
+		restarterThreadGupid.clear();
 		P_DEBUG("Rolling restarter thread done");
 	}
 
@@ -632,6 +638,7 @@ public:
 
 			restarterThreadStatus = "Restarting process " + oldProcessId +
 				" in group " + group->name + "...";
+			restarterThreadGupid = oldProcess->gupid;
 			P_DEBUG("Rolling restarting process " << oldProcessId <<
 				" in group " << group->name);
 			
@@ -1663,6 +1670,9 @@ public:
 		result << "Max pool size : " << max << endl;
 		result << "Processes     : " << getProcessCount(false) << endl;
 		result << "Requests in top-level queue : " << getWaitlist.size() << endl;
+		if (restarterThreadActive) {
+			result << restarterThreadStatus << endl;
+		}
 		if (options.verbose) {
 			unsigned int i = 0;
 			foreach (const GetWaiter &waiter, getWaitlist) {
@@ -1713,6 +1723,10 @@ public:
 		result << "<max>" << max << "</max>";
 		result << "<utilization>" << utilization(false) << "</utilization>";
 		result << "<get_wait_list_size>" << getWaitlist.size() << "</get_wait_list_size>";
+		if (restarterThreadActive) {
+			result << "<rolling_restart_status>" << escapeForXml(restarterThreadStatus) <<
+				"</rolling_restart_status>";
+		}
 
 		if (includeSecrets) {
 			vector<GetWaiter>::const_iterator w_it, w_end = getWaitlist.end();

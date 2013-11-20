@@ -1173,6 +1173,11 @@ Process::getSuperGroup() const {
 	return getGroup()->getSuperGroup();
 }
 
+bool
+Process::isBeingRollingRestarted() const {
+	return getGroup()->getPool()->restarterThreadGupid == gupid;
+}
+
 string
 Process::inspect() const {
 	assert(getLifeStatus() != DEAD);
