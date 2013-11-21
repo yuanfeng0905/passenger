@@ -1698,6 +1698,9 @@ public:
 				if (group->spawning()) {
 					result << "  (spawning new process...)" << endl;
 				}
+				if (group->hasSpawnError) {
+					result << "  Resisting deployment error!" << endl;
+				}
 				result << "  Requests in queue: " << group->getWaitlist.size() << endl;
 				inspectProcessList(options, result, group, group->enabledProcesses);
 				inspectProcessList(options, result, group, group->disablingProcesses);
