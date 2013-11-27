@@ -72,7 +72,7 @@ class MemoryStats
 	# Phusion Passenger is not running.
 	def passenger_processes
 		@passenger_processes ||= list_processes(:match =>
-			/((^| )Passenger |(^| )Rails:|(^| )Rack:|PassengerHelperAgent|PassengerWatchdog|PassengerLoggingAgent|wsgi-loader.py|flying-passenger)/)
+			/((^| )Passenger|(^| )Rails:|(^| )Rack:|wsgi-loader.py|flying-passenger)/)
 	end
 	
 	# Returns the sum of the memory usages of all given processes.

@@ -36,4 +36,6 @@
 				config->maxRequestQueueSize = UNSET_INT_VALUE;
 				config->loadShellEnvvars = DirConfig::UNSET;
 				config->bufferUpload = DirConfig::UNSET;
+				config->appType = NULL;
+				config->startupFile = NULL;
 	
