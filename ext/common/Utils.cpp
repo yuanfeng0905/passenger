@@ -268,7 +268,6 @@ extractDirName(const StaticString &path) {
 
 StaticString
 extractDirNameStatic(const StaticString &path) {
-	breakpoint();
 	if (path.empty()) {
 		return StaticString(".", 1);
 	}

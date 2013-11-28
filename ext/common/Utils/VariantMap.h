@@ -90,7 +90,7 @@ public:
 		}
 		
 		/** The key that wasn't found. */
-		string getKey() const {
+		const string &getKey() const {
 			return key;
 		}
 	};

@@ -11,12 +11,14 @@
 
 #include <sys/types.h>
 #include <string>
+#include <boost/shared_ptr.hpp>
 #include <Utils.h>
 #include <Utils/VariantMap.h>
 
 namespace Passenger {
 
 using namespace std;
+using namespace boost;
 
 
 struct AgentOptions {
@@ -92,6 +94,8 @@ struct AgentOptions {
 		licensingProxy   = options.get("licensing_proxy", false);
 	}
 };
+
+typedef boost::shared_ptr<AgentOptions> AgentOptionsPtr;
 
 
 } // namespace Passenger
