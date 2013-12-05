@@ -45,6 +45,13 @@
 	
 
 	
+		config->appEnv =
+			(add->appEnv == NULL) ?
+			base->appEnv :
+			add->appEnv;
+	
+
+	
 		config->minInstances =
 			(add->minInstances == UNSET_INT_VALUE) ?
 			base->minInstances :

@@ -681,7 +681,7 @@ private:
 					int originalStatus = r->status;
 					r->status = HTTP_OK;
 					return originalStatus;
-				} if (ap_pass_brigade(r->output_filters, bb) == APR_SUCCESS) {
+				} else if (ap_pass_brigade(r->output_filters, bb) == APR_SUCCESS) {
 					apr_brigade_cleanup(bb);
 				}
 				return OK;
@@ -936,7 +936,6 @@ private:
 		addHeader(output, "PASSENGER_APP_ROOT", mapper.getAppRoot());
 		addHeader(output, "PASSENGER_APP_GROUP_NAME", config->getAppGroupName(mapper.getAppRoot()));
 		#include "SetHeaders.cpp"
-		addHeader(output, "PASSENGER_ENV", config->getEnvironment());
 		addHeader(output, "PASSENGER_SPAWN_METHOD", config->getSpawnMethodString());
 		addHeader(r, output, "PASSENGER_MAX_REQUEST_QUEUE_SIZE", config->maxRequestQueueSize);
 		addHeader(output, "PASSENGER_APP_TYPE", mapper.getApplicationTypeName());

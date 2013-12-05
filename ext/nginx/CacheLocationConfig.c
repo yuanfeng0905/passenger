@@ -50,7 +50,7 @@ u_char int_buf[32], *end, *buf, *pos;
 
 	
 		if (conf->environment.data != NULL) {
-			len += 14;
+			len += 18;
 			len += conf->environment.len + 1;
 		}
 	
@@ -338,8 +338,8 @@ buf = pos = ngx_pnalloc(cf->pool, len);
 	
 		if (conf->environment.data != NULL) {
 			pos = ngx_copy(pos,
-				"PASSENGER_ENV",
-				14);
+				"PASSENGER_APP_ENV",
+				18);
 			pos = ngx_copy(pos,
 				conf->environment.data,
 				conf->environment.len);
