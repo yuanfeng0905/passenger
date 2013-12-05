@@ -340,10 +340,6 @@ struct ServerConfig {
 	 * instances. */
 	unsigned int maxPoolSize;
 	
-	/** The maximum number of simultaneously alive Rails application
-	 * that a single Rails application may occupy. */
-	unsigned int maxInstancesPerApp;
-	
 	/** The maximum number of seconds that an application may be
 	 * idle before it gets terminated. */
 	unsigned int poolIdleTime;
@@ -376,7 +372,6 @@ struct ServerConfig {
 		logLevel           = DEFAULT_LOG_LEVEL;
 		debugLogFile       = NULL;
 		maxPoolSize        = DEFAULT_MAX_POOL_SIZE;
-		maxInstancesPerApp = DEFAULT_MAX_INSTANCES_PER_APP;
 		poolIdleTime       = DEFAULT_POOL_IDLE_TIME;
 		userSwitching      = true;
 		defaultUser        = DEFAULT_WEB_APP_USER;

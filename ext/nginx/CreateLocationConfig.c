@@ -56,6 +56,10 @@
 	
 
 	
+		conf->max_instances_per_app = NGX_CONF_UNSET;
+	
+
+	
 		conf->max_requests = NGX_CONF_UNSET;
 	
 

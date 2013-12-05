@@ -859,7 +859,7 @@ Group::spawnThreadRealMain(const SpawnerPtr &spawner, const Options &options, un
 		
 		done = done
 			|| ((unsigned long) getProcessCount() >= options.minProcesses && getWaitlist.empty())
-			|| (options.maxProcesses != 0 && (unsigned int) getProcessCount() >= options.maxProcesses)
+			|| (options.maxProcesses != 0 && getProcessCount() >= options.maxProcesses)
 			|| pool->atFullCapacity(false);
 		m_spawning = !done;
 		if (done) {
@@ -897,7 +897,8 @@ Group::shouldSpawnForGetAction() const {
 
 bool
 Group::allowSpawn() const {
-	return isAlive() && !poolAtFullCapacity()
+	return isAlive()
+		&& !poolAtFullCapacity()
 		&& (options.maxProcesses == 0 || getProcessCount() < options.maxProcesses)
 		&& !hasSpawnError;
 }
