@@ -265,7 +265,8 @@ LOCATION_CONFIGURATION_OPTIONS = [
 	{
 		:name     => 'passenger_max_instances',
 		:type     => :integer,
-		:field    => :max_instances
+		:field    => :max_instances,
+		:header   => 'PASSENGER_MAX_PROCESSES'
 	},
 	{
 		:name     => 'passenger_max_request_time',

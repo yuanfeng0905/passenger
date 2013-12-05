@@ -676,7 +676,7 @@ buf = pos = ngx_pnalloc(cf->pool, len);
 	
 		if (conf->max_instances != NGX_CONF_UNSET) {
 			pos = ngx_copy(pos,
-				"PASSENGER_MAX_INSTANCES",
+				"PASSENGER_MAX_PROCESSES",
 				24);
 			end = ngx_snprintf(int_buf,
 				sizeof(int_buf) - 1,
