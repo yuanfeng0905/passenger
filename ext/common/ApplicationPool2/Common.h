@@ -95,10 +95,6 @@ struct Ticket {
 
 struct SpawnerConfig {
 	// Used by SmartSpawner and DirectSpawner.
-	/** Whether to print the preloader's and application's stdout. */
-	bool forwardStdout;
-	/** Whether to print the preloader's and application's stderr. */
-	bool forwardStderr;
 	/** A random generator to use. */
 	RandomGeneratorPtr randomGenerator;
 
@@ -108,9 +104,7 @@ struct SpawnerConfig {
 	unsigned int spawnTime;
 
 	SpawnerConfig(const RandomGeneratorPtr &randomGenerator = RandomGeneratorPtr())
-		: forwardStdout(true),
-		  forwardStderr(true),
-		  concurrency(1),
+		: concurrency(1),
 		  spawnerCreationSleepTime(0),
 		  spawnTime(0)
 	{

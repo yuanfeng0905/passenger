@@ -132,7 +132,10 @@ private:
 	}
 	
 public:
-	/*********** Spawn options that should be set manually ***********/
+	/*********** Spawn options that should be set manually ***********
+	 * These are the options that are relevant while spawning an application
+	 * process. These options are only used during spawning.
+	 */
 	
 	/**
 	 * The root directory of the application to spawn. In case of a Ruby on Rails
@@ -283,7 +286,10 @@ public:
 	unsigned int threadCount;
 	
 	
-	/*********** Per-group pool options that should be set manually ***********/
+	/*********** Per-group pool options that should be set manually ***********
+	 * These options dictate how Pool will manage processes, routing, etc. within
+	 * a single Group. These options are not process-specific, only group-specific.
+	 */
 	
 	/**
 	 * The minimum number of processes for the current group that the application
@@ -292,11 +298,11 @@ public:
 	unsigned int minProcesses;
 
 	/**
-	 * The maximum number of application instances that may be spawned
+	 * The maximum number of processes that may be spawned
 	 * for this app root. This option only has effect if it's lower than
-	 * the application pool's maxPerApp option and lower than its pool size.
+	 * the pool size.
 	 *
-	 * A value of 0 (the default) means unspecified, and has no effect.
+	 * A value of 0 means unspecified, and has no effect.
 	 */
 	unsigned int maxProcesses;
 	
@@ -315,6 +321,19 @@ public:
 	 */
 	unsigned int maxRequestQueueSize;
 
+	/**
+	 * The Union Station key to use in case analytics logging is enabled.
+	 * It is used by Pool::collectAnalytics() and other administrative
+	 * functions which are called periodically. Because they do not belong
+	 * to any request, and they may still want to log to Union Station,
+	 * this key is stored in the per-group options structure.
+	 *
+	 * It is not used on a per-request basis. Per-request analytics logging
+	 * (and Union Station logging) uses the logger object in the `logger` field
+	 * instead.
+	 */
+	StaticString unionStationKey;
+
 	/*-----------------*/
 
 	/**
@@ -324,7 +343,7 @@ public:
 	unsigned long memoryLimit;
 	
 	
-	/*********** Per-request options that should be set manually and that only matter to Pool ***********/
+	/*********** Per-request options that should be set manually ***********/
 	
 	/** Current request host name. */
 	StaticString hostName;
@@ -339,9 +358,9 @@ public:
 	UnionStation::LoggerPtr logger;
 
 	/**
-	 * The Union Station key to use in case analytics logging is enabled.
+	 * A sticky session ID for routing to a specific process.
 	 */
-	StaticString unionStationKey;
+	unsigned int stickySessionId;
 	
 	/**
 	 * A throttling rate for file stats. When set to a non-zero value N,
@@ -388,7 +407,10 @@ public:
 	/*-----------------*/
 	
 	
-	/*********** Spawn options automatically set by Pool ***********/
+	/*********** Spawn options automatically set by Pool ***********
+	 * These options are passed to the Spawner. The Pool::get() caller may not
+	 * see these values.
+	 */
 	
 	/** The secret key of the pool group that the spawned process is to belong to. */
 	StaticString groupSecret;
@@ -422,6 +444,7 @@ public:
 		maxOutOfBandWorkInstances = 1;
 		maxRequestQueueSize     = 100;
 		
+		stickySessionId         = 0;
 		statThrottleRate        = 0;
 		maxRequests             = 0;
 		noop                    = false;
@@ -517,8 +540,9 @@ public:
 	}
 	
 	Options &clearPerRequestFields() {
-		hostName = string();
-		uri      = string();
+		hostName = StaticString();
+		uri      = StaticString();
+		stickySessionId = 0;
 		noop     = false;
 		return clearLogger();
 	}
@@ -569,7 +593,6 @@ public:
 			appendKeyValue (vec, "logging_agent_password", loggingAgentPassword);
 			appendKeyValue4(vec, "debugger",           debugger);
 			appendKeyValue4(vec, "analytics",          analytics);
-			appendKeyValue (vec, "union_station_key",  unionStationKey);
 
 			appendKeyValue (vec, "group_secret",       groupSecret);
 		}
@@ -578,6 +601,7 @@ public:
 			appendKeyValue3(vec, "max_processes",       maxProcesses);
 			appendKeyValue2(vec, "max_preloader_idle_time", maxPreloaderIdleTime);
 			appendKeyValue3(vec, "max_out_of_band_work_instances", maxOutOfBandWorkInstances);
+			appendKeyValue (vec, "union_station_key",   unionStationKey);
 		}
 		
 		/*********************************/

@@ -257,8 +257,8 @@ private:
 			}
 			
 			while (!group->getWaitlist.empty()) {
-				getWaitlist.push(group->getWaitlist.front());
-				group->getWaitlist.pop();
+				getWaitlist.push_back(group->getWaitlist.front());
+				group->getWaitlist.pop_front();
 			}
 			detachedGroups.push_back(group);
 			group->shutdown(
@@ -283,7 +283,7 @@ private:
 				postLockActions.push_back(boost::bind(
 					waiter.callback, session, ExceptionPtr()));
 			}
-			getWaitlist.pop();
+			getWaitlist.pop_front();
 		}
 	}
 	
@@ -382,7 +382,7 @@ public:
 	 *    if !getWaitlist.empty():
 	 *       state == INITIALIZING
 	 */
-	std::queue<GetWaiter> getWaitlist;
+	deque<GetWaiter> getWaitlist;
 
 	/**
 	 * Groups which are being shut down right now. These Groups contain a
@@ -559,7 +559,7 @@ public:
 	SessionPtr get(const Options &newOptions, const GetCallback &callback) {
 		switch (state) {
 		case INITIALIZING:
-			getWaitlist.push(GetWaiter(newOptions, callback));
+			getWaitlist.push_back(GetWaiter(newOptions, callback));
 			verifyInvariants();
 			return SessionPtr();
 		case READY:
@@ -579,7 +579,7 @@ public:
 			}
 		case DESTROYING:
 		case DESTROYED:
-			getWaitlist.push(GetWaiter(newOptions, callback));
+			getWaitlist.push_back(GetWaiter(newOptions, callback));
 			setState(INITIALIZING);
 			createInterruptableThread(
 				boost::bind(

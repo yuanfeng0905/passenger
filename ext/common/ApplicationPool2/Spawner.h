@@ -102,8 +102,8 @@ protected:
 	class BackgroundIOCapturer {
 	private:
 		FileDescriptor fd;
-		string prefix;
-		bool print;
+		pid_t pid;
+		const char *channelName;
 		boost::mutex dataSyncher;
 		string data;
 		oxt::thread *thr;
@@ -132,16 +132,16 @@ protected:
 						data.append(buf, ret);
 					}
 					UPDATE_TRACE_POINT();
-					if (print && ret == 1 && buf[0] == '\n') {
-						P_INFO(prefix);
-					} else if (print) {
+					if (ret == 1 && buf[0] == '\n') {
+						printAppOutput(pid, channelName, "", 0);
+					} else {
 						vector<StaticString> lines;
 						if (ret > 0 && buf[ret - 1] == '\n') {
 							ret--;
 						}
 						split(StaticString(buf, ret), '\n', lines);
 						foreach (const StaticString line, lines) {
-							P_INFO(prefix << line);
+							printAppOutput(pid, channelName, line.data(), line.size());
 						}
 					}
 				}
@@ -149,10 +149,10 @@ protected:
 		}
 		
 	public:
-		BackgroundIOCapturer(const FileDescriptor &_fd, const string &_prefix, bool _print)
+		BackgroundIOCapturer(const FileDescriptor &_fd, pid_t _pid, const char *_channelName)
 			: fd(_fd),
-			  prefix(_prefix),
-			  print(_print),
+			  pid(_pid),
+			  channelName(_channelName),
 			  thr(NULL)
 			{ }
 		
@@ -328,8 +328,6 @@ protected:
 		FileDescriptor adminSocket;
 		FileDescriptor errorPipe;
 		const Options *options;
-		bool forwardStderr;
-		int forwardStderrTo;
 		DebugDirPtr debugDir;
 		
 		/****** Working state ******/
@@ -343,8 +341,6 @@ protected:
 			preparation = NULL;
 			pid = 0;
 			options = NULL;
-			forwardStderr = false;
-			forwardStderrTo = STDERR_FILENO;
 			spawnStartTime = 0;
 			timeout = 0;
 		}
@@ -776,8 +772,7 @@ protected:
 				if (details.stderrCapturer != NULL) {
 					details.stderrCapturer->appendToBuffer(result);
 				}
-				P_LOG(config->forwardStdout ? LVL_INFO : LVL_DEBUG,
-					"[App " << details.pid << " stdout] " << line);
+				printAppOutput(details.pid, "stdout", line.data(), line.size());
 			}
 		}
 	}

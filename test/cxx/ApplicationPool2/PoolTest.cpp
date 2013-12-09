@@ -43,6 +43,7 @@ namespace tut {
 			bg.start();
 			callback = boost::bind(&ApplicationPool2_PoolTest::_callback, this, _1, _2);
 			setLogLevel(LVL_ERROR); // TODO: change to LVL_WARN
+			setPrintAppOutputAsDebuggingMessages(true);
 		}
 		
 		~ApplicationPool2_PoolTest() {
@@ -56,6 +57,7 @@ namespace tut {
 			UPDATE_TRACE_POINT();
 			pool.reset();
 			setLogLevel(DEFAULT_LOG_LEVEL);
+			setPrintAppOutputAsDebuggingMessages(false);
 			SystemTime::releaseAll();
 		}
 
@@ -469,7 +471,7 @@ namespace tut {
 			pool->superGroups.get("test")->groups[0]->getWaitlist.size(), 1u);
 		
 		// Close an existing session so that one process is no
-		// longer at full capacity.
+		// longer at full utilization.
 		sessions[0].reset();
 		ensure_equals("The get request has been removed from the wait list",
 			pool->superGroups.get("test")->groups[0]->getWaitlist.size(), 0u);
@@ -477,11 +479,11 @@ namespace tut {
 	}
 	
 	TEST_METHOD(10) {
-		// If multiple matching processes exist, and all of them are at full capacity,
+		// If multiple matching processes exist, and all of them are at full utilization,
 		// and a new process may be spawned,
 		// then asyncGet() will put the action on the group's wait queue and spawn the
 		// new process.
-		// The process that first becomes not at full capacity
+		// The process that first becomes not at full utilization
 		// or the newly spawned process
 		// will process the action, whichever is earlier.
 		// Here we test the case where an existing process is earlier.
@@ -1317,7 +1319,6 @@ namespace tut {
 		options.appRoot = "tmp.wsgi";
 		options.appType = "wsgi";
 		options.spawnMethod = "direct";
-		spawnerConfig->forwardStderr = false;
 
 		writeFile("tmp.wsgi/passenger_wsgi.py",
 			"import sys\n"
@@ -1343,7 +1344,6 @@ namespace tut {
 		options.appType = "wsgi";
 		options.spawnMethod = "direct";
 		options.minProcesses = 4;
-		spawnerConfig->forwardStderr = false;
 
 		writeFile("tmp.wsgi/counter", "0");
 		chmod("tmp.wsgi/counter", 0666);
@@ -1548,7 +1548,6 @@ namespace tut {
 		options.appRoot = "tmp.wsgi";
 		options.appType = "wsgi";
 		options.spawnMethod = "direct";
-		spawnerConfig->forwardStderr = false;
 		pool->setMax(1);
 
 		writeFile("tmp.wsgi/passenger_wsgi.py",
@@ -1599,7 +1598,6 @@ namespace tut {
 		options.appType = "wsgi";
 		options.spawnMethod = "direct";
 		options.minProcesses = 2;
-		spawnerConfig->forwardStderr = false;
 
 		// Spawn 2 processes.
 		retainSessions = true;
@@ -1723,6 +1721,59 @@ namespace tut {
 		debug->debugger->recv("Restarting aborted");
 	}
 
+	TEST_METHOD(79) {
+		// Test sticky sessions.
+		
+		// Spawn 2 processes and get their sticky session IDs and PIDs.
+		ensureMinProcesses(2);
+		Options options = createOptions();
+		SessionPtr session1 = pool->get(options, &ticket);
+		SessionPtr session2 = pool->get(options, &ticket);
+		int id1 = session1->getStickySessionId();
+		int id2 = session2->getStickySessionId();
+		pid_t pid1 = session1->getPid();
+		pid_t pid2 = session2->getPid();
+		session1.reset();
+		session2.reset();
+
+		// Make two requests with id1 as sticky session ID. They should
+		// both go to process pid1.
+		options.stickySessionId = id1;
+		session1 = pool->get(options, &ticket);
+		ensure_equals("Request 1.1 goes to process 1", session1->getPid(), pid1);
+		// The second request should be queued, and should not finish until
+		// the first request is finished.
+		ensure_equals(number, 1);
+		pool->asyncGet(options, callback);
+		SHOULD_NEVER_HAPPEN(100,
+			result = number > 1;
+		);
+		session1.reset();
+		EVENTUALLY(1,
+			result = number == 2;
+		);
+		ensure_equals("Request 1.2 goes to process 1", currentSession->getPid(), pid1);
+		currentSession.reset();
+
+		// Make two requests with id2 as sticky session ID. They should
+		// both go to process pid2.
+		options.stickySessionId = id2;
+		session1 = pool->get(options, &ticket);
+		ensure_equals("Request 2.1 goes to process 2", session1->getPid(), pid2);
+		// The second request should be queued, and should not finish until
+		// the first request is finished.
+		pool->asyncGet(options, callback);
+		SHOULD_NEVER_HAPPEN(100,
+			result = number > 2;
+		);
+		session1.reset();
+		EVENTUALLY(1,
+			result = number == 3;
+		);
+		ensure_equals("Request 2.2 goes to process 2", currentSession->getPid(), pid2);
+		currentSession.reset();
+	}
+
 	// TODO: Persistent connections.
 	// TODO: If one closes the session before it has reached EOF, and process's maximum concurrency
 	//       has already been reached, then the pool should ping the process so that it can detect
@@ -1731,7 +1782,7 @@ namespace tut {
 	
 	/*********** Test previously discovered bugs ***********/
 	
-	TEST_METHOD(79) {
+	TEST_METHOD(85) {
 		// Test detaching, then restarting. This should not violate any invariants.
 		TempDirCopy dir("stub/wsgi", "tmp.wsgi");
 		Options options = createOptions();
@@ -1923,7 +1974,6 @@ namespace tut {
 		options.appType = "wsgi";
 		options.spawnMethod = "direct";
 		options.ignoreSpawnErrors = true;
-		spawnerConfig->forwardStderr = false;
 
 		debug->messages->send("Proceed with spawn loop iteration 1");
 		debug->messages->send("Proceed with spawn loop iteration 2");
@@ -1983,7 +2033,6 @@ namespace tut {
 		options.appType = "wsgi";
 		options.spawnMethod = "direct";
 		options.ignoreSpawnErrors = true;
-		spawnerConfig->forwardStderr = false;
 
 		// Fubar the app.
 		writeFile("tmp.wsgi/passenger_wsgi.py",
@@ -2011,7 +2060,6 @@ namespace tut {
 		options.spawnMethod = "direct";
 		options.rollingRestart = true;
 		options.ignoreSpawnErrors = true;
-		spawnerConfig->forwardStderr = false;
 
 		debug->messages->send("Proceed with spawn loop iteration 1");
 		debug->messages->send("Proceed with spawn loop iteration 2");

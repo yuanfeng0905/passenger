@@ -112,6 +112,9 @@ function installServer() {
 	if (!PhusionPassenger._appInstalled) {
 		PhusionPassenger._appInstalled = true;
 		PhusionPassenger._server = server;
+		server.address = function() {
+			return 'passenger';
+		}
 		finalizeStartup();
 
 		PhusionPassenger.on('request', function(headers, socket, bodyBegin) {

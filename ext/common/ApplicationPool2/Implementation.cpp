@@ -200,7 +200,7 @@ SuperGroup::realDoInitialize(const Options &options, unsigned int generation) {
 				const GetWaiter &waiter = getWaitlist.front();
 				actions.push_back(boost::bind(waiter.callback,
 					SessionPtr(), exception));
-				getWaitlist.pop();
+				getWaitlist.pop_front();
 			}
 		} else {
 			for (it = componentInfos.begin(); it != componentInfos.end(); it++) {
@@ -858,7 +858,7 @@ Group::spawnThreadRealMain(const SpawnerPtr &spawner, const Options &options, un
 		m_spawning = false;
 		
 		done = done
-			|| ((unsigned long) getProcessCount() >= options.minProcesses && getWaitlist.empty())
+			|| (getProcessCount() >= options.minProcesses && getWaitlist.empty())
 			|| (options.maxProcesses != 0 && getProcessCount() >= options.maxProcesses)
 			|| pool->atFullCapacity(false);
 		m_spawning = !done;
@@ -1209,6 +1209,11 @@ Session::getGupid() const {
 	return getProcess()->gupid;
 }
 
+int
+Session::getStickySessionId() const {
+	return getProcess()->stickySessionId;
+}
+
 const GroupPtr
 Session::getGroup() const {
 	return getProcess()->getGroup();
@@ -1229,11 +1234,10 @@ Session::kill(int signo) {
 
 PipeWatcher::DataCallback PipeWatcher::onData;
 
-PipeWatcher::PipeWatcher(const FileDescriptor &_fd, const char *_name, pid_t _pid, bool _print)
+PipeWatcher::PipeWatcher(const FileDescriptor &_fd, const char *_name, pid_t _pid)
 	: fd(_fd),
 	  name(_name),
-	  pid(_pid),
-	  print(_print)
+	  pid(_pid)
 {
 	started = false;
 }
@@ -1289,8 +1293,7 @@ PipeWatcher::threadMain() {
 			}
 		} else if (ret == 1 && buf[0] == '\n') {
 			UPDATE_TRACE_POINT();
-			P_LOG(print ? LVL_INFO : LVL_DEBUG,
-				"[App " << pid << " " << name << "] ");
+			printAppOutput(pid, name, "", 0);
 		} else {
 			UPDATE_TRACE_POINT();
 			vector<StaticString> lines;
@@ -1300,8 +1303,7 @@ PipeWatcher::threadMain() {
 			}
 			split(StaticString(buf, ret2), '\n', lines);
 			foreach (const StaticString line, lines) {
-				P_LOG(print ? LVL_INFO : LVL_DEBUG,
-					"[App " << pid << " " << name << "] " << line);
+				printAppOutput(pid, name, line.data(), line.size());
 			}
 		}
 

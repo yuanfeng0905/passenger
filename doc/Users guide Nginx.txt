@@ -491,6 +491,16 @@ touch /webapps/wsgiapp/tmp/restart.txt
 -------------------------------------------
 
 
+== Deploying a Node.js application
+
+Please refer to link:https://github.com/phusion/passenger/wiki/Phusion-Passenger%3A-Node.js-tutorial[the Node.js tutorial].
+
+
+== Deploying a Meteor application
+
+Please refer to link:http://blog.phusion.nl/2013/11/01/will-meteor-kill-rails-i-dont-know-but-phusion-passenger-open-sources-meteor-support/[the Meteor tutorial].
+
+
 == Configuring Phusion Passenger ==
 
 After installation, Phusion Passenger does not need any further configurations.
@@ -844,6 +854,7 @@ This option may occur in the following places:
 
 In each place, it may be specified at most once. The default value is 'off'.
 
+[[passenger_set_cgi_param]]
 ==== passenger_set_cgi_param <CGI environment name> <value> ====
 Allows one to define additional CGI environment variables to pass to the web
 application. This is comparable to ngx_http_fastcgi_module's 'fastcgi_param'
