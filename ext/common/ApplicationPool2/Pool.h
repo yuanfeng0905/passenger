@@ -32,9 +32,9 @@
 #include <ApplicationPool2/Options.h>
 #include <UnionStation.h>
 #include <Logging.h>
-#include <SafeLibev.h>
 #include <Exceptions.h>
 #include <RandomGenerator.h>
+#include <Hooks.h>
 #include <Utils/Lock.h>
 #include <Utils/AnsiColorConstants.h>
 #include <Utils/SystemTime.h>
@@ -118,7 +118,6 @@ public:
 	RandomGeneratorPtr randomGenerator;
 
 	mutable boost::mutex syncher;
-	SafeLibev *libev;
 	unsigned int max;
 	unsigned long long maxIdleTime;
 	
@@ -182,6 +181,7 @@ public:
 	 */
 	vector<GetWaiter> getWaitlist;
 
+	const VariantMap *agentsOptions;
 	DebugSupportPtr debugSupport;
 
 	bool restarterThreadActive;
@@ -240,6 +240,27 @@ public:
 		}
 	}
 	
+	bool runHookScripts(const char *name,
+		const boost::function<void (HookScriptOptions &)> &setup) const
+	{
+		if (agentsOptions != NULL) {
+			string hookName = string("hook_") + name;
+			string spec = agentsOptions->get(hookName, false);
+			if (!spec.empty()) {
+				HookScriptOptions options;
+				options.agentsOptions = agentsOptions;
+				options.name = name;
+				options.spec = spec;
+				setup(options);
+				return Passenger::runHookScripts(options);
+			} else {
+				return true;
+			}
+		} else {
+			return true;
+		}
+	}
+
 	ProcessPtr findOldestIdleProcess() const {
 		ProcessPtr oldestIdleProcess;
 		
@@ -1104,11 +1125,11 @@ public:
 	const SuperGroupPtr getSuperGroup(const char *name);
 	
 public:
-	Pool(SafeLibev *libev, const SpawnerFactoryPtr &spawnerFactory,
+	Pool(const SpawnerFactoryPtr &spawnerFactory,
 		const LoggerFactoryPtr &loggerFactory = LoggerFactoryPtr(),
-		const RandomGeneratorPtr &randomGenerator = RandomGeneratorPtr())
+		const RandomGeneratorPtr &randomGenerator = RandomGeneratorPtr(),
+		const VariantMap *agentsOptions = NULL)
 	{
-		this->libev = libev;
 		this->spawnerFactory = spawnerFactory;
 		this->loggerFactory = loggerFactory;
 		if (randomGenerator != NULL) {
@@ -1116,6 +1137,7 @@ public:
 		} else {
 			this->randomGenerator = boost::make_shared<RandomGenerator>();
 		}
+		this->agentsOptions = agentsOptions;
 		
 		lifeStatus  = ALIVE;
 		max         = 6;

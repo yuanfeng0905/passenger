@@ -459,8 +459,8 @@ public:
 			"logging", options.loggingAgentPassword);
 		spawnerFactory = boost::make_shared<SpawnerFactory>(poolLoop.safe,
 			resourceLocator, generation, boost::make_shared<SpawnerConfig>(randomGenerator));
-		pool = boost::make_shared<Pool>(poolLoop.safe.get(), spawnerFactory, loggerFactory,
-			randomGenerator);
+		pool = boost::make_shared<Pool>(spawnerFactory, loggerFactory,
+			randomGenerator, &options);
 		pool->initialize();
 		pool->setMax(options.maxPoolSize);
 		pool->setMaxIdleTime(options.poolIdleTime * 1000000);
