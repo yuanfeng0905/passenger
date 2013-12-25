@@ -6,10 +6,10 @@
 #
 #  See LICENSE file for license information.
 
-require 'phusion_passenger/platform_info'
-require 'phusion_passenger/platform_info/compiler'
-require 'phusion_passenger/platform_info/operating_system'
-require 'phusion_passenger/platform_info/linux'
+PhusionPassenger.require_passenger_lib 'platform_info'
+PhusionPassenger.require_passenger_lib 'platform_info/compiler'
+PhusionPassenger.require_passenger_lib 'platform_info/operating_system'
+PhusionPassenger.require_passenger_lib 'platform_info/linux'
 
 module PhusionPassenger
 
@@ -169,7 +169,11 @@ module PlatformInfo
 
 	def self.httpd_actual_error_log(options = nil)
 		if config_file = httpd_default_config_file(options)
-			contents = File.open(config_file, "rb") { |f| f.read }
+			begin
+				contents = File.open(config_file, "rb") { |f| f.read }
+			rescue Errno::EACCES
+				return nil
+			end
 			# We don't want to match comments
 			contents.gsub!(/^[ \t]*#.*/, '')
 			if contents =~ /^ErrorLog (.+)$/

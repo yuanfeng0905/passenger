@@ -7,8 +7,8 @@
 
 require 'rbconfig'
 require 'etc'
-require 'phusion_passenger/platform_info'
-require 'phusion_passenger/platform_info/operating_system'
+PhusionPassenger.require_passenger_lib 'platform_info'
+PhusionPassenger.require_passenger_lib 'platform_info/operating_system'
 
 module PhusionPassenger
 
@@ -139,8 +139,11 @@ module PlatformInfo
 	# Returns whether running 'gem install' as the current user requires sudo.
 	def self.gem_install_requires_sudo?
 		`#{gem_command} env` =~ /INSTALLATION DIRECTORY: (.+)/
-		install_dir = $1
-		return !File.writable?(install_dir)
+		if install_dir = $1
+			return !File.writable?(install_dir)
+		else
+			return nil
+		end
 	end
 	memoize :gem_install_requires_sudo?
 	

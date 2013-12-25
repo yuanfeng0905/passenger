@@ -5,7 +5,7 @@
 #
 #  See LICENSE file for license information.
 
-require 'phusion_passenger/constants'
+PhusionPassenger.require_passenger_lib 'constants'
 require 'digest/md5'
 
 module PhusionPassenger

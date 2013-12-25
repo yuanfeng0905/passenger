@@ -6,7 +6,7 @@
 #
 #  See LICENSE file for license information.
 
-require 'phusion_passenger/classic_rails/cgi_fixed'
+PhusionPassenger.require_passenger_lib 'classic_rails/cgi_fixed'
 module PhusionPassenger
 module ClassicRails
 

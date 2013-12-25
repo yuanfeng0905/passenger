@@ -32,9 +32,13 @@ ENV['PATH'] = "/usr/bin:#{ENV['PATH']}"
 LOCATIONS_INI = ENV['LOCATIONS_INI']
 abort "Please set the LOCATIONS_INI environment variable to the right locations.ini" if !LOCATIONS_INI
 
+NATIVE_PACKAGING_METHOD = ENV['NATIVE_PACKAGING_METHOD']
+abort "Please set NATIVE_PACKAGING_METHOD to either 'deb' or 'rpm'" if !["deb", "rpm"].include?(NATIVE_PACKAGING_METHOD)
+
 source_root = File.expand_path("../..", File.dirname(__FILE__))
 $LOAD_PATH.unshift("#{source_root}/lib")
 require 'phusion_passenger'
+PhusionPassenger.locate_directories
 require 'tmpdir'
 require 'fileutils'
 require 'open-uri'
@@ -78,6 +82,10 @@ describe "A natively packaged Phusion Passenger" do
 				end
 			end
 		end
+	end
+
+	specify "locations.ini sets native_packaging_method to #{NATIVE_PACKAGING_METHOD}" do
+		File.read(LOCATIONS_INI).should =~ /^native_packaging_method=#{NATIVE_PACKAGING_METHOD}$/
 	end
 
 	specify "passenger-status is in #{SBINDIR}" do
@@ -191,17 +199,9 @@ describe "A natively packaged Phusion Passenger" do
 			which("passenger-install-apache2-module").should == "#{BINDIR}/passenger-install-apache2-module"
 		end
 
-		it "prints the configuration snippet and exits" do
+		it "checks whether the Apache module is installed" do
 			output = capture_output("passenger-install-apache2-module --auto")
-			output.should =~ /Please edit your Apache configuration file/
-			output.should_not include("Compiling and installing Apache 2 module")
-			output.should_not include("rake apache2")
-		end
-
-		it "produces a correct configuration snippet" do
-			output = capture_output("passenger-install-apache2-module --auto")
-			output.should include("LoadModule passenger_module #{APACHE2_MODULE_PATH}")
-			output.should include("PassengerRoot #{LOCATIONS_INI}")
+			output.should =~ /Apache module is correctly installed/
 		end
 	end
 

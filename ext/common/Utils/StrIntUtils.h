@@ -14,6 +14,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <new>
+#include <cstdlib>
 #include <cstddef>
 #include <ctime>
 #include <oxt/macros.hpp>

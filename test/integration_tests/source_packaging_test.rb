@@ -25,7 +25,8 @@ SOURCE_ROOT = File.expand_path("../..", File.dirname(__FILE__))
 Dir.chdir(SOURCE_ROOT)
 $LOAD_PATH.unshift("#{SOURCE_ROOT}/lib")
 require 'phusion_passenger'
-require 'phusion_passenger/packaging'
+PhusionPassenger.locate_directories
+PhusionPassenger.require_passenger_lib 'packaging'
 require 'rubygems'
 require 'tmpdir'
 require 'fileutils'

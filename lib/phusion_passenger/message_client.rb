@@ -7,9 +7,9 @@
 #  See LICENSE file for license information.
 
 require 'socket'
-require 'phusion_passenger/message_channel'
-require 'phusion_passenger/utils'
-require 'phusion_passenger/utils/tmpdir'
+PhusionPassenger.require_passenger_lib 'message_channel'
+PhusionPassenger.require_passenger_lib 'utils'
+PhusionPassenger.require_passenger_lib 'utils/tmpdir'
 
 module PhusionPassenger
 
@@ -96,7 +96,18 @@ class MessageClient
 		check_security_response
 		return read_scalar
 	end
-	
+
+	def restart_app_group(app_group_name, options = {})
+		write("restart_app_group", app_group_name, *options.to_a.flatten)
+		check_security_response
+		result = read
+		if result.nil?
+			raise EOFError
+		else
+			return result.first == "true"
+		end
+	end
+
 	def helper_agent_requests
 		write("requests")
 		check_security_response

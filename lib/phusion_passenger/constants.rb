@@ -5,8 +5,6 @@
 #
 #  See LICENSE file for license information.
 
-require 'phusion_passenger'
-
 module PhusionPassenger
 	PASSENGER_ANALYTICS_WEB_LOG = "PASSENGER_ANALYTICS_WEB_LOG".freeze
 	PASSENGER_TXN_ID            = "PASSENGER_TXN_ID".freeze
@@ -58,6 +56,13 @@ module PhusionPassenger
 		NGINX_DOC_URL       = "http://www.modrails.com/documentation/Users%20guide%20Nginx.html"
 		STANDALONE_DOC_URL  = "http://www.modrails.com/documentation/Users%20guide%20Standalone.html"
 		SUPPORT_URL         = "http://www.phusionpassenger.com/support"
+		ENTERPRISE_URL      = "http://www.phusionpassenger.com/enterprise"
+		DEB_DEV_PACKAGE           = "passenger-dev"
+		DEB_APACHE_MODULE_PACKAGE = "libapache2-mod-passenger"
+		DEB_NGINX_PACKAGE         = "nginx-extras"
+		RPM_DEV_PACKAGE           = "passenger-devel"
+		RPM_APACHE_MODULE_PACKAGE = "mod_passenger"
+		RPM_NGINX_PACKAGE         = "nginx"
 		STANDALONE_NGINX_CONFIGURE_OPTIONS =
 			"--with-cc-opt='-Wno-error' " <<
 			"--without-http_fastcgi_module " <<

@@ -5,7 +5,7 @@
 #
 #  See LICENSE file for license information.
 
-require 'phusion_passenger/native_support'
+PhusionPassenger.require_passenger_lib 'native_support'
 
 module PhusionPassenger
 module Utils

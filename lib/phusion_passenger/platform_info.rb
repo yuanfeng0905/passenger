@@ -5,7 +5,7 @@
 #
 #  See LICENSE file for license information.
 
-require 'phusion_passenger/utils/tmpio'
+PhusionPassenger.require_passenger_lib 'utils/tmpio'
 
 module PhusionPassenger
 

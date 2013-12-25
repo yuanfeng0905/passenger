@@ -97,7 +97,7 @@ initialize(int argc, char *argv[]) {
 	parseArguments(argc, argv);
 
 	if (logFile != NULL) {
-		fd = open(logFile, O_WRONLY | O_APPEND | O_CREAT);
+		fd = open(logFile, O_WRONLY | O_APPEND | O_CREAT, 0644);
 		if (fd == -1) {
 			e = errno;
 			fprintf(stderr, ERROR_PREFIX
@@ -132,7 +132,7 @@ initialize(int argc, char *argv[]) {
 
 static void
 exitHandler(int signo) {
-	write(terminationPipe[1], "x", 1);
+	(void) write(terminationPipe[1], "x", 1);
 }
 
 static void
@@ -164,7 +164,7 @@ maybeDaemonize() {
 		pid = fork();
 		if (pid == 0) {
 			setsid();
-			chdir("/");
+			(void) chdir("/");
 			redirectStdinToNull();
 		} else if (pid == -1) {
 			e = errno;

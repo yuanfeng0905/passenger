@@ -5,7 +5,6 @@
 #
 #  See LICENSE file for license information.
 
-require 'phusion_passenger'
 require 'etc'
 
 module PhusionPassenger

@@ -5,8 +5,8 @@
 #
 #  See LICENSE file for license information.
 
-require 'phusion_passenger/platform_info'
-require 'phusion_passenger/platform_info/operating_system'
+PhusionPassenger.require_passenger_lib 'platform_info'
+PhusionPassenger.require_passenger_lib 'platform_info/operating_system'
 
 module PhusionPassenger
 
@@ -128,18 +128,25 @@ public
 	def self.cc
 		return string_env('CC', default_cc)
 	end
+	memoize :cc
 	
 	def self.cxx
 		return string_env('CXX', default_cxx)
 	end
+	memoize :cxx
 
 	def self.default_cc
-		# OS X Mavericks (10.9) switched from GCC to Clang as the default compiler,
-		# i.e. as an alias for 'cc'. Since the Nginx by default uses 'cc' as the compiler,
-		# we'll have to do that too. Otherwise we'll get C++ linker errors because Nginx
-		# is compiled with Clang while Phusion Passenger is compiled with GCC.
+		# On most platforms, we'll want to use the same compiler as what the rest
+		# of the system uses, so that we generate compatible binaries. That's
+		# most likely the 'cc' command. We used to use 'gcc' by default.
+		#
+		# See for example this issue with OS X Mavericks (10.9). They switched from
+		# GCC to Clang as the default compiler. Since the Nginx by default uses 'cc'
+		# as the compiler, we'll have to do that too. Otherwise we'll get C++ linker
+		# errors because Nginx is compiled with Clang while Phusion Passenger is
+		# compiled with GCC.
 		# https://code.google.com/p/phusion-passenger/issues/detail?id=950
-		if PlatformInfo.os_name == "macosx"
+		if PlatformInfo.find_command('cc')
 			return 'cc'
 		else
 			return 'gcc'
@@ -147,7 +154,7 @@ public
 	end
 
 	def self.default_cxx
-		if PlatformInfo.os_name == "macosx"
+		if PlatformInfo.find_command('c++')
 			return 'c++'
 		else
 			return 'g++'
@@ -158,6 +165,11 @@ public
 		`#{cc} -v 2>&1` =~ /gcc version/
 	end
 	memoize :cc_is_gcc?
+
+	def self.cxx_is_gcc?
+		`#{cxx} -v 2>&1` =~ /gcc version/
+	end
+	memoize :cxx_is_gcc?
 
 	def self.cc_is_clang?
 		`#{cc} --version 2>&1` =~ /clang version/
@@ -412,12 +424,14 @@ public
 	memoize :adress_sanitizer_flag
 
 	def self.cxx_11_flag
-		source = %Q{
-			#include <unordered_map>
+		source = %{
+			struct Foo {
+				Foo(Foo &&f) { }
+			};
 		}
 		if try_compile("Checking for C++ -std=gnu++11 compiler flag", :cxx, source, '-std=gnu++11')
 			return "-std=gnu++11"
-		elsif try_compile("Checking for C++ -std=c++11 compiler flag", :cxx, source, '-std=c++')
+		elsif try_compile("Checking for C++ -std=c++11 compiler flag", :cxx, source, '-std=c++11')
 			return "-std=c++11"
 		else
 			return nil

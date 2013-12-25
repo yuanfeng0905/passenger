@@ -1,3 +1,4 @@
+# encoding: utf-8
 #  Phusion Passenger - https://www.phusionpassenger.com/
 #  Copyright (c) 2010-2013 Phusion
 #
@@ -6,7 +7,7 @@
 #  See LICENSE file for license information.
 
 require 'erb'
-require 'phusion_passenger/utils/ansi_colors'
+PhusionPassenger.require_passenger_lib 'utils/ansi_colors'
 
 module PhusionPassenger
 

@@ -6,8 +6,7 @@
 #
 #  See LICENSE file for license information.
 
-require 'phusion_passenger'
-require 'phusion_passenger/platform_info'
+PhusionPassenger.require_passenger_lib 'platform_info'
 require 'fileutils'
 require 'shellwords'
 

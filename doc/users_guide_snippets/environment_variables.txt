@@ -185,14 +185,14 @@ On other systems, or if you did not install Apache through the system's package 
 
 NOTE: This subsection describes how to set environment variables on Nginx itself, not on apps served through Phusion Passenger for Nginx. The environment variables you set here will be passed to all apps, but you cannot customize them on a per-app basis. See also <<env_vars_passenger_apps,Setting environment variables on Phusion Passenger-served apps>>.
 
-If you installed Nginx through <<install_on_debian_ubuntu,the Brightbox packages>>, then you can define environment variables in `/etc/default/nginx`. This is a shell script so you must use the `export FOO=bar` syntax.
+If you installed Nginx through <<install_on_debian_ubuntu,the Debian or Ubuntu packages>>, then you can define environment variables in `/etc/default/nginx`. This is a shell script so you must use the `export FOO=bar` syntax.
 
 Otherwise, environment variables are best set through the script which starts Nginx. For example, if you installed Nginx from source and you used
 ifdef::apache[]
 the Nginx init script described in the link:http://www.modrails.com/documentation/Users%20guide%20Nginx.html[Phusion Passenger Users Guide, Nginx version],
 endif::apache[]
 ifdef::nginx[]
-<<nginx_init_script,the Nginx init script described earlier in this manual,
+<<nginx_init_script,the Nginx init script described earlier in this manual>>,
 endif::nginx[]
 then you should edit that script to define the environment variables. Those init scripts are regular shell scripts, so use the `export FOO=bar` syntax. Just make sure your set your environment variables before the script starts Nginx.
 

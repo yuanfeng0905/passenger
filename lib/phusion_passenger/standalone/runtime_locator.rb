@@ -6,8 +6,8 @@
 #
 #  See LICENSE file for license information.
 
-require 'phusion_passenger/platform_info/binary_compatibility'
-require 'phusion_passenger/utils/json'
+PhusionPassenger.require_passenger_lib 'platform_info/binary_compatibility'
+PhusionPassenger.require_passenger_lib 'utils/json'
 require 'etc'
 
 module PhusionPassenger
@@ -39,7 +39,7 @@ class RuntimeLocator
 
 		if PhusionPassenger.originally_packaged?
 			if debugging?
-				@support_dir = "#{PhusionPassenger.source_root}/buildout"
+				@support_dir = PhusionPassenger.buildout_dir
 			else
 				dir = "#{@runtime_dir}/#{version}/support-#{cxx_compat_id}"
 				if self.class.looks_like_support_dir?(dir)

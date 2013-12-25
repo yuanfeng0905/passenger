@@ -5,12 +5,12 @@
 #
 #  See LICENSE file for license information.
 
-require 'phusion_passenger/constants'
-require 'phusion_passenger/debug_logging'
-require 'phusion_passenger/message_channel'
-require 'phusion_passenger/utils'
-require 'phusion_passenger/utils/unseekable_socket'
-require 'phusion_passenger/native_support'
+PhusionPassenger.require_passenger_lib 'constants'
+PhusionPassenger.require_passenger_lib 'debug_logging'
+PhusionPassenger.require_passenger_lib 'message_channel'
+PhusionPassenger.require_passenger_lib 'utils'
+PhusionPassenger.require_passenger_lib 'utils/unseekable_socket'
+PhusionPassenger.require_passenger_lib 'native_support'
 
 module PhusionPassenger
 class RequestHandler
@@ -25,11 +25,12 @@ class ThreadHandler
 	end
 
 	REQUEST_METHOD = 'REQUEST_METHOD'.freeze
+	GET            = 'GET'.freeze
 	PING           = 'PING'.freeze
 	OOBW           = 'OOBW'.freeze
 	PASSENGER_CONNECT_PASSWORD  = 'PASSENGER_CONNECT_PASSWORD'.freeze
 	CONTENT_LENGTH = 'CONTENT_LENGTH'.freeze
-	TRANSFER_ENCODING = 'TRANSFER_ENCODING'.freeze
+	HTTP_TRANSFER_ENCODING = 'HTTP_TRANSFER_ENCODING'.freeze
 
 	MAX_HEADER_SIZE = 128 * 1024
 
@@ -260,8 +261,7 @@ private
 #	end
 
 	def prepare_request(connection, headers)
-		if (!headers.has_key?(CONTENT_LENGTH) && !headers.has_key?(TRANSFER_ENCODING)) ||
-		  headers[CONTENT_LENGTH] == 0
+		if !may_have_request_body?(headers)
 			connection.simulate_eof!
 		end
 
@@ -366,6 +366,18 @@ private
 			log.message("Backtrace: #{backtrace_string}")
 		ensure
 			log.close
+		end
+	end
+
+	def may_have_request_body?(headers)
+		if headers[REQUEST_METHOD] == GET
+			if content_length = headers[CONTENT_LENGTH]
+				return content_length != 0
+			else
+				return headers.has_key?(HTTP_TRANSFER_ENCODING)
+			end
+		else
+			return true
 		end
 	end
 

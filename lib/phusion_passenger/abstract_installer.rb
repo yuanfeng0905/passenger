@@ -5,13 +5,12 @@
 #
 #  See LICENSE file for license information.
 
-require 'phusion_passenger'
-require 'phusion_passenger/constants'
-require 'phusion_passenger/console_text_template'
-require 'phusion_passenger/platform_info'
-require 'phusion_passenger/platform_info/operating_system'
-require 'phusion_passenger/utils/ansi_colors'
-require 'phusion_passenger/utils/download'
+PhusionPassenger.require_passenger_lib 'constants'
+PhusionPassenger.require_passenger_lib 'console_text_template'
+PhusionPassenger.require_passenger_lib 'platform_info'
+PhusionPassenger.require_passenger_lib 'platform_info/operating_system'
+PhusionPassenger.require_passenger_lib 'utils/ansi_colors'
+PhusionPassenger.require_passenger_lib 'utils/download'
 require 'fileutils'
 require 'logger'
 require 'etc'
@@ -116,7 +115,7 @@ protected
 		puts "<banner>Checking for required software...</banner>"
 		puts
 		
-		require 'phusion_passenger/platform_info/depcheck'
+		PhusionPassenger.require_passenger_lib 'platform_info/depcheck'
 		specs, ids = dependencies
 		runner = PlatformInfo::Depcheck::ConsoleRunner.new
 
@@ -241,7 +240,7 @@ protected
 			puts "We're sorry, but it looks like this installer ran into an unexpected problem.\n" +
 				"Please visit the following website for support. We'll do our best to help you.\n\n" +
 				"  <b>#{SUPPORT_URL}</b>\n\n" +
-				"When submitting a support inquiry, please copy and paste the entire installler\n" +
+				"When submitting a support inquiry, please copy and paste the entire installer\n" +
 				"output."
 		rescue Exception => e2
 			# Raise original exception so that it doesn't get lost.
@@ -383,7 +382,7 @@ protected
 	end
 	
 	def rake(*args)
-		require 'phusion_passenger/platform_info/ruby'
+		PhusionPassenger.require_passenger_lib 'platform_info/ruby'
 		if !PlatformInfo.rake_command
 			puts_error 'Cannot find Rake.'
 			raise Abort
@@ -392,7 +391,7 @@ protected
 	end
 
 	def rake!(*args)
-		require 'phusion_passenger/platform_info/ruby'
+		PhusionPassenger.require_passenger_lib 'platform_info/ruby'
 		if !PlatformInfo.rake_command
 			puts_error 'Cannot find Rake.'
 			raise Abort
@@ -401,10 +400,12 @@ protected
 	end
 	
 	def download(url, output, options = {})
-		logger = Logger.new(STDOUT)
-		logger.level = Logger::WARN
-		logger.formatter = proc { |severity, datetime, progname, msg| "*** #{msg}\n" }
-		options[:logger] = logger
+		options[:logger] ||= begin
+			logger = Logger.new(STDOUT)
+			logger.level = Logger::WARN
+			logger.formatter = proc { |severity, datetime, progname, msg| "*** #{msg}\n" }
+			logger
+		end
 		return PhusionPassenger::Utils::Download.download(url, output, options)
 	end
 

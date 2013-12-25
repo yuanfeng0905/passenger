@@ -2,7 +2,7 @@ source_root = File.expand_path("../..", File.dirname(__FILE__))
 $LOAD_PATH.unshift("#{source_root}/lib")
 require 'phusion_passenger'
 PhusionPassenger.locate_directories
-require 'phusion_passenger/platform_info/binary_compatibility'
+PhusionPassenger.require_passenger_lib 'platform_info/binary_compatibility'
 require 'tmpdir'
 require 'fileutils'
 require 'webrick'
@@ -255,6 +255,14 @@ describe "Passenger Standalone" do
 			context "when natively packaged" do
 				before :each do
 					sh "passenger-config --make-locations-ini > '#{@runtime_dir}/locations.ini'"
+					File.open("#{@runtime_dir}/locations.ini", "r+") do |f|
+						data = f.read
+						data.sub!(/natively_packaged=.*/, 'natively_packaged=true')
+						data.sub!(/native_packaging_method=.*/, 'native_packaging_method=deb')
+						f.rewind
+						f.truncate(0)
+						f.write(data)
+					end
 					ENV['PASSENGER_LOCATION_CONFIGURATION_FILE'] = "#{@runtime_dir}/locations.ini"
 					create_file("#{PhusionPassenger.lib_dir}/nginx")
 				end

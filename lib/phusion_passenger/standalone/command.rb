@@ -5,9 +5,8 @@
 #
 #  See LICENSE file for license information.
 require 'optparse'
-require 'phusion_passenger'
-require 'phusion_passenger/constants'
-require 'phusion_passenger/standalone/utils'
+PhusionPassenger.require_passenger_lib 'constants'
+PhusionPassenger.require_passenger_lib 'standalone/utils'
 
 module PhusionPassenger
 module Standalone
@@ -78,7 +77,7 @@ private
 	end
 	
 	def require_app_finder
-		require 'phusion_passenger/standalone/app_finder' unless defined?(AppFinder)
+		PhusionPassenger.require_passenger_lib 'standalone/app_finder' unless defined?(AppFinder)
 	end
 	
 	def debugging?
@@ -90,7 +89,7 @@ private
 		
 		global_config_file = File.join(ENV['HOME'], USER_NAMESPACE_DIRNAME, "standalone", "config")
 		if File.exist?(global_config_file)
-			require 'phusion_passenger/standalone/config_file' unless defined?(ConfigFile)
+			PhusionPassenger.require_passenger_lib 'standalone/config_file' unless defined?(ConfigFile)
 			global_options = ConfigFile.new(:global_config, global_config_file).options
 			@options.merge!(global_options)
 		end
@@ -166,8 +165,8 @@ private
 	end
 	
 	def write_nginx_config_file
-		require 'phusion_passenger/platform_info/ruby'
-		require 'phusion_passenger/utils/tmpio'
+		PhusionPassenger.require_passenger_lib 'platform_info/ruby'
+		PhusionPassenger.require_passenger_lib 'utils/tmpio'
 		@temp_dir = PhusionPassenger::Utils.mktmpdir(
 			"passenger-standalone.")
 		@config_filename = "#{@temp_dir}/config"
@@ -182,7 +181,10 @@ private
 		
 		File.open(location_config_filename, 'w') do |f|
 			f.puts '[locations]'
-			f.puts "natively_packaged=false"
+			f.puts "natively_packaged=#{PhusionPassenger.natively_packaged?}"
+			if PhusionPassenger.natively_packaged?
+				f.puts "native_packaging_method=#{PhusionPassenger.native_packaging_method}"
+			end
 			f.puts "lib_dir=#{@runtime_locator.find_lib_dir}"
 			f.puts "agents_dir=#{@runtime_locator.find_agents_dir}"
 			locations_ini_fields.each do |field|

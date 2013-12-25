@@ -5,7 +5,7 @@
 #
 #  See LICENSE file for license information.
 
-require 'phusion_passenger/utils'   # So that we can know whether #writev is supported.
+PhusionPassenger.require_passenger_lib 'utils'   # So that we can know whether #writev is supported.
 
 module PhusionPassenger
 module Utils

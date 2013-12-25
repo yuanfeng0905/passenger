@@ -55,7 +55,10 @@ module PhusionPassenger
 	OPTIONAL_LOCATIONS_INI_FIELDS = [
 		# Directory in which downloaded Phusion Passenger binaries are stored.
 		# Only available when originally packaged.
-		:download_cache_dir
+		:download_cache_dir,
+		# Directory in which the build system's output is stored, e.g.
+		# the compiled agent executables. Only available when originally packaged.
+		:buildout_dir
 	].freeze
 	
 	# Follows the logic of ext/common/ResourceLocator.h, so don't forget to modify that too.
@@ -67,12 +70,21 @@ module PhusionPassenger
 			filename = root_or_file
 			options  = parse_ini_file(filename)
 			
-			@natively_packaged     = get_bool_option(filename, options, 'natively_packaged')
+			@natively_packaged       = get_bool_option(filename, options, 'natively_packaged')
+			if natively_packaged?
+				@native_packaging_method = get_option(filename, options, 'native_packaging_method')
+			end
 			REQUIRED_LOCATIONS_INI_FIELDS.each do |field|
 				instance_variable_set("@#{field}", get_option(filename, options, field.to_s).freeze)
 			end
 			OPTIONAL_LOCATIONS_INI_FIELDS.each do |field|
 				instance_variable_set("@#{field}", get_option(filename, options, field.to_s, false).freeze)
+			end
+			if !originally_packaged?
+				# Since these options are only supposed to be available when
+				# originally packaged, force them to be nil when natively packaged.
+				@download_cache_dir = nil
+				@buildout_dir = nil
 			end
 		else
 			@source_root           = File.dirname(File.dirname(FILE_LOCATION))
@@ -90,6 +102,7 @@ module PhusionPassenger
 			@ruby_extension_source_dir = "#{@source_root}/ext/ruby"
 			@nginx_module_source_dir   = "#{@source_root}/ext/nginx"
 			@download_cache_dir    = "#{@source_root}/download_cache"
+			@buildout_dir          = "#{@source_root}/buildout"
 			REQUIRED_LOCATIONS_INI_FIELDS.each do |field|
 				if instance_variable_get("@#{field}").nil?
 					raise "BUG: @#{field} not set"
@@ -108,6 +121,12 @@ module PhusionPassenger
 		return @natively_packaged
 	end
 
+	# If Phusion Passenger is natively packaged, returns which packaging
+	# method was used. Can be 'deb' or 'rpm'.
+	def self.native_packaging_method
+		return @native_packaging_method
+	end
+
 	# Whether the current Phusion Passenger installation is installed
 	# from a release package, e.g. an official gem or official tarball.
 	# Retruns false if e.g. the gem was built by the user, or if this
@@ -124,7 +143,6 @@ module PhusionPassenger
 
 	# Generate getters for the directory types in locations.ini.
 	getters_code = ""
-	@ruby_libdir = File.dirname(FILE_LOCATION)
 	(REQUIRED_LOCATIONS_INI_FIELDS + OPTIONAL_LOCATIONS_INI_FIELDS).each do |field|
 		getters_code << %Q{
 			def self.#{field}
@@ -164,9 +182,20 @@ module PhusionPassenger
 	end
 	
 	
-	if !$LOAD_PATH.include?(ruby_libdir)
-		$LOAD_PATH.unshift(ruby_libdir)
-		$LOAD_PATH.uniq!
+	# Instead of calling `require 'phusion_passenger/foo'`, you should call
+	# `PhusionPassenger.require_passenger_lib 'foo'`. This is because when Phusion
+	# Passenger is natively packaged, it may still be run with arbitrary Ruby
+	# interpreters. Adding ruby_libdir to $LOAD_PATH is then dangerous because ruby_libdir
+	# may be the distribution's Ruby's vendor_ruby directory, which may be incompatible
+	# with the active Ruby interpreter. This method looks up the exact filename directly.
+	# 
+	# Using this method also has two more advantages:
+	# 
+	#  1. It is immune to Bundler's load path mangling code.
+	#  2. It is faster than plan require() because it doesn't need to
+	#     scan the entire load path.
+	def self.require_passenger_lib(name)
+		require("#{ruby_libdir}/phusion_passenger/#{name}")
 	end
 
 

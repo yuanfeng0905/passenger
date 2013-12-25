@@ -1,11 +1,10 @@
 #  Phusion Passenger - https://www.phusionpassenger.com/
-#  Copyright (c) 2010 Phusion
+#  Copyright (c) 2010-2013 Phusion
 #
 #  "Phusion Passenger" is a trademark of Hongli Lai & Ninh Bui.
 #
 #  See LICENSE file for license information.
-require 'phusion_passenger'
-require 'phusion_passenger/standalone/command'
+PhusionPassenger.require_passenger_lib 'standalone/command'
 
 module PhusionPassenger
 module Standalone

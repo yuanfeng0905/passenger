@@ -6,7 +6,7 @@
 #
 #  See LICENSE file for license information.
 
-require 'phusion_passenger/utils/tee_input'
+PhusionPassenger.require_passenger_lib 'utils/tee_input'
 
 module PhusionPassenger
 module Rack

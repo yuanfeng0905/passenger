@@ -6,9 +6,9 @@
 #  See LICENSE file for license information.
 
 require 'rbconfig'
-require 'phusion_passenger/platform_info'
-require 'phusion_passenger/platform_info/ruby'
-require 'phusion_passenger/platform_info/operating_system'
+PhusionPassenger.require_passenger_lib 'platform_info'
+PhusionPassenger.require_passenger_lib 'platform_info/ruby'
+PhusionPassenger.require_passenger_lib 'platform_info/operating_system'
 
 module PhusionPassenger
 
