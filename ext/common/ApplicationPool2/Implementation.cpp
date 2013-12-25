@@ -930,6 +930,14 @@ Group::restart(const Options &options, RestartMethod method) {
 	assert(isAlive());
 	P_DEBUG("Restarting group " << name);
 
+	if (method == RM_DEFAULT) {
+		if (options.rollingRestart) {
+			method = RM_ROLLING;
+		} else {
+			method = RM_BLOCKING;
+		}
+	}
+
 	// If there is currently a restarter thread or a spawner thread active,
 	// the following tells them to abort their current work as soon as possible.
 	restartsInitiated++;
@@ -937,7 +945,7 @@ Group::restart(const Options &options, RestartMethod method) {
 	m_spawning = false;
 	m_restarting = true;
 	hasSpawnError = false;
-	if (!options.rollingRestart) {
+	if (method == RM_BLOCKING) {
 		detachAll(actions);
 	}
 	getPool()->interruptableThreads.create_thread(
@@ -1004,7 +1012,7 @@ Group::finalizeRestart(GroupPtr self, Options options, RestartMethod method,
 	oldSpawner = spawner;
 	spawner    = newSpawner;
 
-	if (options.rollingRestart) {
+	if (method == RM_ROLLING) {
 		pool->startRestarterThread();
 	}
 
