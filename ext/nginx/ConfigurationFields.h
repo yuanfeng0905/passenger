@@ -77,6 +77,8 @@
 
 	ngx_str_t concurrency_model;
 
+	ngx_str_t document_root;
+
 	ngx_str_t environment;
 
 	ngx_str_t fly_with;

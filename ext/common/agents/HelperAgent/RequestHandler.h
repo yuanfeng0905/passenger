@@ -627,6 +627,10 @@ private:
 	// GDB helper function, implemented in .cpp file to prevent inlining.
 	Client *getClientPointer(const ClientPtr &client);
 
+	void doResetInactivityTime() {
+		inactivityTimer.reset();
+	}
+
 	void getInactivityTime(unsigned long long *result) const {
 		*result = inactivityTimer.elapsed();
 	}
@@ -1290,7 +1294,8 @@ private:
 		if (accept4Available) {
 			FileDescriptor fd(callAccept4(requestSocket,
 				(struct sockaddr *) &u, &addrlen, O_NONBLOCK));
-			if (fd == -1 && errno == ENOSYS) {
+			// FreeBSD returns EINVAL if accept4() is called with invalid flags.
+			if (fd == -1 && (errno == ENOSYS || errno == EINVAL)) {
 				accept4Available = false;
 				return acceptNonBlockingSocket(sock);
 			} else {
@@ -2486,6 +2491,10 @@ public:
 			stream << "  Client " << client->fd << ":\n";
 			client->inspect(stream);
 		}
+	}
+
+	void resetInactivityTime() {
+		libev->run(boost::bind(&RequestHandler::doResetInactivityTime, this));
 	}
 
 	unsigned long long inactivityTime() const {

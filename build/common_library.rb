@@ -5,12 +5,12 @@
 #
 #  See LICENSE file for license information.
 
-require 'phusion_passenger/platform_info/compiler'
-require 'phusion_passenger/platform_info/cxx_portability'
+PhusionPassenger.require_passenger_lib 'platform_info/compiler'
+PhusionPassenger.require_passenger_lib 'platform_info/cxx_portability'
 
 ########## Phusion Passenger common library ##########
 
-require 'phusion_passenger/common_library'
+PhusionPassenger.require_passenger_lib 'common_library'
 
 
 ########## libboost_oxt ##########
@@ -203,7 +203,7 @@ end
 
 dependencies = ['ext/common/Constants.h.erb', 'lib/phusion_passenger.rb', 'lib/phusion_passenger/constants.rb']
 file 'ext/common/Constants.h' => dependencies do
-	require 'phusion_passenger/constants'
+	PhusionPassenger.require_passenger_lib 'constants'
 	template = TemplateRenderer.new('ext/common/Constants.h.erb')
 	template.render_to('ext/common/Constants.h')
 end

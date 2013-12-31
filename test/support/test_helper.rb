@@ -115,6 +115,18 @@ module TestHelper
 			return "#{@full_app_root}/config.ru"
 		end
 	end
+
+	class PythonStub < Stub
+		def startup_file
+			return "#{@full_app_root}/passenger_wsgi.py"
+		end
+	end
+
+	class NodejsStub < Stub
+		def startup_file
+			return "#{@full_app_root}/app.js"
+		end
+	end
 	
 	def describe_rails_versions(matcher, &block)
 		if ENV['ONLY_RAILS_VERSION'] && !ENV['ONLY_RAILS_VERSION'].empty?
@@ -223,9 +235,7 @@ module TestHelper
 				"127.0.0.1 7.passenger.test 8.passenger.test 9.passenger.test\n"
 			if RUBY_PLATFORM =~ /darwin/
 				message << "\n\nThen run:\n\n" <<
-					"  lookupd -flushcache      (OS X Tiger)\n\n" <<
-					"-OR-\n\n" <<
-					"  dscacheutil -flushcache  (OS X Leopard)"
+					"  dscacheutil -flushcache"
 			end
 			STDERR.puts "---------------------------"
 			STDERR.puts message
@@ -381,7 +391,7 @@ module TestHelper
 	end
 	
 	def flush_logging_agent(password, socket_address)
-		require 'phusion_passenger/message_client' if !defined?(PhusionPassenger::MessageClient)
+		PhusionPassenger.require_passenger_lib 'message_client' if !defined?(PhusionPassenger::MessageClient)
 		client = PhusionPassenger::MessageClient.new("logging", password, socket_address)
 		begin
 			client.write("flush")
@@ -399,6 +409,16 @@ module TestHelper
 			end
 		else
 			return instance
+		end
+	end
+
+	if "".respond_to?(:force_encoding)
+		def binary_string(str)
+			return str.force_encoding("binary")
+		end
+	else
+		def binary_string(str)
+			return str
 		end
 	end
 end

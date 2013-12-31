@@ -70,8 +70,7 @@ end
 
 desc "Build, sign & upload gem & tarball"
 task 'package:release' => ['package:set_official', 'package:gem', 'package:tarball', 'package:sign'] do
-	require 'phusion_passenger'
-	require 'phusion_passenger/platform_info'
+	PhusionPassenger.require_passenger_lib 'platform_info'
 	require 'yaml'
 	require 'uri'
 	require 'net/http'
@@ -140,9 +139,9 @@ task 'package:release' => ['package:set_official', 'package:gem', 'package:tarba
 			homebrew_dir = "/tmp/homebrew"
 			sh "rm -rf #{homebrew_dir}"
 			sh "git clone git@github.com:phusion/homebrew.git #{homebrew_dir}"
-			sh "cd #{homebrew_dir} && git remote add mxcl https://github.com/mxcl/homebrew.git"
-			sh "cd #{homebrew_dir} && git fetch mxcl"
-			sh "cd #{homebrew_dir} && git reset --hard mxcl/master"
+			sh "cd #{homebrew_dir} && git remote add Homebrew https://github.com/Homebrew/homebrew.git"
+			sh "cd #{homebrew_dir} && git fetch Homebrew"
+			sh "cd #{homebrew_dir} && git reset --hard Homebrew/master"
 			formula = File.read("/tmp/homebrew/Library/Formula/passenger.rb")
 			formula.gsub!(/passenger-.+?\.tar\.gz/, "passenger-#{version}.tar.gz") ||
 				abort("Unable to substitute Homebrew formula tarball filename")
@@ -159,7 +158,7 @@ task 'package:release' => ['package:set_official', 'package:gem', 'package:tarba
 			end
 			sh "cd #{homebrew_dir} && git commit -a -m 'passenger #{version}'"
 			sh "cd #{homebrew_dir} && git push -f"
-			sh "cd #{homebrew_dir} && hub pull-request 'Update passenger to version #{version}' -b mxcl:master"
+			sh "cd #{homebrew_dir} && hub pull-request 'Update passenger to version #{version}' -b Homebrew:master"
 
 			puts "Initiating building of Debian packages"
 			Rake::Task['package:initiate_debian_building'].invoke
@@ -445,7 +444,7 @@ task :fakeroot => [:apache2, :nginx, :doc] do
 	Packaging::USER_EXECUTABLES.each do |exe|
 		sh "cp bin/#{exe} #{fake_bindir}/"
 		if !Packaging::EXECUTABLES_WITH_FREE_RUBY.include?(exe)
-			change_shebang("#{fake_bindir}/#{exe}", "/usr/bin/ruby")
+			change_shebang("#{fake_bindir}/#{exe}", "#{fs_bindir}/ruby")
 		end
 	end
 	
@@ -454,7 +453,7 @@ task :fakeroot => [:apache2, :nginx, :doc] do
 	Packaging::SUPER_USER_EXECUTABLES.each do |exe|
 		sh "cp bin/#{exe} #{fake_sbindir}/"
 		if !Packaging::EXECUTABLES_WITH_FREE_RUBY.include?(exe)
-			change_shebang("#{fake_sbindir}/#{exe}", "/usr/bin/ruby")
+			change_shebang("#{fake_sbindir}/#{exe}", "#{fs_bindir}/ruby")
 		end
 	end
 	

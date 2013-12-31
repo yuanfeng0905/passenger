@@ -329,6 +329,7 @@ Group::Group(const SuperGroupPtr &_superGroup, const Options &options, const Com
 	disabledCount  = 0;
 	spawner        = getPool()->spawnerFactory->create(options);
 	restartsInitiated = 0;
+	processesBeingSpawned = 0;
 	m_spawning     = false;
 	m_restarting   = false;
 	lifeStatus     = ALIVE;
@@ -405,13 +406,13 @@ Group::onSessionClose(const ProcessPtr &process, Session *session) {
 		|| process->enabled == Process::DISABLING
 		|| process->enabled == Process::DETACHED);
 	if (process->enabled == Process::ENABLED) {
-		pqueue.decrease(process->pqHandle, process->utilization());
+		pqueue.decrease(process->pqHandle, process->busyness());
 	}
 
-	/* This group now has a process that's guaranteed to be not at
-	 * full utilization.
+	/* This group now has a process that's guaranteed to be not
+	 * totally busy.
 	 */
-	assert(!process->atFullUtilization());
+	assert(!process->isTotallyBusy());
 
 	bool detachingBecauseOfMaxRequests = false;
 	bool detachingBecauseCapacityNeeded = false;
@@ -445,8 +446,8 @@ Group::onSessionClose(const ProcessPtr &process, Session *session) {
 				 * checked conditions) then now's a good time to detach
 				 * this process or group in order to free capacity.
 				 */
-				P_DEBUG("Process " << process->inspect() << " is no longer at "
-					"full utilization; detaching it in order to make room in the pool");
+				P_DEBUG("Process " << process->inspect() << " is no longer totally "
+					"busy; detaching it in order to make room in the pool");
 			} else {
 				/* This process has processed its maximum number of requests,
 				 * so we detach it.
@@ -834,19 +835,31 @@ Group::spawnThreadRealMain(const SpawnerPtr &spawner, const Options &options, un
 
 		verifyInvariants();
 		assert(m_spawning);
+		assert(processesBeingSpawned > 0);
+
+		processesBeingSpawned--;
+		assert(processesBeingSpawned == 0);
 
 		UPDATE_TRACE_POINT();
 		vector<Callback> actions;
 		if (process != NULL) {
-			attach(process, actions);
-			guard.clear();
-			if (getWaitlist.empty()) {
-				pool->assignSessionsToGetWaiters(actions);
+			AttachResult result = attach(process, actions);
+			if (result == AR_OK) {
+				guard.clear();
+				if (getWaitlist.empty()) {
+					pool->assignSessionsToGetWaiters(actions);
+				} else {
+					assignSessionsToGetWaiters(actions);
+				}
+				P_DEBUG("New process count = " << enabledCount <<
+					", remaining get waiters = " << getWaitlist.size());
 			} else {
-				assignSessionsToGetWaiters(actions);
+				done = true;
+				P_DEBUG("Unable to attach spawned process " << process->inspect());
+				if (result == AR_ANOTHER_GROUP_IS_WAITING_FOR_CAPACITY) {
+					pool->possiblySpawnMoreProcessesForExistingGroups();
+				}
 			}
-			P_DEBUG("New process count = " << enabledCount <<
-				", remaining get waiters = " << getWaitlist.size());
 		} else {
 			if (debug != NULL) {
 				LockGuard g(debug->syncher);
@@ -872,22 +885,18 @@ Group::spawnThreadRealMain(const SpawnerPtr &spawner, const Options &options, un
 			done = true;
 		}
 
-		// Temporarily mark this Group as 'not spawning' so
-		// that pool->utilization() doesn't take this thread's spawning
-		// state into account.
-		m_spawning = false;
-		
 		done = done
-			|| (getProcessCount() >= options.minProcesses && getWaitlist.empty())
-			|| (options.maxProcesses != 0 && getProcessCount() >= options.maxProcesses)
+			|| (processLowerLimitsSatisfied() && getWaitlist.empty())
+			|| processUpperLimitsReached()
 			|| pool->atFullCapacity(false);
 		m_spawning = !done;
 		if (done) {
 			P_DEBUG("Spawn loop done");
 		} else {
+			processesBeingSpawned++;
 			P_DEBUG("Continue spawning");
 		}
-		
+
 		UPDATE_TRACE_POINT();
 		pool->fullVerifyInvariants();
 		lock.unlock();
@@ -905,22 +914,16 @@ bool
 Group::shouldSpawn() const {
 	return allowSpawn()
 		&& (
-			(unsigned long) getProcessCount() < options.minProcesses
-			|| (enabledCount > 0 && pqueue.top()->atFullCapacity())
+			!processLowerLimitsSatisfied()
+			|| allEnabledProcessesAreTotallyBusy()
+			// TODO: test this
+			//|| !getWaitlist.empty()
 		);
 }
 
 bool
 Group::shouldSpawnForGetAction() const {
 	return enabledCount == 0 || shouldSpawn();
-}
-
-bool
-Group::allowSpawn() const {
-	return isAlive()
-		&& !poolAtFullCapacity()
-		&& (options.maxProcesses == 0 || getProcessCount() < options.maxProcesses)
-		&& !hasSpawnError;
 }
 
 void
@@ -942,7 +945,8 @@ Group::restart(const Options &options, RestartMethod method) {
 	// the following tells them to abort their current work as soon as possible.
 	restartsInitiated++;
 
-	m_spawning = false;
+	processesBeingSpawned = 0;
+	m_spawning   = false;
 	m_restarting = true;
 	hasSpawnError = false;
 	if (method == RM_BLOCKING) {
@@ -1019,11 +1023,23 @@ Group::finalizeRestart(GroupPtr self, Options options, RestartMethod method,
 	m_restarting = false;
 	if (shouldSpawn()) {
 		spawn();
+	} else if (isWaitingForCapacity()) {
+		P_INFO("Group " << name << " is waiting for capacity to become available. "
+			"Trying to shutdown another idle process to free capacity...");
+		if (pool->forceFreeCapacity(this, postLockActions) != NULL) {
+			SpawnResult result = spawn();
+			assert(result == SR_OK);
+			(void) result;
+		} else {
+			P_INFO("There are no processes right now that are eligible "
+				"for shutdown. Will try again later.");
+		}
 	}
 	verifyInvariants();
 
 	l.unlock();
 	oldSpawner.reset();
+	Pool::runAllActions(postLockActions);
 	P_DEBUG("Restart of group " << name << " done");
 	if (debug != NULL && debug->restarting) {
 		debug->debugger->send("Restarting done");
@@ -1157,21 +1173,28 @@ Group::poolAtFullCapacity() const {
 
 bool
 Group::anotherGroupIsWaitingForCapacity() const {
+	return findOtherGroupWaitingForCapacity() != NULL;
+}
+
+boost::shared_ptr<Group>
+Group::findOtherGroupWaitingForCapacity() const {
 	PoolPtr pool = getPool();
 	StringMap<SuperGroupPtr>::const_iterator sg_it, sg_end = pool->superGroups.end();
 	for (sg_it = pool->superGroups.begin(); sg_it != sg_end; sg_it++) {
 		pair<StaticString, SuperGroupPtr> p = *sg_it;
-		foreach (GroupPtr group, p.second->groups) {
-			if (group.get() != this
-			 && group->enabledProcesses.empty()
-			 && !group->spawning()
-			 && !group->getWaitlist.empty())
-			{
-				return true;
+		vector<GroupPtr>::const_iterator g_it, g_end = p.second->groups.end();
+		for (g_it = p.second->groups.begin(); g_it != g_end; g_it++) {
+			if (g_it->get() != this && (*g_it)->isWaitingForCapacity()) {
+				return *g_it;
 			}
 		}
 	}
-	return false;
+	return GroupPtr();
+}
+
+ProcessPtr
+Group::poolForceFreeCapacity(const Group *exclude, vector<Callback> &postLockActions) {
+	return getPool()->forceFreeCapacity(exclude, postLockActions);
 }
 
 bool
