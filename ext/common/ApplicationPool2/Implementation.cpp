@@ -916,8 +916,7 @@ Group::shouldSpawn() const {
 		&& (
 			!processLowerLimitsSatisfied()
 			|| allEnabledProcessesAreTotallyBusy()
-			// TODO: test this
-			//|| !getWaitlist.empty()
+			|| !getWaitlist.empty()
 		);
 }
 
