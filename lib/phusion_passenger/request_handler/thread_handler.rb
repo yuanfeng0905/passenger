@@ -163,7 +163,7 @@ private
 		if connection && !connection.closed?
 			begin
 				connection.close_write
-			rescue SystemCallError
+			rescue SystemCallError, IOError
 			end
 			begin
 				connection.close
