@@ -132,7 +132,10 @@ initialize(int argc, char *argv[]) {
 
 static void
 exitHandler(int signo) {
-	(void) write(terminationPipe[1], "x", 1);
+	int ret = write(terminationPipe[1], "x", 1);
+	// We can't do anything about failures, so ignore
+	// compiler warnings about not using the result.
+	(void) ret;
 }
 
 static void
@@ -164,7 +167,13 @@ maybeDaemonize() {
 		pid = fork();
 		if (pid == 0) {
 			setsid();
-			(void) chdir("/");
+			if (chdir("/") == -1) {
+				e = errno;
+				fprintf(stderr, ERROR_PREFIX
+					": cannot change working directory to /: %s (errno %d)\n",
+					strerror(e), e);
+				_exit(1);
+			}
 			redirectStdinToNull();
 		} else if (pid == -1) {
 			e = errno;
