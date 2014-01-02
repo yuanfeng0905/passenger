@@ -87,7 +87,7 @@ private
 	end
 
 	def process_input
-		case STDIN.getc
+		case getchar(STDIN)
 		when "\x1b"
 			process_cursor_move
 			return false
@@ -102,8 +102,8 @@ private
 	end
 
 	def process_cursor_move
-		if STDIN.getc == "["
-			case STDIN.getc
+		if getchar(STDIN) == "["
+			case getchar(STDIN)
 			when "A" # up
 				@pointer = [@pointer - 1, 0].max
 			when "B" # down
@@ -158,6 +158,12 @@ private
 
 	def move_up
 		return "\x1b[0A"
+	end
+
+	def getchar(io)
+		char = io.getc
+		char = char.chr if char.is_a?(Integer)
+		return char
 	end
 
 	if JRUBY
