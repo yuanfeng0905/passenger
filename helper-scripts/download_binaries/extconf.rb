@@ -44,7 +44,7 @@ ruby_compat_id = PhusionPassenger::PlatformInfo.ruby_extension_binary_compatibil
 
 ABORT_ON_ERROR = ARGV[0] == "--abort-on-error"
 if url_root = ENV['BINARIES_URL_ROOT']
-	SITES = { :url => url_root }
+	SITES = [{ :url => url_root }]
 else
 	SITES = PhusionPassenger.binaries_sites
 end
@@ -66,7 +66,7 @@ def download(name, options = {})
 	logger.level = Logger::WARN
 	logger.formatter = proc { |severity, datetime, progname, msg| "*** #{msg}\n" }
 
-	PhusionPassenger.binaries_sites.each do |site|
+	SITES.each do |site|
 		if really_download(site, name, logger, options)
 			return true
 		end

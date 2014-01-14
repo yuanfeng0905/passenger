@@ -92,9 +92,11 @@ describe "Downloaded Phusion Passenger binaries" do
 	end
 
 	specify "helper-scripts/download_binaries/extconf.rb succeeds in downloading all necessary binaries" do
-		server, url_root = start_server("download_cache.old")
+		FileUtils.mkdir_p("server_root")
+		server, url_root = start_server("server_root")
 		File.rename("download_cache", "download_cache.old")
 		begin
+			FileUtils.cp_r("download_cache.old", "server_root/#{PhusionPassenger::VERSION_STRING}")
 			sh "cd #{PhusionPassenger.source_root} && " +
 				"env BINARIES_URL_ROOT=#{url_root} " +
 				"ruby helper-scripts/download_binaries/extconf.rb --abort-on-error"
@@ -102,6 +104,7 @@ describe "Downloaded Phusion Passenger binaries" do
 		ensure
 			File.unlink("Makefile") rescue nil
 			FileUtils.rm_rf("download_cache")
+			FileUtils.rm_rf("server_root")
 			File.rename("download_cache.old", "download_cache")
 			server.stop
 		end
