@@ -85,6 +85,27 @@ module PlatformInfo
 	end
 	memoize :httpd_version
 
+	# Run `httpd -V` and return its output. On some systems, such as Ubuntu 13.10,
+	# `httpd -V` fails without the environment variables defined in various scripts.
+	# Here we take care of evaluating those scripts before running `httpd -V`.
+	def self.httpd_V(options = nil)
+		if options
+			httpd = options[:httpd] || self.httpd(options)
+		else
+			httpd = self.httpd
+		end
+		if httpd
+			command = "#{httpd} -V"
+			if envvars_file = httpd_envvars_file(options)
+				command = ". '#{envvars_file}' && #{command}"
+			end
+			return `#{command}`
+		else
+			return nil
+		end
+	end
+	memoize :httpd_V
+
 	# The Apache executable's architectural bits. Returns 32 or 64,
 	# or nil if unable to detect.
 	def self.httpd_architecture_bits(options = nil)
@@ -109,27 +130,38 @@ module PlatformInfo
 	end
 	memoize :httpd_architecture_bits
 
-	# The Apache root directory.
-	def self.httpd_root(options = nil)
-		if info = httpd_V(options)
+	# The default Apache root directory, as specified by its compilation parameters.
+	# This may be different from the value of the ServerRoot directive.
+	def self.httpd_default_root(options = nil)
+		if options
+			info = httpd_V(options)
+		else
+			info = httpd_V
+		end
+		if info
 			info =~ / -D HTTPD_ROOT="(.+)"$/
 			return $1
 		else
 			return nil
 		end
 	end
-	memoize :httpd_root
+	memoize :httpd_default_root
 
 	# The default Apache configuration file, or nil if Apache is not found.
 	def self.httpd_default_config_file(options = nil)
-		if info = httpd_V(options)
+		if options
+			info = httpd_V(options)
+		else
+			info = httpd_V
+		end
+		if info
 			info =~ /-D SERVER_CONFIG_FILE="(.+)"$/
 			filename = $1
 			if filename =~ /\A\//
 				return filename
 			else
-				# Not an absolute path. Infer from root.
-				if root = httpd_root(options)
+				# Not an absolute path. Infer from default root.
+				if root = httpd_default_root(options)
 					return "#{root}/#{filename}"
 				else
 					return nil
@@ -140,6 +172,26 @@ module PlatformInfo
 		end
 	end
 	memoize :httpd_default_config_file
+
+	# Given an Apache config file, returns the a hash with the following elements:
+	# 
+	#  * `:files` - An array containing `config_file`, as well as all config files
+	#               included from that config file, including recursively included
+	#               ones. Only filenames that actually exist are put here.
+	#  * `:unreadable_files` - All config files that this function was unable
+	#                          to read.
+	def self.httpd_included_config_files(config_file, options = nil)
+		state = {
+			:files => { config_file => true },
+			:unreadable_files => [],
+			:root => httpd_default_root(options)
+		}
+		scan_for_included_apache2_config_files(config_file, state, options)
+		return {
+			:files => state[:files].keys,
+			:unreadable_files => state[:unreadable_files]
+		}
+	end
 
 	# The default Apache error log's filename, as it is compiled into the Apache
 	# main executable. This may not be the actual error log that is used. The actual
@@ -154,8 +206,8 @@ module PlatformInfo
 			if filename =~ /\A\//
 				return filename
 			else
-				# Not an absolute path. Infer from root.
-				if root = httpd_root(options)
+				# Not an absolute path. Infer from default root.
+				if root = httpd_default_root(options)
 					return "#{root}/#{filename}"
 				else
 					return nil
@@ -172,35 +224,16 @@ module PlatformInfo
 			begin
 				contents = File.open(config_file, "rb") { |f| f.read }
 			rescue Errno::EACCES
+				log "Unable to open #{config_file} for reading"
 				return nil
 			end
 			# We don't want to match comments
 			contents.gsub!(/^[ \t]*#.*/, '')
-			if contents =~ /^ErrorLog (.+)$/
-				filename = $1.strip.sub(/^"/, '').sub(/"$/, '')
-				if filename.include?("${")
-					log "Error log seems to be located in \"#{filename}\", " +
-						"but value contains environment variables. " +
-						"Attempting to substitute them..."
-				end
-				# The Apache config file supports environment variable
-				# substitution. Ubuntu uses this extensively.
-				filename.gsub!(/\$\{(.+?)\}/) do |varname|
-					if value = httpd_infer_envvar($1, options)
-						log "Substituted \"#{varname}\" -> \"#{value}\""
-						value
-					else
-						log "Cannot substituted \"#{varname}\""
-						varname
-					end
-				end
-				if filename.include?("${")
-					# We couldn't substitute everything.
-					return nil
-				end
-				if filename !~ /\A\//
+			if contents =~ /^[ \t]*ErrorLog[ \t]+(.+)[ \t]*$/i
+				filename = unescape_apache_config_value($1, options)
+				if filename && filename !~ /\A\//
 					# Not an absolute path. Infer from root.
-					if root = httpd_root(options)
+					if root = httpd_default_root(options)
 						return "#{root}/#{filename}"
 					else
 						return nil
@@ -208,13 +241,15 @@ module PlatformInfo
 				else
 					return filename
 				end
-			elsif contents =~ /ErrorLog/
+			elsif contents =~ /ErrorLog/i
 				# The user apparently has ErrorLog set somewhere but
 				# we can't parse it. The default error log location,
 				# as reported by `httpd -V`, may be wrong (it is on OS X).
 				# So to be safe, let's assume that we don't know.
+				log "Unable to parse ErrorLog directive in Apache configuration file"
 				return nil
 			else
+				log "No ErrorLog directive in Apache configuration file"
 				return httpd_default_error_log(options)
 			end
 		else
@@ -262,25 +297,67 @@ module PlatformInfo
 		end
 	end
 
-	# Whether Apache appears to support a2enmod and a2dismod.
-	def self.httpd_supports_a2enmod?(options = nil)
+	# Returns the path to the Apache `mods-available` subdirectory,
+	# or nil if it's not supported by this Apache.
+	def self.httpd_mods_available_directory(options = nil)
 		config_file = httpd_default_config_file(options)
-		if config_file
-			config_dir = File.dirname(config_file)
-			return File.exist?("#{config_dir}/mods-available") &&
-				File.exist?("#{config_dir}/mods-enabled")
+		return nil if !config_file
+
+		# mods-available is supposed to be a Debian extension that only works
+		# on the APT-installed Apache, so only return non-nil if we're
+		# working against the APT-installed Apache.
+		config_dir = File.dirname(config_file)
+		if config_dir == "/etc/httpd" || config_dir == "/etc/apache2"
+			if File.exist?("#{config_dir}/mods-available") &&
+			   File.exist?("#{config_dir}/mods-enabled")
+				return "#{config_dir}/mods-available"
+			else
+				return nil
+			end
 		else
 			return nil
 		end
 	end
+	memoize :httpd_mods_available_directory
+
+	# Returns the path to the Apache `mods-enabled` subdirectory,
+	# or nil if it's not supported by this Apache.
+	def self.httpd_mods_enabled_directory(options = nil)
+		config_file = httpd_default_config_file(options)
+		return nil if !config_file
+
+		# mods-enabled is supposed to be a Debian extension that only works
+		# on the APT-installed Apache, so only return non-nil if we're
+		# working against the APT-installed Apache.
+		config_dir = File.dirname(config_file)
+		if config_dir == "/etc/httpd" || config_dir == "/etc/apache2"
+			if File.exist?("#{config_dir}/mods-available") &&
+			   File.exist?("#{config_dir}/mods-enabled")
+				return "#{config_dir}/mods-enabled"
+			else
+				return nil
+			end
+		else
+			return nil
+		end
+	end
+	memoize :httpd_mods_enabled_directory
 
 	# The absolute path to the 'a2enmod' executable.
 	def self.a2enmod(options = {})
 		apxs2 = options[:apxs2] || self.apxs2
-		if env_defined?('A2ENMOD')
-			return ENV['A2ENMOD']
+		dir = File.dirname(apxs2)
+		# a2enmod is supposed to be a Debian extension that only works
+		# on the APT-installed Apache, so only return non-nil if we're
+		# working against the APT-installed Apache.
+		if dir == "/usr/bin" || dir == "/usr/sbin"
+			if env_defined?('A2ENMOD')
+				return ENV['A2ENMOD']
+			else
+				return find_apache2_executable("a2enmod", options)
+			end
 		else
-			return find_apache2_executable("a2enmod", options)
+			return nil
 		end
 	end
 	memoize :a2enmod
@@ -288,10 +365,16 @@ module PlatformInfo
 	# The absolute path to the 'a2enmod' executable.
 	def self.a2dismod(options = {})
 		apxs2 = options[:apxs2] || self.apxs2
-		if env_defined?('A2DISMOD')
-			return ENV['A2DISMOD']
-		else
-			return find_apache2_executable("a2dismod", options)
+		dir = File.dirname(apxs2)
+		# a2dismod is supposed to be a Debian extension that only works
+		# on the APT-installed Apache, so only return non-nil if we're
+		# working against the APT-installed Apache.
+		if dir == "/usr/bin" || dir == "/usr/sbin"
+			if env_defined?('A2DISMOD')
+				return ENV['A2DISMOD']
+			else
+				return find_apache2_executable("a2dismod", options)
+			end
 		end
 	end
 	memoize :a2dismod
@@ -574,25 +657,111 @@ private
 	memoize :determine_apu_info, true
 	private_class_method :determine_apu_info
 
-	# Run `httpd -V` and return its output. On some systems, such as Ubuntu 13.10,
-	# `httpd -V` fails without the environment variables defined in various scripts.
-	# Here we take care of evaluating those scripts before running `httpd -V`.
-	def self.httpd_V(options = nil)
-		if options
-			httpd = options[:httpd] || self.httpd(options)
-		else
-			httpd = self.httpd
-		end
-		if httpd
-			command = "#{httpd} -V"
-			if envvars_file = httpd_envvars_file(options)
-				command = ". '#{envvars_file}' && #{command}"
+	def self.scan_for_included_apache2_config_files(config_file, state, options = nil)
+		begin
+			config = File.open(config_file, "rb") do |f|
+				f.read
 			end
-			return `#{command}`
-		else
-			return nil
+		rescue Errno::EACCES
+			state[:unreadable_files] << config_file
+			return
+		end
+
+		found_filenames = []
+
+		config.scan(/^[ \t]*(Include(Optional)?|ServerRoot)[ \t]+(.+?)[ \t]*$/i) do |match|
+			if match[0].downcase == "serverroot"
+				new_root = unescape_apache_config_value(match[2], options)
+				state[:root] = new_root if new_root
+			else
+				filename = unescape_apache_config_value(match[2], options)
+				next if filename.nil? || filename.empty?
+				if filename !~ /\A\//
+					# Not an absolute path. Infer from root.
+					filename = "#{state[:root]}/#{filename}"
+				end
+				expand_apache2_glob(filename).each do |filename2|
+					if !state[:files].has_key?(filename2)
+						state[:files][filename2] = true
+						scan_for_included_apache2_config_files(filename2, state, options)
+					end
+				end
+			end
 		end
 	end
+	private_class_method :scan_for_included_apache2_config_files
+
+	def self.expand_apache2_glob(glob)
+		if File.directory?(glob)
+			glob = glob.sub(/\/*$/, '')
+			result = Dir["#{glob}/**/*"]
+		else
+			result = []
+			Dir[glob].each do |filename|
+				if File.directory?(filename)
+					result.concat(Dir["#{filename}/**/*"])
+				else
+					result << filename
+				end
+			end
+		end
+		result.reject! do |filename|
+			File.directory?(filename)
+		end
+		return result
+	end
+	private_class_method :expand_apache2_glob
+
+	def self.unescape_apache_config_value(value, options = nil)
+		if value =~ /^"(.*)"$/
+			value = unescape_c_string($1)
+		end
+		if value.include?("${")
+			log "Attempting to substitute environment variables in Apache config value #{value.inspect}..."
+		end
+		# The Apache config file supports environment variable
+		# substitution. Ubuntu uses this extensively.
+		value.gsub!(/\$\{(.+?)\}/) do |varname|
+			if substitution = httpd_infer_envvar($1, options)
+				log "Substituted \"#{varname}\" -> \"#{substitution}\""
+				substitution
+			else
+				log "Cannot substitute \"#{varname}\""
+				varname
+			end
+		end
+		if value.include?("${")
+			# We couldn't substitute everything.
+			return nil
+		else
+			return value
+		end
+	end
+	private_class_method :unescape_apache_config_value
+
+	def self.unescape_c_string(s)
+		state = 0
+		res = ''
+		backslash = "\\"
+		s.each_char do |c|
+			case state
+			when 0
+				case c
+				when backslash then state = 1
+				else res << c
+				end
+			when 1
+				case c
+				when 'n' then res << "\n"; state = 0
+				when 't' then res << "\t"; state = 0
+				when backslash then res << backslash; state = 0
+				else res << backslash; res << c; state = 0
+				end
+			end
+		end
+		return res
+	end
+	private_class_method :unescape_c_string
 end
 
 end

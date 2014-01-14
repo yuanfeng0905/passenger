@@ -358,6 +358,12 @@ cleanupAgentsInBackground(const WorkingObjectsPtr &wo, vector<AgentWatcherPtr> &
 			} else {
 				P_DEBUG("All Phusion Passenger agent processes have exited. Forcing all subprocesses to shut down.");
 			}
+			P_DEBUG("Sending SIGTERM");
+			for (it = watchers.begin(); it != watchers.end(); it++) {
+				(*it)->signalShutdown();
+			}
+			usleep(1000000);
+			P_DEBUG("Sending SIGKILL");
 			for (it = watchers.begin(); it != watchers.end(); it++) {
 				(*it)->forceShutdown();
 			}
@@ -399,6 +405,10 @@ static void
 forceAllAgentsShutdown(vector<AgentWatcherPtr> &watchers) {
 	vector<AgentWatcherPtr>::iterator it;
 	
+	for (it = watchers.begin(); it != watchers.end(); it++) {
+		(*it)->signalShutdown();
+	}
+	usleep(1000000);
 	for (it = watchers.begin(); it != watchers.end(); it++) {
 		(*it)->forceShutdown();
 	}

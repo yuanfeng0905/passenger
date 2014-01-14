@@ -1,5 +1,28 @@
 #!/usr/bin/env ruby
 # encoding: binary
+#  Phusion Passenger - https://www.phusionpassenger.com/
+#  Copyright (c) 2013 Phusion
+#
+#  "Phusion Passenger" is a trademark of Hongli Lai & Ninh Bui.
+#
+#  Permission is hereby granted, free of charge, to any person obtaining a copy
+#  of this software and associated documentation files (the "Software"), to deal
+#  in the Software without restriction, including without limitation the rights
+#  to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+#  copies of the Software, and to permit persons to whom the Software is
+#  furnished to do so, subject to the following conditions:
+#
+#  The above copyright notice and this permission notice shall be included in
+#  all copies or substantial portions of the Software.
+#
+#  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+#  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+#  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+#  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+#  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+#  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+#  THE SOFTWARE.
+
 module PhusionPassenger
 module App
 	def self.options
@@ -13,7 +36,12 @@ module App
 	def self.format_exception(e)
 		result = "#{e} (#{e.class})"
 		if !e.backtrace.empty?
-			result << "\n  " << e.backtrace.join("\n  ")
+			if e.respond_to?(:html?) && e.html?
+				require 'erb' if !defined?(ERB)
+				result << "\n<pre>  " << ERB::Util.h(e.backtrace.join("\n  ")) << "</pre>"
+			else
+				result << "\n  " << e.backtrace.join("\n  ")
+			end
 		end
 		return result
 	end
@@ -48,8 +76,7 @@ module App
 		PhusionPassenger.require_passenger_lib 'loader_shared_helpers'
 		PhusionPassenger.require_passenger_lib 'request_handler'
 		PhusionPassenger.require_passenger_lib 'rack/thread_handler_extension'
-		LoaderSharedHelpers.init
-		@@options = LoaderSharedHelpers.sanitize_spawn_options(@@options)
+		@@options = LoaderSharedHelpers.init(@@options)
 		Utils.passenger_tmpdir = options["generation_dir"]
 		if defined?(NativeSupport)
 			NativeSupport.disable_stdio_buffering
@@ -58,6 +85,7 @@ module App
 	rescue Exception => e
 		LoaderSharedHelpers.about_to_abort(e) if defined?(LoaderSharedHelpers)
 		puts "!> Error"
+		puts "!> html: true" if e.respond_to?(:html?) && e.html?
 		puts "!> "
 		puts format_exception(e)
 		exit exit_code_for_exception(e)
@@ -84,6 +112,7 @@ module App
 	rescue Exception => e
 		LoaderSharedHelpers.about_to_abort(e)
 		puts "!> Error"
+		puts "!> html: true" if e.respond_to?(:html?) && e.html?
 		puts "!> "
 		puts format_exception(e)
 		exit exit_code_for_exception(e)

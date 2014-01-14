@@ -1,6 +1,6 @@
 #!/usr/bin/env ruby
 #  Phusion Passenger - https://www.phusionpassenger.com/
-#  Copyright (c) 2010-2013 Phusion
+#  Copyright (c) 2010-2014 Phusion
 #
 #  "Phusion Passenger" is a trademark of Hongli Lai & Ninh Bui.
 #
@@ -48,27 +48,43 @@ Dir.chdir(PhusionPassenger.download_cache_dir)
 # Initiate downloads
 require 'phusion_passenger/utils/download'
 require 'logger'
-def download(name)
-	if !File.exist?(name)
-		url = "#{PhusionPassenger::BINARIES_URL_ROOT}/#{PhusionPassenger::VERSION_STRING}/#{name}"
-		cert = PhusionPassenger.binaries_ca_cert_path
-		puts "Attempting to download #{url} into #{Dir.pwd}"
-		File.unlink("#{name}.tmp") rescue nil
-		logger = Logger.new(STDOUT)
-		logger.level = Logger::WARN
-		logger.formatter = proc { |severity, datetime, progname, msg| "*** #{msg}\n" }
-		result = PhusionPassenger::Utils::Download.download(url, "#{name}.tmp",
-			:cacert => cert, :logger => logger)
-		if result
-			File.rename("#{name}.tmp", name)
-		else
-			File.unlink("#{name}.tmp") rescue nil
-		end
-	else
+
+def download(name, options = {})
+	if File.exist?(name)
 		puts "#{Dir.pwd}/#{name} already exists"
+		return true
 	end
+
+	logger = Logger.new(STDOUT)
+	logger.level = Logger::WARN
+	logger.formatter = proc { |severity, datetime, progname, msg| "*** #{msg}\n" }
+
+	PhusionPassenger.binaries_sites.each do |site|
+		if really_download(site, name, logger, options)
+			return true
+		end
+	end
+	return false
 end
 
-download "support-#{cxx_compat_id}.tar.gz"
-download "nginx-#{PhusionPassenger::PREFERRED_NGINX_VERSION}-#{cxx_compat_id}.tar.gz"
-download "rubyext-#{ruby_compat_id}.tar.gz"
+def really_download(site, name, logger, options)
+	url = "#{site[:url]}/#{PhusionPassenger::VERSION_STRING}/#{name}"
+	puts "Attempting to download #{url} into #{Dir.pwd}"
+	File.unlink("#{name}.tmp") rescue nil
+	
+	options = {
+		:cacert => site[:cert],
+		:logger => logger
+	}.merge(options)
+	result = PhusionPassenger::Utils::Download.download(url, "#{name}.tmp", options)
+	if result
+		File.rename("#{name}.tmp", name)
+	else
+		File.unlink("#{name}.tmp") rescue nil
+	end
+	return result
+end
+
+download "rubyext-#{ruby_compat_id}.tar.gz", :total_timeout => 10
+download "webhelper-#{PhusionPassenger::PREFERRED_NGINX_VERSION}-#{cxx_compat_id}.tar.gz", :total_timeout => 120
+download "support-#{cxx_compat_id}.tar.gz", :total_timeout => 900

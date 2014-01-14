@@ -1,6 +1,6 @@
 # encoding: utf-8
 #  Phusion Passenger - https://www.phusionpassenger.com/
-#  Copyright (c) 2010-2013 Phusion
+#  Copyright (c) 2010-2014 Phusion
 #
 #  "Phusion Passenger" is a trademark of Hongli Lai & Ninh Bui.
 #
@@ -30,6 +30,8 @@ module PhusionPassenger
 	GLOBAL_NAMESPACE_DIRNAME            = "passenger-enterprise"
 	# Subdirectory under $HOME to use for storing stuff.
 	USER_NAMESPACE_DIRNAME              = ".passenger-enterprise"
+	# The name for the /etc/apache2/mods-available/*.{load,conf} file.
+	APACHE2_MODULE_CONF_NAME            = "passenger"
 	
 	# Directories in which to look for plugins.
 	PLUGIN_DIRS = [
@@ -171,14 +173,17 @@ module PhusionPassenger
 	
 	###### Other resource locations ######
 	
-	BINARIES_URL_ROOT  = "https://oss-binaries.phusionpassenger.com/binaries/enterprise-NQLVwRlu10n13/by_release"
 	INDEX_DOC_NAME      = "Users guide.html"
 	APACHE2_DOC_NAME    = "Users guide Apache.html"
 	NGINX_DOC_NAME      = "Users guide Nginx.html"
 	STANDALONE_DOC_NAME = "Users guide Standalone.html"
 
-	def self.binaries_ca_cert_path
-		return "#{resources_dir}/oss-binaries.phusionpassenger.com.crt"
+	def self.binaries_sites
+		return [
+			{ :url => "https://oss-binaries.phusionpassenger.com/binaries/enterprise-NQLVwRlu10n13/by_release",
+			  :cacert => "#{resources_dir}/oss-binaries.phusionpassenger.com.crt" },
+			{ :url => "https://s3.amazonaws.com/phusion-passenger/binaries/enterprise-NQLVwRlu10n13/by_release" }
+		]
 	end
 	
 	

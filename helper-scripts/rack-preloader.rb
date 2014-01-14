@@ -22,7 +22,12 @@ module App
 	def self.format_exception(e)
 		result = "#{e} (#{e.class})"
 		if !e.backtrace.empty?
-			result << "\n  " << e.backtrace.join("\n  ")
+			if e.respond_to?(:html?) && e.html?
+				require 'erb' if !defined?(ERB)
+				result << "\n<pre>  " << ERB::Util.h(e.backtrace.join("\n  ")) << "</pre>"
+			else
+				result << "\n  " << e.backtrace.join("\n  ")
+			end
 		end
 		return result
 	end
@@ -58,9 +63,8 @@ module App
 		PhusionPassenger.require_passenger_lib 'loader_shared_helpers'
 		PhusionPassenger.require_passenger_lib 'request_handler'
 		PhusionPassenger.require_passenger_lib 'rack/thread_handler_extension'
-		LoaderSharedHelpers.init
-		PreloaderSharedHelpers.init
-		@@options = LoaderSharedHelpers.sanitize_spawn_options(@@options)
+		@@options = LoaderSharedHelpers.init(@@options)
+		@@options = PreloaderSharedHelpers.init(@@options)
 		Utils.passenger_tmpdir = options["generation_dir"]
 		if defined?(NativeSupport)
 			NativeSupport.disable_stdio_buffering
@@ -69,6 +73,7 @@ module App
 	rescue Exception => e
 		LoaderSharedHelpers.about_to_abort(e) if defined?(LoaderSharedHelpers)
 		puts "!> Error"
+		puts "!> html: true" if e.respond_to?(:html?) && e.html?
 		puts "!> "
 		puts format_exception(e)
 		exit exit_code_for_exception(e)
@@ -95,6 +100,7 @@ module App
 	rescue Exception => e
 		LoaderSharedHelpers.about_to_abort(e)
 		puts "!> Error"
+		puts "!> html: true" if e.respond_to?(:html?) && e.html?
 		puts "!> "
 		puts format_exception(e)
 		exit exit_code_for_exception(e)

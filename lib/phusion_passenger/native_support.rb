@@ -24,9 +24,13 @@ class NativeSupportLoader
 	end
 	
 	def start
-		if try_load
+		if ENV['PASSENGER_USE_RUBY_NATIVE_SUPPORT'] == '0'
+			STDERR.puts " --> Continuing without #{library_name}."
+			STDERR.puts "     Because PASSENGER_USE_RUBY_NATIVE_SUPPORT is set to 0."
+			return false
+		elsif try_load
 			return true
-		elsif download_binary_and_load || compile_and_load
+		elsif compile_and_load || download_binary_and_load
 			STDERR.puts " --> #{library_name} successfully loaded."
 			return true
 		else
@@ -123,10 +127,11 @@ private
 		PhusionPassenger.require_passenger_lib 'platform_info/ruby'
 		PhusionPassenger.require_passenger_lib 'utils/tmpio'
 		PhusionPassenger.require_passenger_lib 'utils/download'
+
 		PhusionPassenger::Utils.mktmpdir("passenger-native-support-") do |dir|
 			Dir.chdir(dir) do
 				basename = "rubyext-#{archdir}.tar.gz"
-				if !download(basename, dir)
+				if !download(basename, dir, :total_timeout => 30)
 					return false
 				end
 
@@ -218,16 +223,33 @@ private
 		return target_dirs
 	end
 
-	def download(name, output_dir)
-		url = "#{PhusionPassenger::BINARIES_URL_ROOT}/#{PhusionPassenger::VERSION_STRING}/#{name}"
-		filename = "#{output_dir}/#{name}"
+	def download(name, output_dir, options = {})
 		logger = Logger.new(STDERR)
 		logger.level = Logger::WARN
-		logger.formatter = proc { |severity, datetime, progname, msg| "     #{msg}\n" }
-		return PhusionPassenger::Utils::Download.download(url, filename,
-			:cacert => PhusionPassenger.binaries_ca_cert_path,
+		logger.formatter = proc do |severity, datetime, progname, msg|
+			msg.gsub(/^/, "     ") + "\n"
+		end
+		sites = PhusionPassenger.binaries_sites
+		sites.each_with_index do |site, i|
+			if real_download(site, name, output_dir, logger, options)
+				logger.warn "Download OK!" if i > 0
+				return true
+			elsif i != sites.size - 1
+				logger.warn "Trying next mirror..."
+			end
+		end
+		return false
+	end
+
+	def real_download(site, name, output_dir, logger, options)
+		url = "#{site[:url]}/#{VERSION_STRING}/#{name}"
+		filename = "#{output_dir}/#{name}"
+		real_options = options.merge(
+			:cacert => site[:cacert],
 			:use_cache => true,
-			:logger => logger)
+			:logger => logger
+		)
+		return PhusionPassenger::Utils::Download.download(url, filename, real_options)
 	end
 	
 	def mkdir(dir)
@@ -249,7 +271,7 @@ private
 		PhusionPassenger::Utils.mktmpdir("passenger-native-support-") do |tmpdir|
 			s_tmpdir = Shellwords.escape(tmpdir)
 			result = system("#{command_string} >#{s_tmpdir}/log 2>&1")
-			system("cat #{s_tmpdir}/log | sed 's/^/     /'")
+			system("cat #{s_tmpdir}/log | sed 's/^/     /' >&2")
 			return result
 		end
 	end

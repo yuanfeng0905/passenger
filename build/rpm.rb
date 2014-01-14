@@ -15,24 +15,28 @@
 #  51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
 RPM_NAME = "passenger"
-RPMBUILD_ROOT = File.expand_path("~/rpmbuild")
 MOCK_OFFLINE = boolean_option('MOCK_OFFLINE', false)
 ALL_RPM_DISTROS = {
 	"el6" => { :mock_chroot_name => "epel-6", :distro_name => "Enterprise Linux 6" },
 	"amazon" => { :mock_chroot_name => "epel-6", :distro_name => "Amazon Linux" }
 }
 
-desc "Build gem for use in RPM building"
-task 'rpm:gem' do
-	rpm_source_dir = "#{RPMBUILD_ROOT}/SOURCES"
-	sh "gem build #{PACKAGE_NAME}.gemspec"
-	sh "cp #{PACKAGE_NAME}-#{PACKAGE_VERSION}.gem #{rpm_source_dir}/"
+task 'rpm:sources' => ['package:set_official', 'package:tarball'] do
+	basename = "#{PACKAGE_NAME}-#{VERSION_STRING}"
+	nginx_version = PhusionPassenger::PREFERRED_NGINX_VERSION
+
+	sh "cp #{PKG_DIR}/#{basename}.tar.gz rpm/* #{rpmbuild_root}/SOURCES/"
+	if File.exist?("#{rpmbuild_root}/SOURCES/nginx-#{nginx_version}.tar.gz")
+		puts "Local Nginx tarball already exists."
+	else
+		sh "curl -L -o #{rpmbuild_root}/SOURCES/nginx-#{nginx_version}.tar.gz http://nginx.org/download/nginx-#{nginx_version}.tar.gz"
+	end
 end
 
 desc "Build RPM for local machine"
-task 'rpm:local' => 'rpm:gem' do
+task 'rpm:local' => 'rpm:sources' do
 	distro_id = `./rpm/get_distro_id.py`.strip
-	rpm_spec_dir = "#{RPMBUILD_ROOT}/SPECS"
+	rpm_spec_dir = "#{rpmbuild_root}/SPECS"
 	spec_target_dir = "#{rpm_spec_dir}/#{distro_id}"
 	spec_target_file = "#{spec_target_dir}/#{RPM_NAME}.spec"
 
@@ -50,7 +54,7 @@ task 'rpm:local:uninstall' do
 end
 
 task 'rpm:local:reinstall' => 'rpm:local:uninstall' do
-	rpm_spec_dir = "#{RPMBUILD_ROOT}/RPMS"
+	rpm_spec_dir = "#{rpmbuild_root}/RPMS"
 	files = []
 	["passenger", "mod_passenger", "passenger-devel", "passenger-doc", "passenger-native-libs", "passenger-debuginfo"].each do |package_name|
 		files << Dir["#{rpm_spec_dir}/*/#{package_name}-#{PACKAGE_VERSION}-*.rpm"].first
@@ -65,7 +69,7 @@ end
 def create_rpm_build_task(distro_id, mock_chroot_name, distro_name)
 	desc "Build RPM for #{distro_name}"
 	task "rpm:#{distro_id}" => 'rpm:gem' do
-		rpm_spec_dir = "#{RPMBUILD_ROOT}/SPECS"
+		rpm_spec_dir = "#{rpmbuild_root}/SPECS"
 		spec_target_dir = "#{rpm_spec_dir}/#{distro_id}"
 		spec_target_file = "#{spec_target_dir}/#{RPM_NAME}.spec"
 		maybe_offline = MOCK_OFFLINE ? "--offline" : nil
@@ -80,7 +84,7 @@ def create_rpm_build_task(distro_id, mock_chroot_name, distro_name)
 		sh "mock --verbose #{maybe_offline} " +
 			"-r #{mock_chroot_name}-x86_64 " +
 			"--resultdir '#{PKG_DIR}/#{distro_id}' " +
-			"rebuild #{RPMBUILD_ROOT}/SRPMS/#{RPM_NAME}-#{PACKAGE_VERSION}-1#{distro_id}.src.rpm"
+			"rebuild #{rpmbuild_root}/SRPMS/#{RPM_NAME}-#{PACKAGE_VERSION}-1#{distro_id}.src.rpm"
 	end
 end
 
@@ -116,4 +120,9 @@ task "rpm:publish" do
 	sh "ssh #{server} 'rm -rf #{remote_dir}/new && cp -dpR #{remote_dir}/latest #{remote_dir}/new'"
 	sh "#{rsync} #{PKG_DIR}/yumgems/ #{server}:#{remote_dir}/new/"
 	sh "ssh #{server} 'rm -rf #{remote_dir}/previous && mv #{remote_dir}/latest #{remote_dir}/previous && mv #{remote_dir}/new #{remote_dir}/latest'"
+end
+
+
+def rpmbuild_root
+	@rpmbuild_root ||= File.expand_path("~/rpmbuild")
 end

@@ -20,6 +20,9 @@ module PlatformInfo
 # many people have multiple Apache installations on their system, but they
 # don't know about that, or they don't know how to compile against the
 # correct Apache installation. This tool helps them.
+# 
+# If you use this class to log things to the terminal, then be sure to set
+# the terminal color to Utils::AnsiColors::DEFAULT_TERMINAL_COLOR.
 class ApacheDetector
 	class Result
 		# These are required and are never nil.
@@ -40,9 +43,9 @@ class ApacheDetector
 			log "      Main executable: #{httpd}"
 			log "      Control command: #{ctl}"
 			log "      Config file    : #{config_file}"
-			log "      Error log file : #{error_log}"
+			log "      Error log file : #{error_log || 'unknown'}"
 			log ""
-			log "   To install Phusion Passenger against this specific Apache version:"
+			log "   To install #{PROGRAM_NAME} against this specific Apache version:"
 			log "      #{PlatformInfo.ruby_command} #{PhusionPassenger.bin_dir}/passenger-install-apache2-module --apxs2-path='#{apxs2}'"
 			log ""
 			log "   To start, stop or restart this specific Apache version:"
@@ -50,9 +53,11 @@ class ApacheDetector
 			log "      #{ctl} stop"
 			log "      #{ctl} restart"
 			log ""
-			log "   To troubleshoot, please read the logs in this file:"
-			log "      #{error_log}"
-			log ""
+			if error_log
+				log "   To troubleshoot, please read the logs in this file:"
+				log "      #{error_log}"
+				log ""
+			end
 		end
 
 	private
@@ -69,9 +74,9 @@ class ApacheDetector
 		PlatformInfo.verbose = true
 		PlatformInfo.log_implementation = lambda do |message|
 			if message =~ /: found$/
-				log("<green> * #{message}</green>")
+				log("<green> --> #{message}</green>")
 			else
-				log(" * #{message}")
+				log(" --> #{message}")
 			end
 		end
 	end
@@ -99,10 +104,11 @@ class ApacheDetector
 			log "Detecting main Apache executable..."
 			result.httpd = PlatformInfo.httpd(:apxs2 => apxs2)
 			if result.httpd
+				log "Detecting version..."
 				if result.version = PlatformInfo.httpd_version(:httpd => result.httpd)
-					log "Version detected: #{result.version}"
+					log " --> #{result.version}"
 				else
-					log "<red>Cannot detect version!</red>"
+					log "<red> --> Cannot detect version!</red>"
 					result.httpd = nil
 				end
 			end
@@ -112,31 +118,28 @@ class ApacheDetector
 				result.httpd = nil if !result.ctl
 			end
 			if result.httpd
+				log "Detecting configuration file location..."
 				result.config_file = PlatformInfo.httpd_default_config_file(:httpd => result.httpd)
 				if result.config_file
-					log "Default config file location detected: #{result.config_file}"
+					log " --> #{result.config_file}"
 				else
-					log "<red>Cannot detect default config file location!</red>"
+					log "<red> --> Cannot detect default config file location!</red>"
 					result.httpd = nil
 				end
 			end
 			if result.httpd
+				log "Detecting error log file..."
 				result.error_log = PlatformInfo.httpd_actual_error_log(:httpd => result.httpd)
 				if result.error_log
-					log "Error log file detected: #{result.error_log}"
+					log " --> #{result.error_log}"
 				else
-					log "<red>Cannot detect error log file!</red>"
-					result.httpd = nil
+					log "<red> --> Cannot detect error log file!</red>"
 				end
 			end
 			if result.httpd
-				if PlatformInfo.httpd_supports_a2enmod?(:httpd => result.httpd)
-					log "This Apache installation does not support a2enmod."
-				else
-					log "Detecting a2enmod and a2dismod..."
-					result.a2enmod = PlatformInfo.a2enmod(:apxs2 => apxs2)
-					result.a2dismod = PlatformInfo.a2dismod(:apxs2 => apxs2)
-				end
+				log "Detecting a2enmod and a2dismod..."
+				result.a2enmod = PlatformInfo.a2enmod(:apxs2 => apxs2)
+				result.a2dismod = PlatformInfo.a2dismod(:apxs2 => apxs2)
 			end
 			if result.httpd
 				log "<green>Found a usable Apache installation using #{apxs2}.</green>"
@@ -162,19 +165,11 @@ class ApacheDetector
 			log "   <b>#{PhusionPassenger.bin_dir}/passenger-install-apache2-module</b>"
 			log ""
 			log "If you are sure that you have Apache installed, please read the documentation:"
-			log " * <b>#{PhusionPassenger.apache2_doc_path}</b>, section"
-			log "   section 'Installation' -> 'Customizing the compilation process' ->"
-			log "   'Forcing location of command line tools and dependencies'"
-			log " * Or visit the online version:"
-			log "   <b>#{APACHE2_DOC_URL}#_forcing_location_of_command_line_tools_and_dependencies</b>"
+			log "<b>#{APACHE2_DOC_URL}#forcing_location_of_command_line_tools_and_dependencies</b>"
 		elsif @results.size > 1
 			log "<yellow>WARNING: You have multiple Apache installations on your system!</yellow>"
 			log "You are strongly recommended to read this section of the documentation:"
-			log " * <b>#{PhusionPassenger.apache2_doc_path}</b>, section"
-			log "   section 'Installation' -> 'Customizing the compilation process' ->"
-			log "   'Forcing location of command line tools and dependencies'"
-			log " * Or visit the online version:"
-			log "   <b>#{APACHE2_DOC_URL}#_forcing_location_of_command_line_tools_and_dependencies</b>"
+			log "<b>#{APACHE2_DOC_URL}#multiple_apache_installs</b>"
 		end
 	end
 

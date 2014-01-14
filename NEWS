@@ -1,3 +1,32 @@
+Release 4.0.34
+--------------
+
+ * The Node.js loader code now sets the `isApplicationLoader` attribute on the
+   bootstrapping module. This provides a way for apps and frameworks that check
+   for `module.parent` to check whether the current file is loaded by Phusion
+   Passenger, or by other software that work in a similar way.
+
+   This change has been introduced to solve a compatibility issue with CompoundJS.
+   CompoundJS users should modify their server.js, and change the following:
+
+       if (!module.parent) {
+
+   to:
+
+       if (!module.parent || module.parent.isApplicationLoader) {
+
+ * Improved support for Meteor in development mode. Terminating Phusion Passenger
+   now leaves less garbage Meteor processes behind.
+ * It is now possible to disable the usage of the Ruby native extension by setting
+   the environment variable `PASSENGER_USE_RUBY_NATIVE_SUPPORT=0`.
+ * Fixed incorrect detection of the Apache MPM on Ubuntu 13.10.
+ * When using RVM, if you set PassengerRuby/passenger_ruby to the raw Ruby binary
+   instead of the wrapper script, Phusion Passenger will now print an error.
+ * Added support for RVM >= 1.25 wrapper scripts.
+ * Fixed loading passenger_native_support on Ruby 1.9.2.
+ * The Union Station analytics code now works even without native_support.
+
+
 Release 4.0.33
 --------------
 
