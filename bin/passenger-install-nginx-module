@@ -78,7 +78,7 @@ class Installer < PhusionPassenger::AbstractInstaller
 		check_nginx_module_sources_available || exit(1)
 		check_dependencies || exit(1)
 		if needs_compiling_support_files?
-			check_whether_we_can_write_to(PhusionPassenger.source_root) || exit(1)
+			check_whether_we_can_write_to(PhusionPassenger.build_system_dir) || exit(1)
 		end
 		check_whether_os_is_broken
 		check_whether_system_has_enough_ram
@@ -203,7 +203,7 @@ private
 	def compile_passenger_support_files
 		new_screen
 		puts "<banner>Compiling Passenger support files...</banner>"
-		Dir.chdir(PhusionPassenger.source_root) do
+		Dir.chdir(PhusionPassenger.build_system_dir) do
 			return sh("#{PlatformInfo.rake_command} nginx:clean nginx RELEASE=yes")
 		end
 	end
