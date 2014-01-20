@@ -288,6 +288,19 @@ readCleanupPids(const WorkingObjectsPtr &wo) {
 }
 
 static void
+killCleanupPids(const vector<pid_t> &cleanupPids) {
+	foreach (pid_t pid, cleanupPids) {
+		P_DEBUG("Sending SIGTERM to cleanup PID " << pid);
+		kill(pid, SIGTERM);
+	}
+}
+
+static void
+killCleanupPids(const WorkingObjectsPtr &wo) {
+	killCleanupPids(readCleanupPids(wo));
+}
+
+static void
 cleanupAgentsInBackground(const WorkingObjectsPtr &wo, vector<AgentWatcherPtr> &watchers, char *argv[]) {
 	this_thread::disable_interruption di;
 	this_thread::disable_syscall_interruption dsi;
@@ -373,10 +386,8 @@ cleanupAgentsInBackground(const WorkingObjectsPtr &wo, vector<AgentWatcherPtr> &
 			wo->serverInstanceDir->destroy();
 
 			// Notify given PIDs about our shutdown.
-			foreach (pid_t pid, cleanupPids) {
-				P_DEBUG("Sending SIGTERM to cleanup PID " << pid);
-				kill(pid, SIGTERM);
-			}
+			killCleanupPids(cleanupPids);
+
 			strcpy(argv[0], "PassengerWatchdog (cleaning up 6...)");
 			_exit(0);
 		} catch (const std::exception &e) {
@@ -402,7 +413,7 @@ cleanupAgentsInBackground(const WorkingObjectsPtr &wo, vector<AgentWatcherPtr> &
 }
 
 static void
-forceAllAgentsShutdown(vector<AgentWatcherPtr> &watchers) {
+forceAllAgentsShutdown(const WorkingObjectsPtr &wo, vector<AgentWatcherPtr> &watchers) {
 	vector<AgentWatcherPtr>::iterator it;
 	
 	for (it = watchers.begin(); it != watchers.end(); it++) {
@@ -412,6 +423,7 @@ forceAllAgentsShutdown(vector<AgentWatcherPtr> &watchers) {
 	for (it = watchers.begin(); it != watchers.end(); it++) {
 		(*it)->forceShutdown();
 	}
+	killCleanupPids(wo);
 }
 
 static string
@@ -624,7 +636,7 @@ startAgents(const WorkingObjectsPtr &wo, vector<AgentWatcherPtr> &watchers) {
 				"Watchdog startup error",
 				e.what(),
 				NULL);
-			forceAllAgentsShutdown(watchers);
+			forceAllAgentsShutdown(wo, watchers);
 			exit(1);
 		}
 		// Allow other exceptions to propagate and crash the watchdog.
@@ -641,7 +653,7 @@ beginWatchingAgents(const WorkingObjectsPtr &wo, vector<AgentWatcherPtr> &watche
 				"Watchdog startup error",
 				e.what(),
 				NULL);
-			forceAllAgentsShutdown(watchers);
+			forceAllAgentsShutdown(wo, watchers);
 			exit(1);
 		}
 		// Allow other exceptions to propagate and crash the watchdog.
@@ -685,6 +697,9 @@ main(int argc, char *argv[]) {
 			"Watchdog startup error",
 			e.what(),
 			NULL);
+		if (wo != NULL) {
+			killCleanupPids(wo);
+		}
 		return 1;
 	}
 	// Allow other exceptions to propagate and crash the watchdog.
@@ -720,7 +735,7 @@ main(int argc, char *argv[]) {
 			cleanupAgentsInBackground(wo, watchers, argv);
 		} else {
 			UPDATE_TRACE_POINT();
-			forceAllAgentsShutdown(watchers);
+			forceAllAgentsShutdown(wo, watchers);
 		}
 		UPDATE_TRACE_POINT();
 		runHookScriptAndThrowOnError("after_watchdog_shutdown");

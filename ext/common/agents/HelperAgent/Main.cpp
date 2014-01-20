@@ -590,7 +590,7 @@ public:
 			tracker->start();
 		}
 
-		
+
 		/* Wait until the watchdog closes the feedback fd (meaning it
 		 * was killed) or until we receive an exit message.
 		 */
