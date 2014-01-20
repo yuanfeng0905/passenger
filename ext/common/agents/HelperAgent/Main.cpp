@@ -14,6 +14,7 @@
 #include <cstring>
 #include <cassert>
 #include <cerrno>
+#include <stdlib.h>
 #include <unistd.h>
 #include <limits.h>
 #include <pwd.h>
@@ -360,6 +361,8 @@ private:
 				"privilege to that of user '") + username +
 				"': cannot set user ID", e);
 		}
+
+		setenv("HOME", userEntry->pw_dir, 1);
 	}
 	
 	void onSigquit(ev::sig &signal, int revents) {
@@ -571,13 +574,15 @@ public:
 				certificate = options.licensingServerCert;
 			}
 
+			string licensingDataDir = options.getLicensingDataDir();
+
 			P_INFO("Starting Phusion Passenger usage tracker using data directory " <<
-				options.licensingDataDir << " and certificate " <<
+				licensingDataDir << " and certificate " <<
 				(certificate.empty() ? "(none)" : certificate));
-			makeDirTree(options.licensingDataDir);
-			
+			makeDirTree(licensingDataDir);
+
 			CloudUsageTracker *tracker = new CloudUsageTracker(
-				options.licensingDataDir,
+				licensingDataDir,
 				options.licensingBaseUrl,
 				certificate,
 				options.licensingProxy);

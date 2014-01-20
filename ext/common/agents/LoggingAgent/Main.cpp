@@ -18,6 +18,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <cerrno>
+#include <stdlib.h>
 #include <signal.h>
 
 #include <agents/Base.h>
@@ -189,6 +190,8 @@ lowerPrivilege(const string &username, const struct passwd *user, gid_t gid) {
 			"': cannot set user ID: " << strerror(e) <<
 			" (" << e << ")");
 	}
+
+	setenv("HOME", user->pw_dir, 1);
 }
 
 static void

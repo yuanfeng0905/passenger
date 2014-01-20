@@ -44,7 +44,6 @@ struct AgentOptions: public VariantMap {
 
 	bool testBinary;
 	string requestSocketLink;
-	string licensingDataDir;
 	string licensingBaseUrl;
 	string licensingServerCert;
 	string licensingProxy;
@@ -87,11 +86,16 @@ struct AgentOptions: public VariantMap {
 		// Optional options.
 		prestartUrls          = options.getStrSet("prestart_urls", false);
 		requestSocketLink     = options.get("request_socket_link", false);
-		licensingDataDir = options.get("licensing_data_dir", false,
-			getHomeDir() + "/.passenger-enterprise/usage_data");
 		licensingServerCert = options.get("licensing_server_cert", false);
 		licensingBaseUrl = options.get("licensing_base_url", false);
 		licensingProxy   = options.get("licensing_proxy", false);
+	}
+
+	// We don't initialize the value in the constructor because the
+	// home dir changes after calling lowerPrivilege().
+	string getLicensingDataDir() const {
+		return get("licensing_data_dir", false,
+			getHomeDir() + "/.passenger-enterprise/usage_data");
 	}
 };
 
