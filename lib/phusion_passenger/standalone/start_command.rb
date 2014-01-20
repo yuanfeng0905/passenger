@@ -764,6 +764,7 @@ private
 	
 	def monitor_app_directories_in_background
 		@threads << Thread.new do
+			Thread.current.abort_on_exception = true
 			@app_finder.monitor(@termination_pipe[0]) do |apps|
 				puts "*** #{Time.now}: redeploying applications ***"
 				ok = true
@@ -782,6 +783,19 @@ private
 					end
 				end
 				if ok
+					# Tell the temp dir toucher that we're restarting Nginx,
+					# so that it should ignore the SIGTERM that the old Watchdog
+					# sends it.
+					begin
+						temp_dir_toucher_pid = File.open("#{@temp_dir}/temp_dir_toucher.pid", "r") do |f|
+							f.read.to_i
+						end
+						Process.kill('HUP', temp_dir_toucher_pid)
+						sleep 0.01
+					rescue Errno::ENOENT, Errno::EACCES, Errno::ESRCH
+					end
+
+					# Now restart Nginx.
 					@apps = apps
 					write_nginx_config_file
 					Process.kill('HUP', pid) rescue nil
