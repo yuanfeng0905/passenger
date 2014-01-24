@@ -879,7 +879,7 @@ Group::spawnThreadRealMain(const SpawnerPtr &spawner, const Options &options, un
 				Pool::assignExceptionToGetWaiters(getWaitlist, exception, actions);
 				pool->assignSessionsToGetWaiters(actions);
 			} else {
-				P_DEBUG("Ignoring spawn error");
+				P_INFO("Ignoring spawn error");
 				hasSpawnError = true;
 			}
 			done = true;

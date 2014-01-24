@@ -2240,8 +2240,9 @@ namespace tut {
 
 	TEST_METHOD(96) {
 		// Upon encountering a spawn error, the rolling restarter thread should
-		// quit trying to restart that group.
+		// quit trying to restart that group if ignoreSpawnErrors is on.
 		initPoolDebugging();
+		debug->rollingRestarting = true;
 		TempDirCopy c1("stub/wsgi", "tmp.wsgi");
 		Options options = createOptions();
 		options.appRoot = "tmp.wsgi";
@@ -2278,15 +2279,16 @@ namespace tut {
 		
 		// Let the pool attempt restart in the background.
 		// It will eventually fail.
-		setLogLevel(-2);
+		setLogLevel(LVL_CRIT);
 		pool->asyncGet(options, callback);
 		debug->debugger->recv("Spawn error 1");
+		debug->debugger->recv("Done rolling restarting");
 		EVENTUALLY(2,
 			result = number == 1;
 		);
 		currentSession.reset();
 		usleep(20000); // Give it some time to print the error message.
-		setLogLevel(0);
+		setLogLevel(DEFAULT_LOG_LEVEL);
 
 		// It should leave all the existing processes alone.
 		ensure_equals(pool->getProcessCount(), 3u);
@@ -2302,13 +2304,90 @@ namespace tut {
 		ensure(pid2 == orig_pid1 || pid2 == orig_pid2 || pid2 == orig_pid3);
 		ensure(pid3 == orig_pid1 || pid3 == orig_pid2 || pid3 == orig_pid3);
 
-		EVENTUALLY(2,
+		{
 			LockGuard l(pool->syncher);
-			result = !pool->restarterThreadActive;
-		);
+			ensure("Restarter thread inactive", !pool->restarterThreadActive);
+		}
+		GroupPtr group = pool->findOrCreateGroup(options);
+		ensure("Group has spawn error flag", group->hasSpawnError);
 	}
 
 	TEST_METHOD(97) {
+		// Upon encountering a spawn error, the rolling restarter thread should
+		// not quit trying to restart that group if ignoreSpawnErrors is off.
+		initPoolDebugging();
+		debug->rollingRestarting = true;
+		TempDirCopy c1("stub/wsgi", "tmp.wsgi");
+		Options options = createOptions();
+		options.appRoot = "tmp.wsgi";
+		options.appType = "wsgi";
+		options.spawnMethod = "direct";
+		options.rollingRestart = true;
+
+		debug->messages->send("Proceed with spawn loop iteration 1");
+		debug->messages->send("Proceed with spawn loop iteration 2");
+		debug->messages->send("Proceed with spawn loop iteration 3");
+		debug->messages->send("Finish restarting");
+		
+		// Spawn 3 processes.
+		Ticket ticket;
+		SessionPtr session1 = pool->get(options, &ticket);
+		SessionPtr session2 = pool->get(options, &ticket);
+		SessionPtr session3 = pool->get(options, &ticket);
+		ensure_equals(pool->getProcessCount(), 3u);
+
+		pid_t orig_pid1 = session1->getPid();
+		pid_t orig_pid2 = session2->getPid();
+		pid_t orig_pid3 = session3->getPid();
+		session1.reset();
+		session2.reset();
+		session3.reset();
+		
+		// Now fubar the app and flag restart.
+		writeFile("tmp.wsgi/passenger_wsgi.py",
+			"import sys\n"
+			"sys.stderr.write('an error\\n')\n"
+			"sys.exit(1)\n");
+		touchFile("tmp.wsgi/tmp/restart.txt");
+		
+		// Let the pool attempt restart in the background.
+		// It will fail to restart anything.
+		setLogLevel(LVL_CRIT);
+		pool->asyncGet(options, callback);
+		debug->debugger->recv("Spawn error 1");
+		debug->debugger->recv("Spawn error 2");
+		debug->debugger->recv("Spawn error 3");
+		debug->debugger->recv("Done rolling restarting");
+		EVENTUALLY(2,
+			result = number == 1;
+		);
+		currentSession.reset();
+		usleep(20000); // Give it some time to print the error message.
+		setLogLevel(DEFAULT_LOG_LEVEL);
+
+		// It should leave all the existing processes alone.
+		ensure_equals(pool->getProcessCount(), 3u);
+		session1 = pool->get(options, &ticket);
+		session2 = pool->get(options, &ticket);
+		session3 = pool->get(options, &ticket);
+		pid_t pid1 = session1->getPid();
+		pid_t pid2 = session2->getPid();
+		pid_t pid3 = session3->getPid();
+		ensure(pid1 != pid2);
+		ensure(pid2 != pid3);
+		ensure(pid1 == orig_pid1 || pid1 == orig_pid2 || pid1 == orig_pid3);
+		ensure(pid2 == orig_pid1 || pid2 == orig_pid2 || pid2 == orig_pid3);
+		ensure(pid3 == orig_pid1 || pid3 == orig_pid2 || pid3 == orig_pid3);
+
+		{
+			LockGuard l(pool->syncher);
+			ensure("Restarter thread inactive", !pool->restarterThreadActive);
+		}
+		GroupPtr group = pool->findOrCreateGroup(options);
+		ensure("Group does not have spawn error flag", !group->hasSpawnError);
+	}
+
+	TEST_METHOD(98) {
 		// Test that the maxProcesses option causes no more than the specified number
 		// of processes to be spawned per group.
 		Options options = createOptions();
@@ -2341,7 +2420,7 @@ namespace tut {
 		);
 	}
 
-	TEST_METHOD(98) {
+	TEST_METHOD(99) {
 		// Test rolling restarting while a process is being shut down.
 		TempDirCopy dir("stub/wsgi", "tmp.wsgi");
 		Options options = createOptions();

@@ -47,7 +47,8 @@ using namespace oxt;
  * so only access within ApplicationPool lock.
  */
 class Group: public boost::enable_shared_from_this<Group> {
-private:
+// Actually private, but marked public so that unit tests can access the fields.
+public:
 	friend class Pool;
 	friend class SuperGroup;
 	

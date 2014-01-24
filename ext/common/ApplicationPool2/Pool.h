@@ -11,6 +11,7 @@
 
 #include <string>
 #include <vector>
+#include <set>
 #include <algorithm>
 #include <utility>
 #include <sstream>
@@ -612,14 +613,14 @@ public:
 	 * Returns a random process within the entire pool that should be rolling restarted,
 	 * or null if there is no such process.
 	 */
-	ProcessPtr findProcessNeedingRollingRestart() const {
+	ProcessPtr findProcessNeedingRollingRestart(const set<string> &ignoreList) const {
 		SuperGroupMap::const_iterator sg_it, sg_end = superGroups.end();
 		for (sg_it = superGroups.begin(); sg_it != sg_end; sg_it++) {
 			SuperGroupPtr superGroup = sg_it->second;
 			vector<GroupPtr>::const_iterator g_it, g_end = superGroup->groups.end();
 			for (g_it = superGroup->groups.begin(); g_it != g_end; g_it++) {
 				const GroupPtr group = *g_it;
-				ProcessPtr process = findProcessNeedingRollingRestart(group);
+				ProcessPtr process = findProcessNeedingRollingRestart(group, ignoreList);
 				if (process != NULL) {
 					return process;
 				}
@@ -632,36 +633,50 @@ public:
 	 * Returns a random process within a specific group that should be rolling
 	 * restarted, or null if there is no such process.
 	 */
-	ProcessPtr findProcessNeedingRollingRestart(const GroupPtr &group) const {
+	ProcessPtr findProcessNeedingRollingRestart(const GroupPtr &group,
+		const set<string> &ignoreList) const
+	{
 		if (!group->isAlive() || group->hasSpawnError) {
 			return ProcessPtr();
 		}
 
-		foreach (ProcessPtr process, group->enabledProcesses) {
-			if (process->spawnerCreationTime < group->spawner->creationTime) {
-				return process;
-			}
+		ProcessPtr process;
+		process = findProcessNeedingRollingRestart(group, group->enabledProcesses, ignoreList);
+		if (process == NULL) {
+			process = findProcessNeedingRollingRestart(group, group->disablingProcesses, ignoreList);
 		}
-		foreach (ProcessPtr process, group->disablingProcesses) {
-			if (process->spawnerCreationTime < group->spawner->creationTime) {
-				return process;
-			}
+		if (process == NULL) {
+			process = findProcessNeedingRollingRestart(group, group->disabledProcesses, ignoreList);
 		}
-		foreach (ProcessPtr process, group->disabledProcesses) {
-			if (process->spawnerCreationTime < group->spawner->creationTime) {
-				return process;
-			}
-		}
+		return process;
+	}
 
+	ProcessPtr findProcessNeedingRollingRestart(const GroupPtr &group,
+		const ProcessList &list, const set<string> &ignoreList) const
+	{
+		foreach (ProcessPtr process, list) {
+			if (ignoreList.find(process->gupid) == ignoreList.end()
+			 && process->spawnerCreationTime < group->spawner->creationTime)
+			{
+				return process;
+			}
+		}
 		return ProcessPtr();
 	}
 
-	void setRestarterThreadInactive() {
+	void setRestarterThreadInactive(this_thread::disable_interruption *di,
+		this_thread::disable_syscall_interruption *dsi)
+	{
 		ScopedLock l(syncher);
 		restarterThreadActive = false;
 		restarterThreadStatus.clear();
 		restarterThreadGupid.clear();
 		P_DEBUG("Rolling restarter thread done");
+		if (debugSupport != NULL && debugSupport->rollingRestarting) {
+			this_thread::restore_interruption ri(*di);
+			this_thread::restore_syscall_interruption rsi(*dsi);
+			debugSupport->debugger->send("Done rolling restarting");
+		}
 	}
 
 	void restarterThreadMain() {
@@ -676,13 +691,14 @@ public:
 		TRACE_POINT();
 		this_thread::disable_interruption di;
 		this_thread::disable_syscall_interruption dsi;
-		ScopeGuard guard(boost::bind(&Pool::setRestarterThreadInactive, this));
+		ScopeGuard guard(boost::bind(&Pool::setRestarterThreadInactive, this, &di, &dsi));
 		ScopedLock l(syncher);
+		set<string> ignoreList;
 
 		// Restaring the spawner is already taken care of by Group::finalizeRestart().
 		while (true) {
 			UPDATE_TRACE_POINT();
-			ProcessPtr oldProcess = findProcessNeedingRollingRestart();
+			ProcessPtr oldProcess = findProcessNeedingRollingRestart(ignoreList);
 			if (oldProcess == NULL) {
 				break;
 			}
@@ -709,6 +725,7 @@ public:
 				this_thread::restore_syscall_interruption rsi(dsi);
 				newProcess = spawner->spawn(options);
 			} catch (const thread_interrupted &) {
+				// Returning so that we don't verify invariants.
 				return;
 			} catch (const tracable_exception &e) {
 				UPDATE_TRACE_POINT();
@@ -722,9 +739,11 @@ public:
 
 				l.lock();
 				if (group->isAlive() && oldProcess->isAlive()) {
-					// Don't try to rolling restart this group next time.
-					// We know we won't succeed.
-					group->hasSpawnError = true;
+					// Don't try to rolling restart this process next time.
+					ignoreList.insert(oldProcess->gupid);
+					if (group->options.ignoreSpawnErrors) {
+						group->hasSpawnError = true;
+					}
 				}
 				
 				exception = copyException(e);
@@ -762,7 +781,7 @@ public:
 				 * time we spent on spawning a new one. But we can
 				 * replace another old process, if any.
 				 */
-				oldProcess = findProcessNeedingRollingRestart(group);
+				oldProcess = findProcessNeedingRollingRestart(group, ignoreList);
 			}
 
 			vector<Callback> actions;
@@ -841,12 +860,6 @@ public:
 		UPDATE_TRACE_POINT();
 		verifyInvariants();
 		verifyExpensiveInvariants();
-
-		if (debugSupport != NULL && debugSupport->rollingRestarting) {
-			this_thread::restore_interruption ri(di);
-			this_thread::restore_syscall_interruption rsi(dsi);
-			debugSupport->debugger->send("Done rolling restarting");
-		}
 	}
 
 	struct GarbageCollectorState {
