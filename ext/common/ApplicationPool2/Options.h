@@ -341,6 +341,17 @@ public:
 	 * A value of 0 (the default) means unlimited.
 	 */
 	unsigned long memoryLimit;
+
+	/**
+	 * Whether rolling restarting should be used. Defaults to false.
+	 */
+	bool rollingRestart;
+
+	/**
+	 * Whether to ignore spawn errors when possible by reusing existing
+	 * processes. Defaults to false.
+	 */
+	bool ignoreSpawnErrors;
 	
 	
 	/*********** Per-request options that should be set manually ***********/
@@ -387,18 +398,6 @@ public:
 	bool noop;
 
 	/*-----------------*/
-
-	/**
-	 * Whether rolling restarting should be used. Defaults to false.
-	 */
-	bool rollingRestart;
-	
-	/**
-	 * Whether to ignore spawn errors when possible by reusing existing
-	 * processes. Defaults to false.
-	 */
-	bool ignoreSpawnErrors;
-
 	/*-----------------*/
 	
 	
@@ -446,9 +445,9 @@ public:
 
 		/*********************************/
 
-		memoryLimit        = 0;
 		concurrencyModel   = "process";
 		threadCount        = 1;
+		memoryLimit        = 0;
 		rollingRestart     = false;
 		ignoreSpawnErrors  = false;
 	}
@@ -589,6 +588,11 @@ public:
 			appendKeyValue4(vec, "analytics",          analytics);
 
 			appendKeyValue (vec, "group_secret",       groupSecret);
+
+			/*********************************/
+
+			appendKeyValue (vec, "concurrency_model",  concurrencyModel);
+			appendKeyValue3(vec, "thread_count",       threadCount);
 		}
 		if (fields & PER_GROUP_POOL_OPTIONS) {
 			appendKeyValue3(vec, "min_processes",       minProcesses);
@@ -596,12 +600,14 @@ public:
 			appendKeyValue2(vec, "max_preloader_idle_time", maxPreloaderIdleTime);
 			appendKeyValue3(vec, "max_out_of_band_work_instances", maxOutOfBandWorkInstances);
 			appendKeyValue (vec, "union_station_key",   unionStationKey);
+
+			/*********************************/
+
+			appendKeyValue4(vec, "rolling_restart",     rollingRestart);
+			appendKeyValue4(vec, "ignore_spawn_errors", ignoreSpawnErrors);
 		}
 		
 		/*********************************/
-
-		appendKeyValue (vec, "concurrency_model",  concurrencyModel);
-		appendKeyValue3(vec, "thread_count",       threadCount);
 	}
 
 	template<typename Stream>
