@@ -132,7 +132,7 @@ private:
 	}
 	
 public:
-	/*********** Spawn options that should be set manually ***********
+	/*********** Spawn options that should be set by the caller ***********
 	 * These are the options that are relevant while spawning an application
 	 * process. These options are only used during spawning.
 	 */
@@ -286,7 +286,7 @@ public:
 	unsigned int threadCount;
 	
 	
-	/*********** Per-group pool options that should be set manually ***********
+	/*********** Per-group pool options that should be set by the caller ***********
 	 * These options dictate how Pool will manage processes, routing, etc. within
 	 * a single Group. These options are not process-specific, only group-specific.
 	 */
@@ -354,7 +354,11 @@ public:
 	bool ignoreSpawnErrors;
 	
 	
-	/*********** Per-request options that should be set manually ***********/
+	/*********** Per-request pool options that should be set by the caller ***********
+	 * These options also dictate how Pool will manage processes, etc. Unlike the
+	 * per-group options, these options are customizable on a per-request basis.
+	 * Their effects also don't persist longer than a single request.
+	 */
 	
 	/** Current request host name. */
 	StaticString hostName;
