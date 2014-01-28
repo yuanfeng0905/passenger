@@ -1,6 +1,6 @@
 /*
  *  Phusion Passenger - https://www.phusionpassenger.com/
- *  Copyright (c) 2010-2013 Phusion
+ *  Copyright (c) 2010-2014 Phusion
  *
  *  "Phusion Passenger" is a trademark of Hongli Lai & Ninh Bui.
  *
@@ -446,7 +446,7 @@ public:
 		accountsDatabase->add("_passenger-status", options.adminToolStatusPassword, false,
 			Account::INSPECT_BASIC_INFO | Account::INSPECT_SENSITIVE_INFO |
 			Account::INSPECT_BACKTRACES | Account::INSPECT_REQUESTS |
-			Account::RESTART);
+			Account::DETACH | Account::RESTART);
 		accountsDatabase->add("_web_server", options.exitPassword, false, Account::EXIT);
 		messageServer = boost::make_shared<MessageServer>(
 			parseUnixSocketAddress(options.adminSocketAddress), accountsDatabase);
@@ -620,6 +620,9 @@ public:
 			 * inaccessible.
 			 */
 			P_DEBUG("Watchdog seems to be killed; forcing shutdown of all subprocesses");
+			// We send a SIGTERM first to allow processes to gracefully shut down.
+			syscalls::killpg(getpgrp(), SIGTERM);
+			usleep(500000);
 			syscalls::killpg(getpgrp(), SIGKILL);
 			_exit(2); // In case killpg() fails.
 		} else {
@@ -628,6 +631,7 @@ public:
 			 */
 			P_DEBUG("Received command to exit gracefully. "
 				"Waiting until 5 seconds after all clients have disconnected...");
+			pool->prepareForShutdown();
 			requestHandler->resetInactivityTime();
 			while (requestHandler->inactivityTime() < 5000) {
 				syscalls::usleep(250000);

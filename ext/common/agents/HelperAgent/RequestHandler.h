@@ -2026,6 +2026,7 @@ private:
 	}
 
 	void sessionCheckedOut_real(ClientPtr client, const SessionPtr &session, const ExceptionPtr &e) {
+		RH_LOG_EVENT(client, "sessionCheckedOut");
 		if (!client->connected()) {
 			return;
 		}
@@ -2221,7 +2222,6 @@ private:
 			data.append(" ");
 			data.append(parser.getHeader("REQUEST_URI"));
 			data.append(" HTTP/1.1\r\n");
-			data.append("Connection: close\r\n");
 
 			for (it = parser.begin(); it != end; it++) {
 				if (startsWith(it->first, "HTTP_") && it->first != "HTTP_CONNECTION") {
@@ -2240,6 +2240,15 @@ private:
 					data.append(it->second);
 					data.append("\r\n");
 				}
+			}
+
+			StaticString connection = parser.getHeader("HTTP_CONNECTION");
+			if (connection == "upgrade" || connection == "Upgrade") {
+				data.append("Connection: ");
+				data.append(connection.data(), connection.size());
+				data.append("\r\n");
+			} else {
+				data.append("Connection: close\r\n");
 			}
 
 			StaticString header = parser.getHeader("CONTENT_LENGTH");

@@ -76,6 +76,25 @@ app = lambda do |env|
 		sleep 0.1  # Give HelperAgent the time to process stdout first.
 		STDERR.puts "hello stderr!"
 		text_response("ok")
+	when '/switch_protocol'
+		if env['HTTP_UPGRADE'] != 'raw' || env['HTTP_CONNECTION'].downcase != 'upgrade'
+			return [500, { "Content-Type" => "text/plain" }, ["Invalid headers"]]
+		end
+		env['rack.hijack'].call
+		io = env['rack.hijack_io']
+		begin
+			io.write("Status: 101 Switching Protocols\r\n")
+			io.write("Upgrade: raw\r\n")
+			io.write("Connection: Upgrade\r\n")
+			io.write("\r\n")
+			while !io.eof?
+				line = io.readline
+				io.write("Echo: #{line}")
+				io.flush
+			end
+		ensure
+			io.close
+		end
 	when '/allocate_memory'
 		$global_variable = " " * (1024 * 1024 * 125)
 		text_response("ok")

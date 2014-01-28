@@ -91,6 +91,52 @@ describe('HttplibEmulation', function() {
 		return result;
 	}
 
+	describe('the request object', function() {
+		beforeEach(function() {
+			var state = this.state;
+			state.setup = function(headers, callback) {
+				if (!callback) {
+					callback = headers;
+					headers = {};
+				}
+				state.headers = createHeaders(headers);
+				state.createSocket(function(serverSocket, client) {
+					state.req = HttplibEmulation.createIncomingMessage(
+						state.headers, serverSocket, "");
+					callback();
+				});
+			}
+		});
+
+		specify('.on() returns the request object', function(done) {
+			var state = this.state;
+			state.setup(function() {
+				var result = state.req.on('foo', function() {});
+				assert.strictEqual(result, state.req);
+				done();
+			});
+		});
+
+		it('sets no "upgrade" flag if there is no Upgrade header', function(done) {
+			var state = this.state;
+			state.setup(function() {
+				assert.ok(!state.req.upgrade);
+				done();
+			});
+		});
+
+		it('sets the "upgrade" flag if there is an Upgrade header', function(done) {
+			var state = this.state;
+			var headers = {
+				'HTTP_UPGRADE': 'WebSocket'
+			};
+			state.setup(headers, function() {
+				assert.ok(state.req.upgrade);
+				done();
+			});
+		});
+	});
+
 	describe('if the request may have a request body', function() {
 		beforeEach(function() {
 			var state = this.state;
@@ -105,7 +151,6 @@ describe('HttplibEmulation', function() {
 				state.createSocket(function(serverSocket, client) {
 					state.req = HttplibEmulation.createIncomingMessage(
 						state.headers, serverSocket, "");
-					assert.ok(state.req._mayHaveRequestBody);
 					callback();
 				});
 			}
@@ -165,7 +210,7 @@ describe('HttplibEmulation', function() {
 				});
 			});
 
-			it("sends data events as data is received", function(done) {
+			specify("the request object emits data events as data is received", function(done) {
 				var state = this.state;
 				var chunks = [];
 
@@ -182,7 +227,7 @@ describe('HttplibEmulation', function() {
 				});
 			});
 
-			it("sends the end event after the client closes the socket", function(done) {
+			specify("the request object emits the end event after the client closes the socket", function(done) {
 				var state = this.state;
 				var finished;
 
@@ -214,7 +259,7 @@ describe('HttplibEmulation', function() {
 				});
 			});
 
-			it("emits readable events upon receiving data", function(done) {
+			specify("the request object emits readable events upon receiving data", function(done) {
 				var state = this.state;
 				var readable = 0;
 				state.req.on('readable', function() {
@@ -380,7 +425,6 @@ describe('HttplibEmulation', function() {
 				state.createSocket(function(serverSocket, client) {
 					state.req = HttplibEmulation.createIncomingMessage(
 						state.headers, serverSocket, "");
-					assert.ok(!state.req._mayHaveRequestBody);
 					callback();
 				});
 			}
@@ -485,6 +529,94 @@ describe('HttplibEmulation', function() {
 					}
 				});
 				state.req.read(10);
+			});
+		});
+	});
+
+	describe('requests with Upgrade header', function() {
+		beforeEach(function() {
+			var state = this.state;
+			state.setup = function(headers, callback) {
+				if (!callback) {
+					callback = headers;
+					headers = {
+						'HTTP_UPGRADE': 'websocket'
+					};
+				}
+				state.headers = createHeaders(headers);
+				state.createSocket(function(serverSocket, client) {
+					state.req = HttplibEmulation.createIncomingMessage(
+						state.headers, serverSocket, "");
+					callback();
+				});
+			}
+		});
+
+		specify('the request object emits no data events', function(done) {
+			var state = this.state;
+			state.setup(function() {
+				var hasData = false;
+
+				state.req.on('data', function(data) {
+					hasData = true;
+				});
+				state.client.write("hello");
+
+				Helper.shouldNeverHappen(50, function() {
+					return hasData;
+				}, done);
+			});
+		});
+
+		specify('the request object ends immediately', function(done) {
+			var state = this.state;
+			state.setup(function() {
+				var readable = false;
+				var readData;
+				var ended = false;
+
+				state.req.on('readable', function() {
+					readable = true;
+					readData = state.req.read(100);
+				});
+				state.req.on('end', function() {
+					ended = true;
+				});
+
+				Helper.eventually(50, function() {
+					return readable && ended;
+				}, function() {
+					assert.strictEqual(readData, null);
+					done();
+				});
+			});
+		});
+
+		specify('the socket emits data events as data is received', function(done) {
+			var state = this.state;
+			state.setup(function() {
+				var hasData = false;
+
+				state.req.socket.on('data', function(data) {
+					hasData = true;
+				});
+				state.client.write("hello");
+
+				Helper.eventually(50, function() {
+					return hasData;
+				}, done);
+			});
+		});
+
+		it('allows reading from the socket', function(done) {
+			var state = this.state;
+			state.setup(function() {
+				state.req.socket.on('readable', function() {
+					var chunk = state.req.socket.read(5).toString('utf-8');
+					chunk.should.eql("hello");
+					done();
+				});
+				state.client.write("hello");
 			});
 		});
 	});

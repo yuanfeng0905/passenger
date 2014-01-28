@@ -1,6 +1,6 @@
 /*
  *  Phusion Passenger - https://www.phusionpassenger.com/
- *  Copyright (c) 2013 Phusion
+ *  Copyright (c) 2013-2014 Phusion
  *
  *  "Phusion Passenger" is a trademark of Hongli Lai & Ninh Bui.
  *
@@ -68,11 +68,15 @@ function inferHttpVersion(protocolDescription) {
 	}
 }
 
-function mayHaveRequestBody(headers) {
-	return headers['REQUEST_METHOD'] != 'GET' || headers['HTTP_UPGRADE'];
-}
-
 function createIncomingMessage(headers, socket, bodyBegin) {
+	/* Node's HTTP parser simulates an 'end' event if it determines that
+	 * the request should not have a request body. Currently (Node 0.10.18),
+	 * it thinks GET requests without an Upgrade header should not have a
+	 * request body, even though technically such GET requests are allowed
+	 * to have a request body. For compatibility reasons we implement the
+	 * same behavior as Node's HTTP parser.
+	 */
+
 	var message = new http.IncomingMessage(socket);
 	setHttpHeaders(message.headers, headers);
 	message.cgiHeaders = headers;
@@ -81,7 +85,14 @@ function createIncomingMessage(headers, socket, bodyBegin) {
 	message.url    = headers['REQUEST_URI'];
 	message.connection.remoteAddress = headers['REMOTE_ADDR'];
 	message.connection.remotePort = parseInt(headers['REMOTE_PORT']);
-	message._mayHaveRequestBody = mayHaveRequestBody(headers);
+	message.upgrade = !!headers['HTTP_UPGRADE'];
+
+	if (message.upgrade) {
+		// Emit end event as described above.
+		message.push(null);
+		return message;
+	}
+
 	message._emitEndEvent = IncomingMessage_emitEndEvent;
 	resetIncomingMessageOverridedMethods(message);
 
@@ -95,14 +106,7 @@ function createIncomingMessage(headers, socket, bodyBegin) {
 		message.emit('timeout');
 	});
 
-	/* Node's HTTP parser simulates an 'end' event if it determines that
-	 * the request should not have a request body. Currently (Node 0.10.18),
-	 * it thinks GET requests without an Upgrade header should not have a
-	 * request body, even though technically such GET requests are allowed
-	 * to have a request body. For compatibility reasons we implement the
-	 * same behavior as Node's HTTP parser.
-	 */
-	if (message._mayHaveRequestBody) {
+	if (headers['REQUEST_METHOD'] != 'GET') {
 		if (bodyBegin.length > 0) {
 			message.push(bodyBegin);
 		}
@@ -112,6 +116,7 @@ function createIncomingMessage(headers, socket, bodyBegin) {
 			}
 		}
 	} else {
+		// Emit end event as described above.
 		message.push(null);
 	}
 
@@ -139,6 +144,7 @@ function IncomingMessage_on(event, listener) {
 	}
 	this._orig_on.call(this, event, listener);
 	resetIncomingMessageOverridedMethods(this);
+	return this;
 }
 
 function IncomingMessage_emitEndEvent() {

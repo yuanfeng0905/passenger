@@ -1,6 +1,6 @@
 /*
  *  Phusion Passenger - https://www.phusionpassenger.com/
- *  Copyright (c) 2011-2013 Phusion
+ *  Copyright (c) 2011-2014 Phusion
  *
  *  "Phusion Passenger" is a trademark of Hongli Lai & Ninh Bui.
  *
@@ -139,6 +139,7 @@ public:
 
 	enum LifeStatus {
 		ALIVE,
+		PREPARED_FOR_SHUTDOWN,
 		SHUTTING_DOWN,
 		SHUT_DOWN
 	} lifeStatus;
@@ -1236,6 +1237,7 @@ public:
 		}
 	}
 
+	/** Must be called right after construction. */
 	void initialize() {
 		LockGuard l(syncher);
 		interruptableThreads.create_thread(
@@ -1255,10 +1257,31 @@ public:
 		debugSupport = boost::make_shared<DebugSupport>();
 	}
 
-	void destroy() {
+	/** Should be called right after the HelperAgent has received
+	 * the message to exit gracefully. This will tell processes to
+	 * abort any long-running connections, e.g. WebSocket connections,
+	 * because the RequestHandler has to wait until all connections are
+	 * finished before proceeding with shutdown.
+	 */
+	void prepareForShutdown() {
 		TRACE_POINT();
 		ScopedLock lock(syncher);
 		assert(lifeStatus == ALIVE);
+		lifeStatus = PREPARED_FOR_SHUTDOWN;
+		vector<ProcessPtr> processes = getProcesses(false);
+		foreach (ProcessPtr process, processes) {
+			if (process->abortLongRunningConnections()) {
+				// Ensure that the process is not immediately respawned.
+				process->getGroup()->options.minProcesses = 0;
+			}
+		}
+	}
+
+	/** Must be called right before destruction. */
+	void destroy() {
+		TRACE_POINT();
+		ScopedLock lock(syncher);
+		assert(lifeStatus == ALIVE || lifeStatus == PREPARED_FOR_SHUTDOWN);
 
 		lifeStatus = SHUTTING_DOWN;
 
@@ -1287,7 +1310,7 @@ public:
 	void asyncGet(const Options &options, const GetCallback &callback, bool lockNow = true) {
 		DynamicScopedLock lock(syncher, lockNow);
 
-		assert(lifeStatus == ALIVE);
+		assert(lifeStatus == ALIVE || lifeStatus == PREPARED_FOR_SHUTDOWN);
 		verifyInvariants();
 		P_TRACE(2, "asyncGet(appGroupName=" << options.getAppGroupName() << ")");
 		vector<Callback> actions;
