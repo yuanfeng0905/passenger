@@ -197,7 +197,7 @@ private:
 		 * generations no matter what user they're running as.
 		 */
 		if (owner) {
-			switch (getFileType(path)) {
+			switch (getFileTypeNoFollowSymlinks(path)) {
 			case FT_NONEXISTANT:
 				createDirectory(path);
 				break;
