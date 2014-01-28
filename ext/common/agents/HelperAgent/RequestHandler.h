@@ -684,11 +684,16 @@ private:
 			status, (unsigned long) data.size());
 
 		client->clientOutputPipe->write(header, pos - header);
-		if (client->connected()) {
-			client->clientOutputPipe->write(data.data(), data.size());
-			if (client->connected()) {
-				client->clientOutputPipe->end();
-			}
+		if (!client->connected()) {
+			return;
+		}
+		client->clientOutputPipe->write(data.data(), data.size());
+		if (!client->connected()) {
+			return;
+		}
+		client->clientOutputPipe->end();
+		if (!client->connected()) {
+			return;
 		}
 
 		if (client->useUnionStation()) {
@@ -770,11 +775,16 @@ private:
 
 		const string header = str.str();
 		client->clientOutputPipe->write(header.data(), header.size());
-		if (client->connected()) {
-			client->clientOutputPipe->write(data.data(), data.size());
-			if (client->connected()) {
-				client->clientOutputPipe->end();
-			}
+		if (!client->connected()) {
+			return;
+		}
+		client->clientOutputPipe->write(data.data(), data.size());
+		if (!client->connected()) {
+			return;
+		}
+		client->clientOutputPipe->end();
+		if (!client->connected()) {
+			return;
 		}
 
 		if (client->useUnionStation()) {
