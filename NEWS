@@ -1,3 +1,25 @@
+Release 4.0.38
+--------------
+
+ * Fixed a symlink-related security vulnerability.
+
+   Urgency: low
+   Scope: local exploit
+   Summary: writing files to arbitrary directory by hijacking temp directories
+   Affected versions: 4.0.37
+   Fixed versions: 4.0.38
+
+   Description:
+   This issue is related to the security issue as mentioned in the 4.0.37
+   release notes. The previous fix was incomplete, and still has a
+   (albeit smaller) small attack time window in between two filesystem
+   checks. This attack window is now gone.
+ * Fixed some compilation problems on Solaris. See issue #1047.
+ * passenger-install-apache2-module and passenger-install-nginx-module
+   now automatically run in `--auto` mode if stdin is not a TTY. Fixes
+   issue #1030.
+
+
 Release 4.0.37
 --------------
 
@@ -15,7 +37,7 @@ Release 4.0.37
    effect to killing the application process directly with `kill <PID>`,
    but killing directly may cause the HTTP client to see an error, while
    using this command guarantees that clients see no errors.
- * Fixed a crash occurs when an application fails to spawn, but the HTTP
+ * Fixed a crash that occurs when an application fails to spawn, but the HTTP
    client disconnects before the error page is generated. Fixes issue #1028.
  * Fixed a symlink-related security vulnerability.
 
