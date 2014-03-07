@@ -1,6 +1,9 @@
 Release 4.0.38
 --------------
 
+ * Added support for the new Ruby 2.1.0 out-of-band garbage collector.
+   This can much improve garbage collection performance, and drastically
+   reduce request times.
  * Fixed a symlink-related security vulnerability.
 
    Urgency: low
@@ -8,16 +11,30 @@ Release 4.0.38
    Summary: writing files to arbitrary directory by hijacking temp directories
    Affected versions: 4.0.37
    Fixed versions: 4.0.38
+   CVE-2014-1832
 
    Description:
-   This issue is related to the security issue as mentioned in the 4.0.37
-   release notes. The previous fix was incomplete, and still has a
+   This issue is related to CVE-2014-1831 (the security issue as mentioned in
+   the 4.0.37 release notes). The previous fix was incomplete, and still has a
    (albeit smaller) small attack time window in between two filesystem
    checks. This attack window is now gone.
+ * Passenger Standalone is now compatible with IPv6.
  * Fixed some compilation problems on Solaris. See issue #1047.
  * passenger-install-apache2-module and passenger-install-nginx-module
    now automatically run in `--auto` mode if stdin is not a TTY. Fixes
    issue #1030.
+ * Fixed an issue with non-bundled Meteor apps not correctly running in
+   production mode.
+ * The `PassengerPreStart` option is now compatible with IPv6 server sockets.
+ * When running Python WSGI apps, `wsgi.run_once` is now set to False.
+   This should improve the performance of certain apps and frameworks.
+ * When handling HTTP requests with chunked transfer encoding, the
+   'Transfer-Encoding' header is no longer passed to the application.
+   This is because the web server already buffers and dechunks the
+   request body.
+ * Fixed a possible hang in Phusion Passenger for Nginx when Nginx
+   is instructed to reload or reopen log files. Thanks to Feng Gu,
+   [pull request #97](https://github.com/phusion/passenger/pull/97).
 
 
 Release 4.0.37
@@ -46,6 +63,7 @@ Release 4.0.37
    Summary: writing files to arbitrary directory by hijacking temp directories
    Affected versions: 4.0.5 and later
    Fixed versions: 4.0.37
+   CVE-2014-1831
 
    Description:
    Phusion Passenger creates a "server instance directory" in /tmp during startup,

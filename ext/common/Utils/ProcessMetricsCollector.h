@@ -434,14 +434,19 @@ public:
 		if (pidsArg[pidsArg.size() - 1] == ',') {
 			pidsArg.resize(pidsArg.size() - 1);
 		}
+
+		// The list of format arguments must also follow -o
+		// without a space.
+		// https://github.com/phusion/passenger/pull/94
+		string fmtArg = "-o";
+		#if defined(sun) || defined(__sun)
+			fmtArg.append("pid,ppid,pcpu,rss,vsz,pgid,uid,args");
+		#else
+			fmtArg.append("pid,ppid,%cpu,rss,vsize,pgid,uid,command");
+		#endif
 		
 		const char *command[] = {
-			"ps", "-o",
-			#if defined(sun) || defined(__sun)
-				"pid,ppid,pcpu,rss,vsz,pgid,uid,args",
-			#else
-				"pid,ppid,%cpu,rss,vsize,pgid,uid,command",
-			#endif
+			"ps", fmtArg.c_str(),
 			#ifdef PS_SUPPORTS_MULTIPLE_PIDS
 				pidsArg.c_str(),
 			#endif
@@ -453,6 +458,7 @@ public:
 			psOutput = runCommandAndCaptureOutput(command);
 		}
 		pidsArg.resize(0);
+		fmtArg.resize(0);
 		ProcessMetricMap result = parsePsOutput<Collection, ConstIterator>(psOutput, pids);
 		psOutput.resize(0);
 		if (canMeasureRealMemory) {

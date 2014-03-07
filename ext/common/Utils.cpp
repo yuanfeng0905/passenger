@@ -903,14 +903,6 @@ getSignalName(int sig) {
 
 void
 resetSignalHandlersAndMask() {
-	sigset_t signal_set;
-	int ret;
-	
-	sigemptyset(&signal_set);
-	do {
-		ret = sigprocmask(SIG_SETMASK, &signal_set, NULL);
-	} while (ret == -1 && errno == EINTR);
-	
 	struct sigaction action;
 	action.sa_handler = SIG_DFL;
 	action.sa_flags   = SA_RESTART;
@@ -941,6 +933,21 @@ resetSignalHandlersAndMask() {
 	#endif
 	sigaction(SIGUSR1, &action, NULL);
 	sigaction(SIGUSR2, &action, NULL);
+
+	// We reset the signal mask after resetting the signal handlers,
+	// because prior to calling resetSignalHandlersAndMask(), the
+	// process might be blocked on some signals. We want those signals
+	// to be processed after installing the new signal handlers
+	// so that bugs like https://github.com/phusion/passenger/pull/97
+	// can be prevented.
+
+	sigset_t signal_set;
+	int ret;
+	
+	sigemptyset(&signal_set);
+	do {
+		ret = sigprocmask(SIG_SETMASK, &signal_set, NULL);
+	} while (ret == -1 && errno == EINTR);
 }
 
 void
