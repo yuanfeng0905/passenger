@@ -986,8 +986,10 @@ private:
 		addHeader(output, "PASSENGER_MEMORY_LIMIT",
 			apr_psprintf(r->pool, "%lu", config->getMemoryLimit()));
 		addHeader(output, "PASSENGER_ROLLING_RESTARTS", config->useRollingRestarts() ? "true" : "false");
-		addHeader(output, "PASSENGER_MAX_PROCESSES",
-			apr_psprintf(r->pool, "%ld", config->getMaxInstances()));
+		if (config->maxInstancesSpecified) {
+			addHeader(output, "PASSENGER_MAX_PROCESSES",
+				apr_psprintf(r->pool, "%ld", config->getMaxInstances()));
+		}
 		addHeader(output, "PASSENGER_DEBUGGER",
 			config->useDebugger() ? "true" : "false");
 		addHeader(output, "PASSENGER_RESIST_DEPLOYMENT_ERRORS",
