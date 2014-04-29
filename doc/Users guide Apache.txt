@@ -58,6 +58,8 @@ For example:
     <Directory /webapps/mycook/public>
         Allow from all
         Options -MultiViews
+        # Uncomment this if you're on Apache >= 2.4:
+        #Require all granted
     </Directory>
 </VirtualHost>
 -------------------------------------------
@@ -82,6 +84,9 @@ Suppose that you already have a virtual host:
     DocumentRoot /websites/phusion
     <Directory /websites/phusion>
         Allow from all
+        Options -MultiViews
+        # Uncomment this if you're on Apache >= 2.4:
+        #Require all granted
     </Directory>
 </VirtualHost>
 -------------------------------------------
@@ -96,7 +101,7 @@ To do this, you need to perform the following:
  3. Inside the Location block, set `PassengerBaseURI /{SUBURI}`.
  4. Inside the Location block, set `PassengerAppRoot {PATH TO YOUR APPLICATION ROOT}`.
  5. Create a `<Directory {PATH TO YOUR APPLICATION'S PUBLIC DIRECTORY}>` block.
- 6. Inside the Directory block, set `Allow from all`.
+ 6. Inside the Directory block, set `Allow from all`, and (if you're on Apache >= 2.4) `Require all granted`.
  7. Inside the Directory block, disable MultiViews.
 
 Here is an example:
@@ -107,6 +112,9 @@ Here is an example:
     DocumentRoot /websites/phusion
     <Directory /websites/phusion>
         Allow from all
+        Options -MultiViews
+        # Uncomment this if you're on Apache >= 2.4:
+        #Require all granted
     </Directory>
     
     # These have been added:
@@ -118,6 +126,8 @@ Here is an example:
     <Directory /websites/rails/public>
         Allow from all
         Options -MultiViews
+        # Uncomment this if you're on Apache >= 2.4:
+        #Require all granted
     </Directory>
 </VirtualHost>
 -------------------------------------------
@@ -233,6 +243,8 @@ the Apache configuration file:
     <Directory /webapps/rack_example/public>
         Allow from all
         Options -MultiViews
+        # Uncomment this if you're on Apache >= 2.4:
+        #Require all granted
     </Directory>
 </VirtualHost>
 -------------------------------------------
@@ -258,6 +270,8 @@ For example:
     <Directory /webapps/rackapp/public>
         Allow from all
         Options -MultiViews
+        # Uncomment this if you're on Apache >= 2.4:
+        #Require all granted
     </Directory>
 </VirtualHost>
 -------------------------------------------
@@ -282,6 +296,9 @@ Suppose that you already have a virtual host:
     DocumentRoot /websites/phusion
     <Directory /websites/phusion>
         Allow from all
+        Options -MultiViews
+        # Uncomment this if you're on Apache >= 2.4:
+        #Require all granted
     </Directory>
 </VirtualHost>
 -------------------------------------------
@@ -296,7 +313,7 @@ To do this, you need to perform the following:
  3. Inside the Location block, set `PassengerBaseURI /{SUBURI}`.
  4. Inside the Location block, set `PassengerAppRoot {PATH TO YOUR APPLICATION ROOT}`.
  5. Create a `<Directory {PATH TO YOUR APPLICATION'S PUBLIC DIRECTORY}>` block.
- 6. Inside the Directory block, set `Allow from all`.
+ 6. Inside the Directory block, set `Allow from all`, and (if you're on Apache >= 2.4) `Require all granted`.
  7. Inside the Directory block, disable MultiViews.
 
 Here is an example:
@@ -307,6 +324,9 @@ Here is an example:
     DocumentRoot /websites/phusion
     <Directory /websites/phusion>
         Allow from all
+        Options -MultiViews
+        # Uncomment this if you're on Apache >= 2.4:
+        #Require all granted
     </Directory>
     
     # These have been added:
@@ -318,6 +338,8 @@ Here is an example:
     <Directory /websites/rack/public>
         Allow from all
         Options -MultiViews
+        # Uncomment this if you're on Apache >= 2.4:
+        #Require all granted
     </Directory>
 </VirtualHost>
 -------------------------------------------
@@ -397,6 +419,8 @@ the Apache configuration file:
     <Directory /webapps/wsgi_example/public>
         Allow from all
         Options -MultiViews
+        # Uncomment this if you're on Apache >= 2.4:
+        #Require all granted
     </Directory>
 </VirtualHost>
 -------------------------------------------
@@ -422,6 +446,8 @@ For example:
     <Directory /webapps/wsgiapp/public>
         Allow from all
         Options -MultiViews
+        # Uncomment this if you're on Apache >= 2.4:
+        #Require all granted
     </Directory>
 </VirtualHost>
 -------------------------------------------
@@ -446,6 +472,9 @@ Suppose that you already have a virtual host:
     DocumentRoot /websites/phusion
     <Directory /websites/phusion>
         Allow from all
+        Options -MultiViews
+        # Uncomment this if you're on Apache >= 2.4:
+        #Require all granted
     </Directory>
 </VirtualHost>
 -------------------------------------------
@@ -460,7 +489,7 @@ To do this, you need to perform the following:
  3. Inside the Location block, set `PassengerBaseURI /{SUBURI}`.
  4. Inside the Location block, set `PassengerAppRoot {PATH TO YOUR APPLICATION ROOT}`.
  5. Create a `<Directory {PATH TO YOUR APPLICATION'S PUBLIC DIRECTORY}>` block.
- 6. Inside the Directory block, set `Allow from all`.
+ 6. Inside the Directory block, set `Allow from all`, and (if you're on Apache >= 2.4) `Require all granted`.
  7. Inside the Directory block, disable MultiViews.
 
 Here is an example:
@@ -471,6 +500,9 @@ Here is an example:
     DocumentRoot /websites/phusion
     <Directory /websites/phusion>
         Allow from all
+        Options -MultiViews
+        # Uncomment this if you're on Apache >= 2.4:
+        #Require all granted
     </Directory>
     
     # These have been added:
@@ -482,6 +514,8 @@ Here is an example:
     <Directory /websites/python/public>
         Allow from all
         Options -MultiViews
+        # Uncomment this if you're on Apache >= 2.4:
+        #Require all granted
     </Directory>
 </VirtualHost>
 -------------------------------------------
@@ -631,6 +665,8 @@ PassengerNodejs /usr/bin/node;
     <Directory /websites/blog/public>
         Allow from all
         Options -MultiViews
+        # Uncomment this if you're on Apache >= 2.4:
+        #Require all granted
     </Directory>
 </VirtualHost>
 
@@ -979,11 +1015,13 @@ The default value is the primary group of the user specifified by
 ==== PassengerFriendlyErrorPages <on|off> ====
 Phusion Passenger can display friendly error pages whenever an application fails
 to start. This friendly error page presents the startup error message, some
-suggestions for solving the problem, and a backtrace. This feature is very useful
-during application development and useful for less experienced system administrators,
-but the page might reveal potentially sensitive information, depending on the
-application. Experienced system administrators who are using Phusion Passenger
-on serious production servers should consider turning this feature off.
+suggestions for solving the problem, a backtrace and a dump of the environment variables.
+This feature is very useful during application development and useful for less experienced
+system administrators, but the page might reveal potentially sensitive information,
+depending on the application. For this reason, friendly error pages are turned off by default when
+<<PassengerAppEnv,PassengerAppEnv (and its aliases such as RailsEnv and RackEnv)>>
+is set to 'staging' or 'production', but enabled by default otherwise. You can use
+this option to explicitly enable or disable this feature.
 
 This option may occur in the following places:
 
@@ -992,7 +1030,7 @@ This option may occur in the following places:
  * In a `<Directory>` or `<Location>` block.
  * In '.htaccess', if `AllowOverride Options` is on.
 
-In each place, it may be specified at most once. The default value is 'on'.
+In each place, it may be specified at most once. The default value depends on <<PassengerAppEnv,PassengerAppEnv (and its aliases such as RailsEnv and RackEnv)>>, as documented above.
 
 
 === Resource control and optimization options ===
@@ -1477,6 +1515,8 @@ Suppose that you have a web application deployed in a sub-URI '/store', like thi
     <Directory /websites/store/public>
         Allow from all
         Options -MultiViews
+        # Uncomment this if you're on Apache >= 2.4:
+        #Require all granted
     </Directory>
 </VirtualHost>
 ---------------------------
@@ -1497,6 +1537,8 @@ like this:
     <Directory /websites/store/public>
         Allow from all
         Options -MultiViews
+        # Uncomment this if you're on Apache >= 2.4:
+        #Require all granted
     </Directory>
 </VirtualHost>
 
@@ -1515,7 +1557,7 @@ PassengerPreStart http://myblog.com/    # <----- WRONG! Missing "/store" part.
 Application processes started with PassengerPreStart are
 also subject to the idle timeout rules as specified by
 <<PassengerPoolIdleTime,PassengerPoolIdleTime>>! That means that by default,
-the pre-started application processes for foo.com are bar.com are shut down
+the pre-started application processes for foo.com and bar.com are shut down
 after a few minutes of inactivity. If you don't want that to happen, then
 you should combine PassengerPreStart with
 <<PassengerMinInstances,PassengerMinInstances>>, like this:
@@ -2099,6 +2141,9 @@ assets correctly:
    AllowOverride None
    Order allow,deny
    Allow from all
+   Options -MultiViews
+   # Uncomment this if you're on Apache >= 2.4:
+   #Require all granted
 </Directory>
 -----------------------------------------
 +

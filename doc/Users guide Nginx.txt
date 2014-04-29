@@ -998,7 +998,7 @@ Nginx's response buffering works differently from Phusion Passenger's. Nginx's b
 
 How does response buffering - whether it's done by Nginx or by Phusion Passenger - exactly protect against slow clients?
 Consider an HTTP client that's on a dial-up modem link, and your
-application process generates a 2 MB response. If the response is buffered
+application process generates a 2 MB response. If the response is not buffered
 then your application process will be blocked until the entire 2 MB has been
 sent out to the HTTP client. This disallows your application process to do any useful
 work in the mean time. By buffering responses, Phusion Passenger or Nginx will read
@@ -1216,11 +1216,13 @@ In each place, it may be specified at most once. The default value is 'on'.
 ==== passenger_friendly_error_pages <on|off> ====
 Phusion Passenger can display friendly error pages whenever an application fails
 to start. This friendly error page presents the startup error message, some
-suggestions for solving the problem, and a backtrace. This feature is very useful
-during application development and useful for less experienced system administrators,
-but the page might reveal potentially sensitive information, depending on the
-application. Experienced system administrators who are using Phusion Passenger
-on serious production servers should consider turning this feature off.
+suggestions for solving the problem, a backtrace and a dump of the environment variables.
+This feature is very useful during application development and useful for less experienced
+system administrators, but the page might reveal potentially sensitive information,
+depending on the application. For this reason, friendly error pages are turned off by default when
+<<PassengerAppEnv,passenger_app_env (and its aliases such as rails_env and rack_env)>>
+is set to 'staging' or 'production', but enabled by default otherwise. You can use
+this option to explicitly enable or disable this feature.
 
 This option may occur in the following places:
 
@@ -1229,7 +1231,7 @@ This option may occur in the following places:
  * In a 'location' configuration block.
  * In an 'if' configuration scope.
 
-In each place, it may be specified at most once. The default value is 'on'.
+In each place, it may be specified at most once. The default value depends on <<PassengerAppEnv,passenger_app_env (and its aliases such as rails_env and rack_env)>>, as documented above.
 
 === Resource control and optimization options ===
 [[PassengerMaxPoolSize]]
@@ -1694,7 +1696,7 @@ passenger_pre_start http://myblog.com/;    # <----- WRONG! Missing "/store" part
 Application processes started with passenger_pre_start are
 also subject to the idle timeout rules as specified by
 <<PassengerPoolIdleTime,passenger_pool_idle_time>>! That means that by default,
-the pre-started application processes for foo.com are bar.com are shut down
+the pre-started application processes for foo.com and bar.com are shut down
 after a few minutes of inactivity. If you don't want that to happen, then
 you should combine passenger_pre_start with
 <<PassengerMinInstances,passenger_min_instances>>, like this:

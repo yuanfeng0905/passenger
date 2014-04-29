@@ -12,10 +12,6 @@ module PhusionPassenger
 module Config
 
 class AboutCommand < Command
-	def self.description
-		return "Show information about #{PROGRAM_NAME}"
-	end
-
 	def self.help
 		puts "Usage: passenger-config about <SUBCOMMAND>"
 		puts "Show information about #{PROGRAM_NAME}."
