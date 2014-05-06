@@ -1,20 +1,7 @@
 # encoding: binary
 require 'cgi'
 
-def text_response(body)
-	body = binary_string(body.to_s)
-	return [200, { "Content-Type" => "text/plain", "Content-Length" => body.size.to_s }, [body]]
-end
-
-if "".respond_to?(:force_encoding)
-	def binary_string(str)
-		return str.force_encoding("binary")
-	end
-else
-	def binary_string(str)
-		return str
-	end
-end
+require File.expand_path(File.dirname(__FILE__) + "/library")
 
 app = lambda do |env|
 	case env['PATH_INFO']
@@ -38,6 +25,12 @@ app = lambda do |env|
 	when /^\/env/
 		body = ''
 		env.sort.each do |key, value|
+			body << "#{key} = #{value}\n"
+		end
+		text_response(body)
+	when '/system_env'
+		body = ''
+		ENV.sort.each do |key, value|
 			body << "#{key} = #{value}\n"
 		end
 		text_response(body)
