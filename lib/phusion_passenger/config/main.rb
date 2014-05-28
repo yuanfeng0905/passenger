@@ -14,8 +14,10 @@ module Config
 	KNOWN_COMMANDS = [
 		["detach-process", "DetachProcessCommand"],
 		["restart-app", "RestartAppCommand"],
+		["list-instances", "ListInstancesCommand"],
 		["build-native-support", "BuildNativeSupportCommand"],
 		["validate-install", "ValidateInstallCommand"],
+		["system-metrics", "SystemMetricsCommand"],
 		["about", "AboutCommand"]
 	]
 	
@@ -40,6 +42,8 @@ module Config
 		command_class, new_argv = lookup_command_class_by_argv(argv)
 		if help_requested?(argv)
 			help
+		elsif help_all_requested?(argv)
+			help(true)
 		elsif command_class
 			command = command_class.new(new_argv)
 			command.run
@@ -49,7 +53,7 @@ module Config
 		end
 	end
 
-	def self.help
+	def self.help(all = false)
 		puts "Usage: passenger-config <COMMAND> [options]"
 		puts "Tool for controlling or configurating a #{PROGRAM_NAME} instance or installation."
 		puts
@@ -58,19 +62,33 @@ module Config
 		puts "  restart-app           Restart an application"
 		puts
 		puts "Informational commands:"
-		puts "  validate-install      Validate this Phusion Passenger installation"
-		puts "  about                 Show information about Phusion Passenger"
+		puts "  validate-install      Validate this #{PROGRAM_NAME} installation"
+		puts "  list-instances        List running #{PROGRAM_NAME} instances"
+		puts "  about                 Show information about #{PROGRAM_NAME}"
 		puts
 		puts "Miscellaneous commands:"
 		puts "  build-native-support  Ensure that the native_support library for the current"
 		puts "                        Ruby interpeter is built"
+		if all
+			puts "  system-metrics        Display system metrics"
+		end
 		puts
-		puts "Type 'passenger-config <COMMAND> --help' for more information."
+		puts "Run 'passenger-config <COMMAND> --help' for more information about each"
+		puts "command."
+		if !all
+			puts
+			puts "There are also some advanced commands not shown in this help message. Run"
+			puts "'passenger-config --help-all' to learn more about them."
+		end
 	end
 
 private
 	def self.help_requested?(argv)
 		return argv.size == 1 && (argv[0] == "--help" || argv[0] == "-h" || argv[0] == "help")
+	end
+
+	def self.help_all_requested?(argv)
+		return argv.size == 1 && (argv[0] == "--help-all" || argv[0] == "help-all")
 	end
 
 	def self.lookup_command_class_by_argv(argv)

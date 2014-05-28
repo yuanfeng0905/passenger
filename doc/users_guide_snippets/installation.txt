@@ -61,7 +61,7 @@ We provide an official Phusion Passenger APT repository. This APT repository con
 
 If you use these packages to install Phusion Passenger then you do not need to run `passenger-install-apache2-module` or `passenger-install-nginx-module`. These packages contain all the binaries that you need.
 
-Packages are available for the x86 and x86_64 architectures. Our policy is to support all Ubuntu LTS releases that are still supported by Canonical, plus the latest non-LTS Ubuntu release, plus all Debian releases that are still supported by Debian.
+Packages are available for the x86 and x86_64 architectures. Our policy is to support all Ubuntu LTS releases that are still supported by Canonical, plus the latest Ubuntu release, plus all Debian releases that are still supported by Debian.
 
 [[install_add_apt_repo]]
 ==== Adding our APT repository
@@ -85,8 +85,8 @@ sudo apt-get install apt-transport-https ca-certificates
 [source,sh]
 --------------------------------------------------------------
 ##### !!!! Only add ONE of these lines, not all of them !!!! #####
-# Ubuntu 13.10
-deb https://oss-binaries.phusionpassenger.com/apt/passenger saucy main
+# Ubuntu 14.04
+deb https://oss-binaries.phusionpassenger.com/apt/passenger trusty main
 # Ubuntu 12.04
 deb https://oss-binaries.phusionpassenger.com/apt/passenger precise main
 # Ubuntu 10.04
@@ -102,8 +102,8 @@ deb https://oss-binaries.phusionpassenger.com/apt/passenger squeeze main
 [source,sh]
 --------------------------------------------------------------
 ##### !!!! Only add ONE of these lines, not all of them !!!! #####
-# Ubuntu 13.10
-deb https://download:YOUR_DOWNLOAD_TOKEN@www.phusionpassenger.com/enterprise_apt saucy main
+# Ubuntu 14.04
+deb https://download:YOUR_DOWNLOAD_TOKEN@www.phusionpassenger.com/enterprise_apt trusty main
 # Ubuntu 12.04
 deb https://download:YOUR_DOWNLOAD_TOKEN@www.phusionpassenger.com/enterprise_apt precise main
 # Ubuntu 10.04

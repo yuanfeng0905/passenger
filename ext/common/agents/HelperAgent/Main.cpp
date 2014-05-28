@@ -37,6 +37,7 @@
 #include <agents/HelperAgent/RequestHandler.h>
 #include <agents/HelperAgent/RequestHandler.cpp>
 #include <agents/HelperAgent/AgentOptions.h>
+#include <agents/HelperAgent/SystemMetricsTool.cpp>
 
 #include <agents/Base.h>
 #include <Constants.h>
@@ -47,7 +48,7 @@
 #include <ResourceLocator.h>
 #include <BackgroundEventLoop.cpp>
 #include <ServerInstanceDir.h>
-#include <UnionStation.h>
+#include <UnionStation/Core.h>
 #include <Exceptions.h>
 #include <CloudUsageTracker.h>
 #include <MultiLibeio.cpp>
@@ -247,7 +248,7 @@ private:
 	FileDescriptor requestSocket;
 	ServerInstanceDir serverInstanceDir;
 	ServerInstanceDir::GenerationPtr generation;
-	UnionStation::LoggerFactoryPtr loggerFactory;
+	UnionStation::CorePtr unionStationCore;
 	RandomGeneratorPtr randomGenerator;
 	SpawnerFactoryPtr spawnerFactory;
 	PoolPtr pool;
@@ -468,11 +469,11 @@ public:
 		}
 
 		UPDATE_TRACE_POINT();
-		loggerFactory = boost::make_shared<UnionStation::LoggerFactory>(options.loggingAgentAddress,
+		unionStationCore = boost::make_shared<UnionStation::Core>(options.loggingAgentAddress,
 			"logging", options.loggingAgentPassword);
-		spawnerFactory = boost::make_shared<SpawnerFactory>(poolLoop.safe,
-			resourceLocator, generation, boost::make_shared<SpawnerConfig>(randomGenerator));
-		pool = boost::make_shared<Pool>(spawnerFactory, loggerFactory,
+		spawnerFactory = boost::make_shared<SpawnerFactory>(resourceLocator,
+			generation, boost::make_shared<SpawnerConfig>(randomGenerator));
+		pool = boost::make_shared<Pool>(spawnerFactory, unionStationCore,
 			randomGenerator, &options);
 		pool->initialize();
 		pool->setMax(options.maxPoolSize);
@@ -656,6 +657,11 @@ public:
 int
 main(int argc, char *argv[]) {
 	TRACE_POINT();
+
+	if (argc > 1 && strcmp(argv[1], "system-metrics") == 0) {
+		return SystemMetricsTool::main(argc, argv);
+	}
+
 	AgentOptionsPtr options;
 	try {
 		options = boost::make_shared<AgentOptions>(

@@ -32,7 +32,8 @@
 #include <ApplicationPool2/Session.h>
 #include <ApplicationPool2/SpawnerFactory.h>
 #include <ApplicationPool2/Options.h>
-#include <UnionStation.h>
+#include <UnionStation/Core.h>
+#include <UnionStation/Transaction.h>
 #include <Logging.h>
 #include <Exceptions.h>
 #include <RandomGenerator.h>
@@ -43,6 +44,7 @@
 #include <Utils/MessagePassing.h>
 #include <Utils/VariantMap.h>
 #include <Utils/ProcessMetricsCollector.h>
+#include <Utils/SystemMetricsCollector.h>
 
 namespace Passenger {
 namespace ApplicationPool2 {
@@ -73,9 +75,6 @@ public:
 public:
 	friend class SuperGroup;
 	friend class Group;
-	typedef UnionStation::LoggerFactory LoggerFactory;
-	typedef UnionStation::LoggerFactoryPtr LoggerFactoryPtr;
-	typedef UnionStation::LoggerPtr LoggerPtr;
 
 	struct DebugSupport {
 		/** Mailbox for the unit tests to receive messages on. */
@@ -116,8 +115,10 @@ public:
 	typedef boost::shared_ptr<DebugSupport> DebugSupportPtr;
 
 	SpawnerFactoryPtr spawnerFactory;
-	LoggerFactoryPtr loggerFactory;
+	UnionStation::CorePtr unionStationCore;
 	RandomGeneratorPtr randomGenerator;
+	SystemMetricsCollector systemMetricsCollector;
+	SystemMetrics systemMetrics;
 
 	mutable boost::mutex syncher;
 	unsigned int max;
@@ -998,13 +999,12 @@ public:
 		return sleepTime;
 	}
 
-	struct ProcessAnalyticsLogEntry {
+	struct UnionStationLogEntry {
 		string groupName;
+		const char *category;
 		string key;
-		stringstream data;
+		string data;
 	};
-
-	typedef boost::shared_ptr<ProcessAnalyticsLogEntry> ProcessAnalyticsLogEntryPtr;
 
 	static void collectAnalytics(PoolPtr self) {
 		TRACE_POINT();
@@ -1061,6 +1061,43 @@ public:
 		}
 	}
 
+	void prepareUnionStationProcessStateLogs(vector<UnionStationLogEntry> &logEntries,
+		const GroupPtr &group) const
+	{
+		if (group->options.analytics && unionStationCore != NULL) {
+			logEntries.push_back(UnionStationLogEntry());
+			UnionStationLogEntry &entry = logEntries.back();
+			stringstream stream;
+
+			stream << "Group: <group>";
+			group->inspectXml(stream, false);
+			stream << "</group>";
+
+			entry.groupName = group->name;
+			entry.category  = "processes";
+			entry.key       = group->options.unionStationKey;
+			entry.data      = stream.str();
+		}
+	}
+
+	void prepareUnionStationSystemMetricsLogs(vector<UnionStationLogEntry> &logEntries,
+		const GroupPtr &group) const
+	{
+		if (group->options.analytics && unionStationCore != NULL) {
+			logEntries.push_back(UnionStationLogEntry());
+			UnionStationLogEntry &entry = logEntries.back();
+			stringstream stream;
+
+			stream << "System metrics: ";
+			systemMetrics.toXml(stream);
+
+			entry.groupName = group->name;
+			entry.category  = "system_metrics";
+			entry.key       = group->options.unionStationKey;
+			entry.data      = stream.str();
+		}
+	}
+
 	unsigned long long realCollectAnalytics() {
 		TRACE_POINT();
 		this_thread::disable_interruption di;
@@ -1094,20 +1131,27 @@ public:
 			}
 		}
 		
-		ProcessMetricMap allMetrics;
+		// Collect process metrics and system and store them in the
+		// data structures. Later, we log them to Union Station.
+		ProcessMetricMap processMetrics;
 		try {
-			// Now collect the process metrics and store them in the
-			// data structures, and log the state into the analytics logs.
 			UPDATE_TRACE_POINT();
-			allMetrics = ProcessMetricsCollector().collect(pids);
-		} catch (const ProcessMetricsCollector::ParseException &) {
+			processMetrics = ProcessMetricsCollector().collect(pids);
+		} catch (const ParseException &) {
 			P_WARN("Unable to collect process metrics: cannot parse 'ps' output.");
+			goto end;
+		}
+		try {
+			UPDATE_TRACE_POINT();
+			systemMetricsCollector.collect(systemMetrics);
+		} catch (const RuntimeException &e) {
+			P_WARN("Unable to collect system metrics: " << e.what());
 			goto end;
 		}
 
 		{
 			UPDATE_TRACE_POINT();
-			vector<ProcessAnalyticsLogEntryPtr> logEntries;
+			vector<UnionStationLogEntry> logEntries;
 			vector<ProcessPtr> processesToDetach;
 			vector<Callback> actions;
 			ScopedLock l(syncher);
@@ -1121,22 +1165,11 @@ public:
 				for (g_it = superGroup->groups.begin(); g_it != g_end; g_it++) {
 					const GroupPtr &group = *g_it;
 
-					updateProcessMetrics(group->enabledProcesses, allMetrics, processesToDetach);
-					updateProcessMetrics(group->disablingProcesses, allMetrics, processesToDetach);
-					updateProcessMetrics(group->disabledProcesses, allMetrics, processesToDetach);
-
-					// Log to Union Station.
-					if (group->options.analytics && loggerFactory != NULL) {
-						ProcessAnalyticsLogEntryPtr entry = boost::make_shared<ProcessAnalyticsLogEntry>();
-						stringstream &xml = entry->data;
-
-						entry->groupName = group->name;
-						entry->key = group->options.unionStationKey;
-						xml << "Group: <group>";
-						group->inspectXml(xml, false);
-						xml << "</group>";
-						logEntries.push_back(entry);
-					}
+					updateProcessMetrics(group->enabledProcesses, processMetrics, processesToDetach);
+					updateProcessMetrics(group->disablingProcesses, processMetrics, processesToDetach);
+					updateProcessMetrics(group->disabledProcesses, processMetrics, processesToDetach);
+					prepareUnionStationProcessStateLogs(logEntries, group);
+					prepareUnionStationSystemMetricsLogs(logEntries, group);
 				}
 			}
 
@@ -1150,11 +1183,14 @@ public:
 			l.unlock();
 			UPDATE_TRACE_POINT();
 			while (!logEntries.empty()) {
-				ProcessAnalyticsLogEntryPtr entry = logEntries.back();
+				UnionStationLogEntry &entry = logEntries.back();
+				UnionStation::TransactionPtr transaction =
+					unionStationCore->newTransaction(
+						entry.groupName,
+						entry.category,
+						entry.key);
+				transaction->message(entry.data);
 				logEntries.pop_back();
-				LoggerPtr logger = loggerFactory->newTransaction(entry->groupName,
-					"processes", entry->key);
-				logger->message(entry->data.str());
 			}
 
 			UPDATE_TRACE_POINT();
@@ -1204,19 +1240,25 @@ public:
 	
 public:
 	Pool(const SpawnerFactoryPtr &spawnerFactory,
-		const LoggerFactoryPtr &loggerFactory = LoggerFactoryPtr(),
+		const UnionStation::CorePtr &unionStationCore = UnionStation::CorePtr(),
 		const RandomGeneratorPtr &randomGenerator = RandomGeneratorPtr(),
 		const VariantMap *agentsOptions = NULL)
 	{
 		this->spawnerFactory = spawnerFactory;
-		this->loggerFactory = loggerFactory;
+		this->unionStationCore = unionStationCore;
 		if (randomGenerator != NULL) {
 			this->randomGenerator = randomGenerator;
 		} else {
 			this->randomGenerator = boost::make_shared<RandomGenerator>();
 		}
 		this->agentsOptions = agentsOptions;
-		
+
+		try {
+			systemMetricsCollector.collect(systemMetrics);
+		} catch (const RuntimeException &e) {
+			P_WARN("Unable to collect system metrics: " << e.what());
+		}
+
 		lifeStatus  = ALIVE;
 		max         = 6;
 		maxIdleTime = 60 * 1000000;
@@ -1358,7 +1400,7 @@ public:
 				 */
 				P_DEBUG("Could not free a process; putting request to top-level getWaitlist");
 				getWaitlist.push_back(GetWaiter(
-					options.copyAndPersist().clearLogger(),
+					options.copyAndPersist().detachFromUnionStationTransaction(),
 					callback));
 			} else {
 				/* Now that a process has been trashed we can create
@@ -1827,8 +1869,9 @@ public:
 		ProcessList::const_iterator p_it;
 
 		result << "<?xml version=\"1.0\" encoding=\"iso8859-1\" ?>\n";
-		result << "<info version=\"2\">";
+		result << "<info version=\"3\">";
 		
+		result << "<passenger_version>" << PASSENGER_VERSION << "</passenger_version>";
 		result << "<process_count>" << getProcessCount(false) << "</process_count>";
 		result << "<max>" << max << "</max>";
 		result << "<capacity_used>" << capacityUsed(false) << "</capacity_used>";

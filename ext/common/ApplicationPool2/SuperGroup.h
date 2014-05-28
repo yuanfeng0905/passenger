@@ -404,7 +404,7 @@ public:
 	SuperGroup(const PoolPtr &_pool, const Options &options)
 		: pool(_pool)
 	{
-		this->options = options.copyAndPersist().clearLogger();
+		this->options = options.copyAndPersist().detachFromUnionStationTransaction();
 		this->name = options.getAppGroupName();
 		secret = generateSecret();
 		state = INITIALIZING;
@@ -589,7 +589,7 @@ public:
 				boost::bind(
 					doInitialize,
 					shared_from_this(),
-					newOptions.copyAndPersist().clearLogger(),
+					newOptions.copyAndPersist().detachFromUnionStationTransaction(),
 					generation),
 				"SuperGroup initializer: " + name,
 				POOL_HELPER_THREAD_STACK_SIZE);
@@ -640,7 +640,7 @@ public:
 					doRestart,
 					// Keep reference to self to prevent destruction.
 					shared_from_this(),
-					options.copyAndPersist().clearLogger(),
+					options.copyAndPersist().detachFromUnionStationTransaction(),
 					generation),
 				"SuperGroup restarter: " + name,
 				POOL_HELPER_THREAD_STACK_SIZE);

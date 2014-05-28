@@ -25,7 +25,6 @@
 #include <ApplicationPool2/PipeWatcher.h>
 #include <Constants.h>
 #include <FileDescriptor.h>
-#include <SafeLibev.h>
 #include <Logging.h>
 #include <Utils/PriorityQueue.h>
 #include <Utils/SystemTime.h>
@@ -193,8 +192,6 @@ public:
 	 * written to again. Reading is thread-safe.
 	 *************************************************************/
 	
-	/** The libev event loop to use. */
-	SafeLibev * const libev;
 	/** Process PID. */
 	pid_t pid;
 	/** An ID that uniquely identifies this Process in the Group, for
@@ -307,8 +304,7 @@ public:
 	/** Collected by Pool::collectAnalytics(). */
 	ProcessMetrics metrics;
 	
-	Process(const SafeLibevPtr _libev,
-		pid_t _pid,
+	Process(pid_t _pid,
 		const string &_gupid,
 		const string &_connectPassword,
 		const FileDescriptor &_adminSocket,
@@ -322,7 +318,6 @@ public:
 		unsigned long long _spawnStartTime,
 		const SpawnerConfigPtr &_config = SpawnerConfigPtr())
 		: pqHandle(NULL),
-		  libev(_libev.get()),
 		  pid(_pid),
 		  stickySessionId(0),
 		  gupid(_gupid),
@@ -631,6 +626,7 @@ public:
 		stream << "<spawn_start_time>" << spawnStartTime << "</spawn_start_time>";
 		stream << "<spawn_end_time>" << spawnEndTime << "</spawn_end_time>";
 		stream << "<last_used>" << lastUsed << "</last_used>";
+		stream << "<last_used_desc>" << distanceOfTimeInWords(lastUsed / 1000000).c_str() << " ago</last_used_desc>";
 		stream << "<uptime>" << uptime() << "</uptime>";
 		if (isBeingRollingRestarted()) {
 			stream << "<rolling_restarting/>";

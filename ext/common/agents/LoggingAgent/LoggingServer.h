@@ -518,7 +518,8 @@ private:
 	}
 	
 	bool supportedCategory(const StaticString &category) const {
-		return category == "requests" || category == "processes" || category == "exceptions";
+		return category == "requests" || category == "processes"
+			|| category == "exceptions" || category == "system_metrics";
 	}
 	
 	LogSinkPtr openLogFile() {

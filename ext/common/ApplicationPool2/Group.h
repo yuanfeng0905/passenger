@@ -411,7 +411,9 @@ public:
 			&& (newOptions.maxRequestQueueSize == 0
 			    || getWaitlist.size() < newOptions.maxRequestQueueSize)))
 		{
-			getWaitlist.push_back(GetWaiter(newOptions.copyAndPersist().clearLogger(), callback));
+			getWaitlist.push_back(GetWaiter(
+				newOptions.copyAndPersist().detachFromUnionStationTransaction(),
+				callback));
 			return true;
 		} else {
 			P_WARN("Request queue is full. Returning an error");
@@ -886,7 +888,7 @@ public:
 		}
 		
 		if (OXT_UNLIKELY(newOptions.noop)) {
-			ProcessPtr process = boost::make_shared<Process>(SafeLibevPtr(),
+			ProcessPtr process = boost::make_shared<Process>(
 				0, string(), string(),
 				FileDescriptor(), FileDescriptor(),
 				SocketListPtr(), 0, 0);

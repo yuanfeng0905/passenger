@@ -38,7 +38,6 @@ Depends: ${shlibs:Depends}, ${misc:Depends},
  ruby-daemon-controller (>= 1.2.0)
 Recommends: passenger-enterprise-doc (= ${binary:Version}), passenger-enterprise-dev (= ${binary:Version}),
  crash-watch
-Suggests: python
 Breaks: libapache2-mod-passenger (<< <%= DEBIAN_EPOCH %>:<%= PACKAGE_VERSION %>), passenger-common,
  passenger-common1.8, passenger-common1.9.1, ruby-passenger, passenger
 Replaces: libapache2-mod-passenger (<< <%= DEBIAN_EPOCH %>:<%= PACKAGE_VERSION %>), passenger-common,
@@ -54,7 +53,6 @@ Architecture: any
 Depends: ${shlibs:Depends}, ${misc:Depends},
  ruby2.2 | ruby2.1 | ruby2.0 | ruby1.9.1 | ruby1.8 | ruby-interpreter,
  passenger-enterprise (= ${binary:Version})
-Suggests: python
 Replaces: ruby-passenger-dev, passenger-dev
 Conflicts: ruby-passenger-dev, passenger-dev
 Description: Rails and Rack support for Apache2 and Nginx
