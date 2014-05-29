@@ -36,6 +36,7 @@
 	#include <mach/mach.h>
 	#include <sys/sysctl.h>
 	#include <sys/time.h>
+	#include <Availability.h>
 #endif
 #ifdef __FreeBSD__
 	#include <sys/param.h>
@@ -1134,8 +1135,11 @@ private:
 			status = host_statistics64(hostPort, HOST_VM_INFO64, (host_info64_t) &vmStat,
 				&count);
 			if (status == KERN_SUCCESS) {
-				metrics.ramUsed = ((ssize_t) vmStat.active_count + vmStat.wire_count +
-					vmStat.compressor_page_count) * pageSize / 1024;
+				metrics.ramUsed = ((ssize_t) vmStat.active_count + vmStat.wire_count);
+				#if __MAC_OS_X_VERSION_MIN_REQUIRED >= 1090
+					metrics.ramUsed += vmStat.compressor_page_count;
+				#endif
+				metrics.ramUsed = metrics.ramUsed * (pageSize / 1024);
 			} else {
 				metrics.ramUsed = -1;
 			}
