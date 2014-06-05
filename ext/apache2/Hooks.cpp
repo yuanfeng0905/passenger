@@ -224,6 +224,14 @@ private:
 		}
 	}
 	
+	StaticString getRequestSocketFilename() const {
+		return agentsStarter.getRequestSocketFilename();
+	}
+
+	StaticString getRequestSocketPassword() const {
+		return agentsStarter.getRequestSocketPassword();
+	}
+
 	/**
 	 * Connect to the helper agent. If it looks like the helper agent crashed,
 	 * wait and retry for a short period of time until the helper agent has been
@@ -234,8 +242,8 @@ private:
 		FileDescriptor conn;
 		
 		try {
-			conn = connectToUnixServer(agentsStarter.getRequestSocketFilename());
-			writeExact(conn, agentsStarter.getRequestSocketPassword());
+			conn = connectToUnixServer(getRequestSocketFilename());
+			writeExact(conn, getRequestSocketPassword());
 		} catch (const SystemException &e) {
 			if (e.code() == EPIPE || e.code() == ECONNREFUSED || e.code() == ENOENT) {
 				UPDATE_TRACE_POINT();
@@ -249,8 +257,8 @@ private:
 				time_t deadline = time(NULL) + 5;
 				while (!connected && time(NULL) < deadline) {
 					try {
-						conn = connectToUnixServer(agentsStarter.getRequestSocketFilename());
-						writeExact(conn, agentsStarter.getRequestSocketPassword());
+						conn = connectToUnixServer(getRequestSocketFilename());
+						writeExact(conn, getRequestSocketPassword());
 						connected = true;
 					} catch (const SystemException &e) {
 						if (e.code() == EPIPE || e.code() == ECONNREFUSED || e.code() == ENOENT) {
@@ -267,7 +275,7 @@ private:
 				if (!connected) {
 					UPDATE_TRACE_POINT();
 					throw IOException("Cannot connect to the helper agent at " +
-						agentsStarter.getRequestSocketFilename());
+						getRequestSocketFilename());
 				}
 			} else {
 				throw;
@@ -1011,8 +1019,7 @@ private:
 		string message("An error occured while "
 			"buffering HTTP upload data to "
 			"a temporary file in ");
-		ServerInstanceDir::GenerationPtr generation = agentsStarter.getGeneration();
-		message.append(config->getUploadBufferDir(generation));
+		message.append(getUploadBufferDir(config));
 		
 		switch (code) {
 		case ENOSPC:
@@ -1169,6 +1176,11 @@ private:
 		apr_brigade_destroy(bb);
 		return bufsiz;
 	}
+
+	string getUploadBufferDir(DirConfig *config) {
+		ServerInstanceDir::GenerationPtr generation = agentsStarter.getGeneration();
+		return config->getUploadBufferDir(generation.get());
+	}
 	
 	/**
 	 * Receive the HTTP upload data and buffer it into a BufferedUpload temp file.
@@ -1183,9 +1195,7 @@ private:
 		DirConfig *config = getDirConfig(r);
 		boost::shared_ptr<BufferedUpload> tempFile;
 		try {
-			ServerInstanceDir::GenerationPtr generation = agentsStarter.getGeneration();
-			string uploadBufferDir = config->getUploadBufferDir(generation);
-			tempFile.reset(new BufferedUpload(uploadBufferDir));
+			tempFile.reset(new BufferedUpload(getUploadBufferDir(config)));
 		} catch (const SystemException &e) {
 			throwUploadBufferingException(r, e.code());
 		}
