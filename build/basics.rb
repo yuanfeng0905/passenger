@@ -81,7 +81,7 @@ def boolean_option(name, default_value = false)
 end
 
 def maybe_wrap_in_ccache(command)
-	if boolean_option('USE_CCACHE', false)
+	if boolean_option('USE_CCACHE', false) && command !~ /^ccache /
 		return "ccache #{command}"
 	else
 		return command
@@ -111,6 +111,9 @@ if boolean_option('CACHING', true) && !boolean_option('RELEASE')
 	PlatformInfo.cache_dir = OUTPUT_DIR + "cache"
 	FileUtils.mkdir_p(PlatformInfo.cache_dir)
 end
+
+# https://github.com/phusion/passenger/issues/672
+ENV.delete('CDPATH')
 
 #################################################
 

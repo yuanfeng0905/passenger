@@ -1307,7 +1307,7 @@ Session::getGupid() const {
 	return getProcess()->gupid;
 }
 
-int
+unsigned int
 Session::getStickySessionId() const {
 	return getProcess()->stickySessionId;
 }

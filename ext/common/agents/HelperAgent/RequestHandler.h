@@ -69,24 +69,22 @@
                present?   header present?       protocol
     ---------------------------------------------------------------------------------------------
 
-    GET/HEAD   -          Y                     -              Reject request[1]
+    GET/HEAD   Y          Y                     -              Reject request[1]
     Other      Y          -                     -              Reject request[2]
 
-    -          N          N                     http_session   Set requestBodyLength=0, keep socket open when done forwarding.
     GET/HEAD   Y          N                     http_session   Set requestBodyLength=-1, keep socket open when done forwarding.
-    Other      N          Y                     http_session   Keep socket open when done forwarding. If Transfer-Encoding is
+    -          N          N                     http_session   Set requestBodyLength=0, keep socket open when done forwarding.
+    -          N          Y                     http_session   Keep socket open when done forwarding. If Transfer-Encoding is
                                                                chunked, rechunck the body during forwarding.
 
-    -          N          N                     session        Set requestBodyLength=0, half-close app socket when done forwarding.
     GET/HEAD   Y          N                     session        Set requestBodyLength=-1, half-close app socket when done forwarding.
-    Other      N          Y                     session        Half-close app socket when done forwarding.
+    -          N          N                     session        Set requestBodyLength=0, half-close app socket when done forwarding.
+    -          N          Y                     session        Half-close app socket when done forwarding.
     ---------------------------------------------------------------------------------------------
 
     [1] Supporting situations in which there is both an HTTP request body and WebSocket data
-        is way too complicated. The RequestHandler code is complicated enough as it is.
-        Furthermore, GET requests with a body, although legal, are almost nonexistent and
-        support by other servers are shaky at best. For these reasons, we don't bother
-        supporting GET requests with body at all.
+        is way too complicated. The RequestHandler code is complicated enough as it is,
+        so we choose not to support requests like these.
     [2] RFC 6455 states that WebSocket upgrades may only happen over GET requests.
         We don't bother supporting non-WebSocket upgrades.
 
@@ -1123,11 +1121,37 @@ private:
 		// Add sticky session ID.
 		if (client->stickySession && client->session != NULL) {
 			StaticString cookieName = getStickySessionCookieName(client);
+			// Note that we do NOT set HttpOnly. If we set that flag then Chrome
+			// doesn't send cookies over WebSocket handshakes. Confirmed on Chrome 25.
 			headerData.append("Set-Cookie: ");
 			headerData.append(cookieName.data(), cookieName.size());
 			headerData.append("=");
 			headerData.append(toString(client->session->getStickySessionId()));
-			headerData.append("; HttpOnly\r\n");
+			headerData.append("\r\n");
+
+			// Invalidate all cookies with a different route.
+			// 
+			// TODO: This is not entirely correct. Clients MAY send multiple Cookie
+			// headers, although this is in practice extremely rare.
+			// http://stackoverflow.com/questions/16305814/are-multiple-cookie-headers-allowed-in-an-http-request
+			StaticString cookieHeader = client->scgiParser.getHeader("HTTP_COOKIE");
+			vector< pair<StaticString, StaticString> > cookies;
+			pair<StaticString, StaticString> cookie;
+
+			parseCookieHeader(cookieHeader, cookies);
+
+			foreach (cookie, cookies) {
+				if (cookie.first == cookieName) {
+					unsigned int stickySessionId = stringToUint(cookie.second);
+					if (stickySessionId != client->session->getStickySessionId()) {
+						headerData.append("Set-Cookie: ");
+						headerData.append(cookie.first.data(), cookie.first.size());
+						headerData.append("=");
+						headerData.append(cookie.second.data(), cookie.second.size());
+						headerData.append("; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT\r\n");
+					}
+				}
+			}
 		}
 
 		// Add Date header. https://code.google.com/p/phusion-passenger/issues/detail?id=485
@@ -1194,6 +1218,7 @@ private:
 						disconnectWithError(client, "application response format error (invalid header)");
 					} else {
 						// Now that we have a full header, do something with it.
+						RH_TRACE(client, 3, "Response header fully buffered");
 						client->responseHeaderSeen = true;
 						StaticString header = client->responseHeaderBufferer.getData();
 						if (processResponseHeader(client, header)) {
@@ -1779,18 +1804,10 @@ private:
 		const bool requestIsGetOrHead = requestMethod == "GET" || requestMethod == "HEAD";
 		const bool requestBodyOffered = contentLength != -1 || !transferEncoding.empty();
 
-		// Reject requests that have a request body even though it's not allowed,
-		// and requests that have an Upgrade header even though it's not allowed.
-		if (requestIsGetOrHead) {
-			if (requestBodyOffered) {
-				reportBadRequestAndDisconnect(client, "Bad request (GET and HEAD requests may not contain a request body)");
-				return;
-			}
-		} else {
-			if (!upgrade.empty()) {
-				reportBadRequestAndDisconnect(client, "Bad request (Upgrade header is only allowed for non-GET and non-HEAD requests)");
-				return;
-			}
+		// Reject requests that have a request body and an Upgrade header.
+		if (!requestIsGetOrHead && !upgrade.empty()) {
+			reportBadRequestAndDisconnect(client, "Bad request (Upgrade header is only allowed for non-GET and non-HEAD requests)");
+			return;
 		}
 
 		if (!requestBodyOffered) {
@@ -1968,48 +1985,72 @@ private:
 		}
 	}
 
+	void parseCookieHeader(const StaticString &header,
+		vector< pair<StaticString, StaticString> > &cookies) const
+	{
+		// See http://stackoverflow.com/questions/6108207/definite-guide-to-valid-cookie-values
+		// for syntax grammar.
+		vector<StaticString> parts;
+		vector<StaticString>::const_iterator it, it_end;
+
+		split(header, ';', parts);
+		cookies.reserve(parts.size());
+		it_end = parts.end();
+
+		for (it = parts.begin(); it != it_end; it++) {
+			const char *begin = it->data();
+			const char *end = it->data() + it->size();
+			const char *sep;
+
+			skipLeadingWhitespaces(&begin, end);
+			skipTrailingWhitespaces(begin, &end);
+
+			// Find the separator ('=').
+			sep = (const char *) memchr(begin, '=', end - begin);
+			if (sep != NULL) {
+				// Valid cookie. Otherwise, ignore it.
+				const char *nameEnd = sep;
+				const char *valueBegin = sep + 1;
+
+				skipTrailingWhitespaces(begin, &nameEnd);
+				skipLeadingWhitespaces(&valueBegin, end);
+
+				cookies.push_back(make_pair(
+					StaticString(begin, nameEnd - begin),
+					StaticString(valueBegin, end - valueBegin)
+				));
+			}
+		}
+	}
+
 	void setStickySessionId(const ClientPtr &client) {
 		ScgiRequestParser &parser = client->scgiParser;
-		if (parser.getHeader("PASSENGER_STICKY_SESSION") == "true") {
+		if (parser.getHeader("PASSENGER_STICKY_SESSIONS") == "true") {
 			// TODO: This is not entirely correct. Clients MAY send multiple Cookie
 			// headers, although this is in practice extremely rare.
 			// http://stackoverflow.com/questions/16305814/are-multiple-cookie-headers-allowed-in-an-http-request
-			StaticString cookie = parser.getHeader("HTTP_COOKIE");
+			StaticString cookieHeader = parser.getHeader("HTTP_COOKIE");
 			StaticString cookieName = getStickySessionCookieName(client);
-			vector<StaticString> parts;
+			vector< pair<StaticString, StaticString> > cookies;
+			pair<StaticString, StaticString> cookie;
 
 			client->stickySession = true;
-			split(cookie, ';', parts);
-			foreach (StaticString part, parts) {
-				const char *begin = part.data();
-				const char *end = part.data() + part.size();
-				const char *sep;
-
-				// Skip leading whitespace in the name.
-				while (begin < end && *begin == ' ') {
-					begin++;
-				}
-				part = StaticString(begin, end - begin);
-
-				// Find the separator ('=').
-				sep = (const char *) memchr(begin, '=', end - begin);
-				if (sep != NULL) {
-					StaticString name(begin, sep - begin);
-					if (name == cookieName) {
-						// This cookie matches the one we're looking for.
-						StaticString value(sep + 1, end - (sep + 1));
-						client->options.stickySessionId = stringToUint(value);
-						return;
-					}
+			parseCookieHeader(cookieHeader, cookies);
+			foreach (cookie, cookies) {
+				if (cookie.first == cookieName) {
+					// This cookie matches the one we're looking for.
+					client->options.stickySessionId = stringToUint(cookie.second);
+					return;
 				}
 			}
 		}
 	}
 
 	StaticString getStickySessionCookieName(const ClientPtr &client) const {
-		StaticString value = client->scgiParser.getHeader("PASSENGER_STICKY_SESSION_COOKIE_NAME");
+		StaticString value = client->scgiParser.getHeader("PASSENGER_STICKY_SESSIONS_COOKIE_NAME");
 		if (value.empty()) {
-			return StaticString("_passenger_route", sizeof("_passenger_route") - 1);
+			return StaticString(DEFAULT_STICKY_SESSIONS_COOKIE_NAME,
+				sizeof(DEFAULT_STICKY_SESSIONS_COOKIE_NAME) - 1);
 		} else {
 			return value;
 		}

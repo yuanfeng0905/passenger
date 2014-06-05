@@ -612,6 +612,24 @@ This way, Phusion Passenger will not interfere with Wordpress.
 
 In each place, it may be specified at most once. The default value is 'on'.
 
+[[PassengerBaseURI]]
+==== PassengerBaseURI <uri> ====
+Used to specify that the given URI is a Phusion Passenger-served application. Please refer
+to the following sections for examples:
+
+ * <<deploying_rails_to_sub_uri,Deploying Rails 1.x and 2.x to a sub URI>>
+ * <<deploying_rack_to_sub_uri,Deploying Rack (including Rails >= 3) to a sub URI>>
+ * <<deploying_python_to_sub_uri,Deploying Python to a sub URI>>
+
+This option may occur in the following places:
+
+ * In the global server configuration.
+ * In a virtual host configuration block.
+ * In a `<Directory>` or `<Location>` block.
+ * In '.htaccess', if `AllowOverride Options` is on.
+
+=== Application loading options
+
 [[PassengerRuby]]
 ==== PassengerRuby <filename>
 The `PassengerDefaultRuby` and `PassengerRuby` directives specify the Ruby interpreter to use. Similarly, the `PassengerPython` and `PassengerNodejs` directives are for specifying the Python interpreter and the Node.js command, respectively.
@@ -746,27 +764,102 @@ Example:
 -----------------------------
 <VirtualHost test.host>
     DocumentRoot /var/rails/zena/sites/example.com/public
-    PassengerAppRoot /var/rails/zena   # <-- normally Phusion Passenger would
-                                       #     have assumed that the application
-                                       #     root is "/var/rails/zena/sites/example.com"
+    # Normally Phusion Passenger would have assumed that the
+    # application root is "/var/rails/zena/sites/example.com".
+    # This overrides it.
+    PassengerAppRoot /var/rails/zena
 </VirtualHost>
 -----------------------------
 
-[[PassengerBaseURI]]
-==== PassengerBaseURI <uri> ====
-Used to specify that the given URI is a Phusion Passenger-served application. Please refer
-to the following sections for examples:
+[[PassengerAppType]]
+==== PassengerAppType <name>
+:version: 4.0.25
+include::users_guide_snippets/since_version.txt[]
 
- * <<deploying_rails_to_sub_uri,Deploying Rails 1.x and 2.x to a sub URI>>
- * <<deploying_rack_to_sub_uri,Deploying Rack (including Rails >= 3) to a sub URI>>
- * <<deploying_python_to_sub_uri,Deploying Python to a sub URI>>
+By default, Phusion Passenger autodetects the type of the application, e.g. whether it's a Ruby, Python, Node.js or Meteor app. If it's unable to autodetect the type of the application (e.g. because you've specified a custom <<PassengerStartupFile,PassengerStartupFile>>) then you can use this option to force Phusion Passenger to recognize the application as a specific type.
+
+Allowed values are:
+
+ * `rack` - Ruby on Rails >= 3.0 and Ruby Rack
+ * `classic-rails` - Ruby on Rails 1.x and 2.0
+ * `wsgi` - Python
+ * `node` - Node.js, or Meteor JS in bundled mode
+ * `meteor` - Meteor JS in non-bundled mode
+
+If you set this option, then you **must** also set <<PassengerAppRoot,PassengerAppRoot>>, otherwise Phusion Passenger does not properly recognize your application.
 
 This option may occur in the following places:
 
  * In the global server configuration.
  * In a virtual host configuration block.
  * In a `<Directory>` or `<Location>` block.
- * In '.htaccess', if `AllowOverride Options` is on.
+ * In '.htaccess'.
+
+In each place, it may be specified at most once.
+
+Example:
+
+-----------------------------
+<VirtualHost test.host>
+    DocumentRoot /webapps/example.com/public
+    # Use server.js as the startup file (entry point file) for
+    # your Node.js application, instead of the default app.js
+    PassengerStartupFile server.js
+    PassengerAppType node
+    PassengerAppRoot /webapps/example.com
+</VirtualHost>
+-----------------------------
+
+[[PassengerStartupFile]]
+==== PassengerStartupFile <filename>
+:version: 4.0.25
+include::users_guide_snippets/since_version.txt[]
+
+This option specifies the startup file that Phusion Passenger should use when loading the application.
+
+Every application has a *startup file* or *entry point file*: a file where the application begins execution. Some languages have widely accepted conventions about how such a file should be called (e.g. Ruby, with its `config.ru`). Other languages have somewhat-accepted conventions (e.g. Node.js, with its `app.js`). In these cases, Phusion Passenger reuses these conventions, and executes applications through those files.
+
+Other languages have no conventions at all, and so Phusion Passenger invents one (e.g. Python WSGI with `passenger_wsgi.py`).
+
+Here's a list of the language-specific conventions that Phusion Passenger accepts:
+
+[options="header"]
+|================================================
+| Language                        | Phusion Passenger convention
+| Ruby on Rails >= 3.0, Ruby Rack | config.ru
+| Ruby on Rails 1.x and 2.x       | config/environment.rb
+| Python                          | passenger_wsgi.py
+| Node.js                         | app.js
+|================================================
+
+But sometimes you might not want to adhere to the convention that Phusion Passenger accepts. For example, on Node.js, you might want to use `server.js` as the startup file instead of the default `app.js`. With this option, you can customize the startup file to any file you like.
+
+Notes:
+
+ * Customizing the startup file affects <<user_switching,user switching>>. After all, if user switching is enabled, the application is executed as the user that owns the startup file.
+ * If you set this option, you **must** also set <<PassengerAppRoot,PassengerAppRoot>> and <<PassengerAppType,PassengerAppType>>, otherwise Phusion Passenger doesn't know what kind of application it is.
+
+This option may occur in the following places:
+
+ * In the global server configuration.
+ * In a virtual host configuration block.
+ * In a `<Directory>` or `<Location>` block.
+ * In '.htaccess'.
+
+In each place, it may be specified at most once.
+
+Example:
+
+-----------------------------
+<VirtualHost test.host>
+    DocumentRoot /webapps/example.com/public
+    # Use server.js as the startup file (entry point file) for
+    # your Node.js application, instead of the default app.js
+    PassengerStartupFile server.js
+    PassengerAppType node
+    PassengerAppRoot /webapps/example.com
+</VirtualHost>
+-----------------------------
 
 ==== PassengerRestartDir <directory>
 As described in the deployment chapters of this document, Phusion Passenger
@@ -825,6 +918,50 @@ allow the attacker to cause a Denial-of-Service.
 
 You can prevent this from happening by pointing PassengerRestartDir to a
 directory that's readable by Apache, but only writable by administrators.
+
+[[PassengerSpawnMethod]]
+==== PassengerSpawnMethod <string>
+[TIP]
+."What spawn method should I use?"
+=========================================================
+This subsection attempts to describe spawn methods, but it's okay if you don't (want to)
+understand it, as it's mostly a technical detail. You can basically follow this rule of thumb:
+
+************************************************
+If your application works on Mongrel or Thin, but not on Phusion Passenger, then set
+`PassengerSpawnMethod` to 'direct'. Otherwise, leave it at 'smart' (the default).
+************************************************
+
+However, we do recommend you to try to understand it. The 'smart' spawn
+method bring many benefits.
+=========================================================
+
+include::users_guide_snippets/passenger_spawn_method.txt[]
+
+This option may occur in the following places:
+
+ * In the global server configuration.
+ * In a virtual host configuration block.
+
+In each place, it may be specified at most once. The default value is 'smart'.
+
+[[PassengerLoadShellEnvvars]]
+==== PassengerLoadShellEnvvars <on|off>
+:version: 4.0.20
+include::users_guide_snippets/since_version.txt[]
+
+Enables or disables the loading of shell environment variables before spawning the application.
+
+If this option is turned on, and the user's shell is `bash`, then applications are loaded by running them with `bash -l -c`. Otherwise, they are loaded by running them directly from the `PassengerHelperAgent` process.
+
+This option may occur in the following places:
+
+ * In the global server configuration.
+ * In a virtual host configuration block.
+ * In a `<Directory>` or `<Location>` block.
+ * In '.htaccess', if `AllowOverride Options` is on.
+
+In each place, it may be specified at most once. The default value is 'on'.
 
 [[PassengerRollingRestarts]]
 ==== PassengerRollingRestarts <on|off>
@@ -901,52 +1038,6 @@ This option may occur in the following places:
  * In '.htaccess', if `AllowOverride Options` is on.
 
 In each place, it may be specified at most once. The default value is 'off'.
-
-=== Process spawning options
-
-[[PassengerSpawnMethod]]
-==== PassengerSpawnMethod <string>
-[TIP]
-."What spawn method should I use?"
-=========================================================
-This subsection attempts to describe spawn methods, but it's okay if you don't (want to)
-understand it, as it's mostly a technical detail. You can basically follow this rule of thumb:
-
-************************************************
-If your application works on Mongrel or Thin, but not on Phusion Passenger, then set
-`PassengerSpawnMethod` to 'direct'. Otherwise, leave it at 'smart' (the default).
-************************************************
-
-However, we do recommend you to try to understand it. The 'smart' spawn
-method bring many benefits.
-=========================================================
-
-include::users_guide_snippets/passenger_spawn_method.txt[]
-
-This option may occur in the following places:
-
- * In the global server configuration.
- * In a virtual host configuration block.
-
-In each place, it may be specified at most once. The default value is 'smart'.
-
-[[PassengerLoadShellEnvvars]]
-==== PassengerLoadShellEnvvars <on|off>
-:version: 4.0.20
-include::users_guide_snippets/since_version.txt[]
-
-Enables or disables the loading of shell environment variables before spawning the application.
-
-If this option is turned on, and the user's shell is `bash`, then applications are loaded by running them with `bash -l -c`. Otherwise, they are loaded by running them directly from the `PassengerHelperAgent` process.
-
-This option may occur in the following places:
-
- * In the global server configuration.
- * In a virtual host configuration block.
- * In a `<Directory>` or `<Location>` block.
- * In '.htaccess', if `AllowOverride Options` is on.
-
-In each place, it may be specified at most once. The default value is 'on'.
 
 === Security options ===
 
@@ -1877,6 +1968,53 @@ This option may occur in the following places:
  * In '.htaccess'.
 
 In each place, it may be specified at most once. The default value is '100'.
+
+[[PassengerStickySessions]]
+==== PassengerStickySessions <on|off>
+:version: 4.0.55
+include::users_guide_snippets/since_version.txt[]
+
+When sticky sessions are enabled, all requests that a client sends will be routed to the same originating application process, whenever possible. When sticky sessions are disabled, requests may be distributed over multiple processes, and may not necessarily be routed to the originating process, in order to balance traffic over multiple CPU cores. Because of this, sticky sessions should only be enabled in specific circumstances.
+
+For applications that store important state inside the process's own memory -- that is, as opposed to storing state in a distributed data store, such as the database or Redis -- sticky sessions *should* be enabled. This is because otherwise, some requests could be routed to a different process, which stores different state data. Because processes don't share memory with each other, there's no way for one process to know about the state in another process, and then things can go wrong.
+
+One prominent example is the popular link:http://sockjs.org/[SockJS library], which is capable of emulating WebSockets through long polling. This is implemented through two HTTP endpoints, `/SESSION_ID/xhr_stream` (a long polling end point which sends data from the server to the client), and `/SESSION_ID/xhr_send` (a normal POST endpoint which is used for sending data from the client to the server). SockJS correlates the two requests with each other through a session identifier. At the same time, in its default configuration, it stores all known session identifiers in an in-memory data structure. It is therefore important that a particular `/SESSION_ID/xhr_send` request is sent to the same process where the corresponding `/SESSION_ID/xhr_stream` request originates from; otherwise, SockJS cannot correlate the two requests, and an error occurs.
+
+So prominent examples where sticky sessions should (or even *must*) be enabled, include:
+
+ * Applications that use the SockJS library (unless configured with a distributed data store)
+ * Applications that use the Socket.io library (unless configured with a distributed data store)
+ * Applications that use the faye-websocket gem (unless configured with a distributed data store)
+ * Meteor JS applications (because Meteor uses SockJS)
+
+Sticky sessions work through the use of a special cookie, whose name can be customized with <<PassengerStickySessionsCookieName,PassengerStickySessionsCookieName>>. Phusion Passenger puts an identifier in this cookie, which tells Phusion Passenger what the originating process is. Next time the client sends a request, Phusion Passenger reads this cookie and uses the value in the cookie to route the request back to the originating process. If the originating process no longer exists (e.g. because it has crashed or restarted) then Phusion Passenger will route the request to some other process, and reset the cookie.
+
+If you have a load balancer in front end of Phusion Passenger + Apache, then you must configure sticky sessions on that load balancer too. Otherwise, the load balancer could route the request to a different server.
+
+This option may occur in the following places:
+
+ * In the global server configuration.
+ * In a virtual host configuration block.
+ * In a `<Directory>` or `<Location>` block.
+ * In '.htaccess'.
+
+In each place, it may be specified at most once. The default value is `off`.
+
+[[PassengerStickySessionsCookieName]]
+==== PassengerStickySessionsCookieName
+:version: 4.0.55
+include::users_guide_snippets/since_version.txt[]
+
+Sets the name of the <<PassengerStickySessions,sticky sessions>> cookie.
+
+This option may occur in the following places:
+
+ * In the global server configuration.
+ * In a virtual host configuration block.
+ * In a `<Directory>` or `<Location>` block.
+ * In '.htaccess'.
+
+In each place, it may be specified at most once. The default value is `passenger_route`.
 
 
 === Compatibility options ===

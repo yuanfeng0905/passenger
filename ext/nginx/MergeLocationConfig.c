@@ -192,6 +192,18 @@
 	
 
 	
+		ngx_conf_merge_value(conf->sticky_sessions,
+			prev->sticky_sessions,
+			NGX_CONF_UNSET);
+	
+
+	
+		ngx_conf_merge_str_value(conf->sticky_sessions_cookie_name,
+			prev->sticky_sessions_cookie_name,
+			NULL);
+	
+
+	
 		ngx_conf_merge_str_value(conf->fly_with,
 			prev->fly_with,
 			NULL);

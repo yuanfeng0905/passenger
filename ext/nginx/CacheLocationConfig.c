@@ -231,6 +231,20 @@ u_char int_buf[32], *end, *buf, *pos;
 	
 
 	
+		if (conf->sticky_sessions != NGX_CONF_UNSET) {
+			len += 26;
+			len += conf->sticky_sessions ? sizeof("true") : sizeof("false");
+		}
+	
+
+	
+		if (conf->sticky_sessions_cookie_name.data != NULL) {
+			len += 38;
+			len += conf->sticky_sessions_cookie_name.len + 1;
+		}
+	
+
+	
 		if (conf->fly_with.data != NULL) {
 			len += 19;
 			len += conf->fly_with.len + 1;
@@ -655,6 +669,32 @@ buf = pos = ngx_pnalloc(cf->pool, len);
 			pos = ngx_copy(pos,
 				conf->startup_file.data,
 				conf->startup_file.len);
+			*pos = '\0';
+			pos++;
+		}
+	
+
+	
+		if (conf->sticky_sessions != NGX_CONF_UNSET) {
+			pos = ngx_copy(pos,
+				"PASSENGER_STICKY_SESSIONS",
+				26);
+			if (conf->sticky_sessions) {
+				pos = ngx_copy(pos, "true", sizeof("true"));
+			} else {
+				pos = ngx_copy(pos, "false", sizeof("false"));
+			}
+		}
+	
+
+	
+		if (conf->sticky_sessions_cookie_name.data != NULL) {
+			pos = ngx_copy(pos,
+				"PASSENGER_STICKY_SESSIONS_COOKIE_NAME",
+				38);
+			pos = ngx_copy(pos,
+				conf->sticky_sessions_cookie_name.data,
+				conf->sticky_sessions_cookie_name.len);
 			*pos = '\0';
 			pos++;
 		}

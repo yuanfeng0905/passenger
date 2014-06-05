@@ -149,3 +149,17 @@
 			add->startupFile;
 	
 
+	
+		config->stickySessions =
+			(add->stickySessions == DirConfig::UNSET) ?
+			base->stickySessions :
+			add->stickySessions;
+	
+
+	
+		config->stickySessionsCookieName =
+			(add->stickySessionsCookieName == DirConfig::UNSET) ?
+			base->stickySessionsCookieName :
+			add->stickySessionsCookieName;
+	
+

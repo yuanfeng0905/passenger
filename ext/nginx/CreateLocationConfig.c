@@ -163,6 +163,15 @@
 	
 
 	
+		conf->sticky_sessions = NGX_CONF_UNSET;
+	
+
+	
+		conf->sticky_sessions_cookie_name.data = NULL;
+		conf->sticky_sessions_cookie_name.len  = 0;
+	
+
+	
 		conf->fly_with.data = NULL;
 		conf->fly_with.len  = 0;
 	
