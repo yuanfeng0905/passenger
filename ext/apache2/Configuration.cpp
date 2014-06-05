@@ -254,6 +254,7 @@ passenger_config_merge_dir(apr_pool_t *p, void *basev, void *addv) {
  *************************************************/
 
 DEFINE_SERVER_STR_CONFIG_SETTER(cmd_passenger_root, root)
+DEFINE_SERVER_STR_CONFIG_SETTER(cmd_passenger_fly_with, flyWith)
 DEFINE_SERVER_STR_CONFIG_SETTER(cmd_passenger_default_ruby, defaultRuby)
 DEFINE_SERVER_INT_CONFIG_SETTER(cmd_passenger_log_level, logLevel, unsigned int, 0)
 DEFINE_SERVER_STR_CONFIG_SETTER(cmd_passenger_debug_log_file, debugLogFile)
@@ -444,6 +445,11 @@ const command_rec passenger_commands[] = {
 		NULL,
 		RSRC_CONF,
 		"The default Ruby interpreter to use."),
+	AP_INIT_TAKE1("PassengerFlyWith",
+		(Take1Func) cmd_passenger_fly_with,
+		NULL,
+		RSRC_CONF,
+		"Use Flying Passenger."),
 	AP_INIT_TAKE1("PassengerLogLevel",
 		(Take1Func) cmd_passenger_log_level,
 		NULL,

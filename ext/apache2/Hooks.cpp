@@ -223,15 +223,23 @@ private:
 			note->enabled = false;
 		}
 	}
-	
+
 	StaticString getRequestSocketFilename() const {
-		return agentsStarter.getRequestSocketFilename();
+		if (serverConfig.flyWith == NULL) {
+			return agentsStarter.getRequestSocketFilename();
+		} else {
+			return serverConfig.flyWith;
+		}
 	}
 
 	StaticString getRequestSocketPassword() const {
-		return agentsStarter.getRequestSocketPassword();
+		if (serverConfig.flyWith == NULL) {
+			return agentsStarter.getRequestSocketPassword();
+		} else {
+			return StaticString();
+		}
 	}
-
+	
 	/**
 	 * Connect to the helper agent. If it looks like the helper agent crashed,
 	 * wait and retry for a short period of time until the helper agent has been
@@ -1178,8 +1186,12 @@ private:
 	}
 
 	string getUploadBufferDir(DirConfig *config) {
-		ServerInstanceDir::GenerationPtr generation = agentsStarter.getGeneration();
-		return config->getUploadBufferDir(generation.get());
+		if (serverConfig.flyWith != NULL) {
+			ServerInstanceDir::GenerationPtr generation = agentsStarter.getGeneration();
+			return config->getUploadBufferDir(generation.get());
+		} else {
+			return config->getUploadBufferDir(NULL);
+		}
 	}
 	
 	/**
@@ -1306,6 +1318,10 @@ public:
 		
 		P_DEBUG("Initializing Phusion Passenger...");
 		ap_add_version_component(pconf, "Phusion_Passenger/" PASSENGER_VERSION);
+
+		if (serverConfig.flyWith != NULL) {
+			return;
+		}
 		
 		if (serverConfig.root == NULL) {
 			throw ConfigurationException("The 'PassengerRoot' configuration option "
@@ -1363,7 +1379,9 @@ public:
 	}
 	
 	void childInit(apr_pool_t *pchild, server_rec *s) {
-		agentsStarter.detach();
+		if (serverConfig.flyWith != NULL) {
+			agentsStarter.detach();
+		}
 	}
 	
 	int prepareRequestWhenInHighPerformanceMode(request_rec *r) {

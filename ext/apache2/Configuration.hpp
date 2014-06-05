@@ -332,6 +332,8 @@ struct ServerConfig {
 	/** The default Ruby interpreter to use. */
 	const char *defaultRuby;
 	
+	const char *flyWith;
+
 	/** The log verbosity. */
 	int logLevel;
 	
@@ -371,6 +373,7 @@ struct ServerConfig {
 	ServerConfig() {
 		root               = NULL;
 		defaultRuby        = DEFAULT_RUBY;
+		flyWith            = NULL;
 		logLevel           = DEFAULT_LOG_LEVEL;
 		debugLogFile       = NULL;
 		maxPoolSize        = DEFAULT_MAX_POOL_SIZE;
