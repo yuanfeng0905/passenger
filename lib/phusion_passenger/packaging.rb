@@ -15,7 +15,7 @@ module Packaging
 		'doc/Users guide Nginx.html',
 		'doc/Users guide Standalone.html',
 		'doc/Security of user switching support.html',
-		'doc/Architectural overview.html'
+		'doc/Design and Architecture.html'
 	]
 
 	# Files that must be generated before packaging.

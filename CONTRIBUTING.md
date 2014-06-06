@@ -1,4 +1,4 @@
-# Contributing to Phusion Passenger
+# Contributors Guide
 
 **Table of contents**
 
@@ -8,11 +8,13 @@
  * [Contributing community support](#contrib_support)
  * [Contributing code](#contrib_code)
    * [Developer QuickStart](#dev_quickstart)
+   * [Design and Architecture](#design_and_architecture)
    * [Compilation and build system](#build_system)
    * [Running the unit tests](#unit_tests)
    * [Directory structure](#dir_structure)
    * [C++ coding style](#cxx_coding_style)
    * [Ruby coding style](#ruby_coding_style)
+   * [Systems programming fundamentals](#systems_programming_fundamentals)
    * [Further reading](#further_reading)
 
 Thank you for your interest in Phusion Passenger. Phusion Passenger is open source so your contributions are very welcome. Although we also provide a [commercial version](https://www.phusionpassenger.com/enterprise) and [commercial support](https://www.phusionpassenger.com/commercial_support), the core remains open source and we remain committed to keep it that way. This guide gives you an overview of the ways with which you can contribute, as well as contribution guidelines.
@@ -79,12 +81,7 @@ You can contribute by answering support questions on the [community discussion f
 <a name="contrib_code"></a>
 ## Contributing code
 
-Phusion Passenger is mostly written in C++, but the build system and various small helper scripts are in Ruby. The loaders for each supported language is written in the respective language.
-
-The source code is filled with inline comments, so look there if you want to understand how things work. We also have dedicated documents on some topics and for some subsystems. Some interesting documents are:
-
- * ext/common/ApplicationPool2/README.md - If you're interesting in the ApplicationPool and Spawner subsystems.
- * doc/DebuggingAndStressTesting.md
+Phusion Passenger is mostly written in C++, but the build system and various small helper scripts are in Ruby. The loaders for each supported language is written in the respective language. The source code is filled with inline comments, so look there if you want to understand how things work.
 
 <a name="dev_quickstart"></a>
 ### Developer QuickStart
@@ -94,6 +91,11 @@ The source code is filled with inline comments, so look there if you want to und
 _Watch the Developer QuickStart screencast_
 
 We provide an easy and convenient development environment that contributors can use. Learn more at the [Developer QuickStart](https://github.com/phusion/passenger/blob/master/doc/DeveloperQuickstart.md).
+
+<a name="design_and_architecture"></a>
+### Design and Architecture
+
+Phusion Passenger's design and architecture is documented in detail in the [Design & Architecture](https://www.phusionpassenger.com/documentation/Design%20and%20Architecture.html) document.
 
 <a name="build_system"></a>
 ### Compilation and build system
@@ -324,7 +326,20 @@ The usual Ruby coding style applies, with some exceptions:
  * Use 4-space tabs for indentation.
  * Return values explicitly with `return`.
 
+<a name="systems_programming_fundamentals"></a>
+### Systems programming fundamentals
+
+Large parts of Phusion Passenger are written in C++. You can find a free C++ tutorial at [cplusplus.com](http://www.cplusplus.com/doc/tutorial/).
+
+Phusion Passenger heavily utilizes POSIX, the API that is in use by all Unix systems. The POSIX API is heavily used for:
+
+ * Filesystem operations.
+ * Process management.
+ * Sockets.
+
+A good and comprehensive, but rather large source for learning POSIX is the [POSIX Programmer's Guide](ftp://92.42.8.18/pub/doc/books/OReilly_-_POSIX_Programmers_Guide.pdf) by Donald A. Lewine. You can find smaller but less comprehensive documents all over the Internet. In particular, you will want to familiarize yourself with [fork-exec](http://en.wikipedia.org/wiki/Fork-exec), the standard process creation pattern in Unix.
+
 <a name="further_reading"></a>
 ### Further reading
 
-Please read "doc/CodingTipsAndPitfalls.md".
+ * [Coding Tips and Pitfalls](https://github.com/phusion/passenger/blob/master/doc/CodingTipsAndPitfalls.md)
