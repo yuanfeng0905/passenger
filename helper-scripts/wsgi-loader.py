@@ -37,6 +37,7 @@ def handshake_and_read_startup_request():
 		line = readline()
 
 def load_app():
+	sys.path.insert(0, os.getcwd())
 	return imp.load_source('passenger_wsgi', 'passenger_wsgi.py')
 
 def create_server_socket():
@@ -240,9 +241,13 @@ class RequestHandler:
 			headers_set[:] = [status, response_headers]
 			return write
 		
-		def hijack():
-			env['passenger.hijacked_socket'] = output_stream
-			return output_stream
+		# Django's django.template.base module goes through all WSGI
+		# environment values, and calls each value that is a callable.
+		# No idea why, but we work around that with the `do_it` parameter.
+		def hijack(do_it = False):
+			if do_it:
+				env['passenger.hijacked_socket'] = output_stream
+				return output_stream
 
 		env['passenger.hijack'] = hijack
 
