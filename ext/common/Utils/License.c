@@ -21,6 +21,14 @@ namespace Passenger {
 #define MAX_LICENSE_LINES 30
 #define LICENSE_SECRET "An error occurred while fetching this page. Please contact an administrator if this problem persists."
 
+/* Workaround to shut up compiler warnings about return values */
+#define IGNORE_RETVAL(val) \
+	do { \
+		if (val == 0) { \
+			printf("\n"); \
+		} \
+	} while (0)
+
 char *licenseKey = (char *) 0;
 
 static md5_byte_t
@@ -63,12 +71,16 @@ open_license_file() {
 		f = fdopen(fd, "r+");
 		if (f != NULL) {
 			size_t len = strlen(licenseData);
+			size_t ret;
 
-			fwrite(licenseData, 1, len, f);
+			ret = fwrite(licenseData, 1, len, f);
+			IGNORE_RETVAL(ret);
 			if (len > 0 && licenseData[len - 1] != '\n') {
-				fwrite("\n", 1, 1, f);
+				ret = fwrite("\n", 1, 1, f);
+				IGNORE_RETVAL(ret);
 			}
-			fseek(f, 0, SEEK_SET);
+			ret = fseek(f, 0, SEEK_SET);
+			IGNORE_RETVAL(ret);
 		}
 		return f;
 	} else {
