@@ -2004,6 +2004,7 @@ namespace tut {
 		Options options = createOptions();
 		options.appRoot = "tmp.wsgi";
 		options.appType = "wsgi";
+		options.startupFile = "passenger_wsgi.py";
 		options.spawnMethod = "direct";
 		options.rollingRestart = true;
 		
@@ -2071,6 +2072,7 @@ namespace tut {
 		Options options = createOptions();
 		options.appRoot = "tmp.wsgi";
 		options.appType = "wsgi";
+		options.startupFile = "passenger_wsgi.py";
 		options.spawnMethod = "direct";
 		options.minProcesses = 2;
 		options.rollingRestart = true;
@@ -2142,6 +2144,7 @@ namespace tut {
 		Options options = createOptions();
 		options.appRoot = "tmp.wsgi";
 		options.appType = "wsgi";
+		options.startupFile = "passenger_wsgi.py";
 		options.spawnMethod = "direct";
 		options.rollingRestart = true;
 		pool->get(options, &ticket)->getProcess();
@@ -2169,6 +2172,7 @@ namespace tut {
 		Options options = createOptions();
 		options.appRoot = "tmp.wsgi";
 		options.appType = "wsgi";
+		options.startupFile = "passenger_wsgi.py";
 		options.spawnMethod = "direct";
 		options.ignoreSpawnErrors = true;
 
@@ -2228,6 +2232,7 @@ namespace tut {
 		Options options = createOptions();
 		options.appRoot = "tmp.wsgi";
 		options.appType = "wsgi";
+		options.startupFile = "passenger_wsgi.py";
 		options.spawnMethod = "direct";
 		options.ignoreSpawnErrors = true;
 
@@ -2255,6 +2260,7 @@ namespace tut {
 		Options options = createOptions();
 		options.appRoot = "tmp.wsgi";
 		options.appType = "wsgi";
+		options.startupFile = "passenger_wsgi.py";
 		options.spawnMethod = "direct";
 		options.rollingRestart = true;
 		options.ignoreSpawnErrors = true;
@@ -2329,6 +2335,7 @@ namespace tut {
 		Options options = createOptions();
 		options.appRoot = "tmp.wsgi";
 		options.appType = "wsgi";
+		options.startupFile = "passenger_wsgi.py";
 		options.spawnMethod = "direct";
 		options.rollingRestart = true;
 
@@ -2434,6 +2441,7 @@ namespace tut {
 		Options options = createOptions();
 		options.appRoot = "tmp.wsgi";
 		options.appType = "wsgi";
+		options.startupFile = "passenger_wsgi.py";
 		options.spawnMethod = "direct";
 		options.minProcesses = 0;
 		options.rollingRestart = true;
