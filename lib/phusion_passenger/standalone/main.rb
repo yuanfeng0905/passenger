@@ -14,7 +14,6 @@ class Main
 		['start',   'StartCommand'],
 		['stop',    'StopCommand'],
 		['status',  'StatusCommand'],
-		['package-runtime', 'PackageRuntimeCommand'],
 		['version', 'VersionCommand'],
 		['help',    'HelpCommand']
 	]

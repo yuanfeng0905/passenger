@@ -6,6 +6,7 @@
 #  See LICENSE file for license information.
 require 'optparse'
 PhusionPassenger.require_passenger_lib 'constants'
+PhusionPassenger.require_passenger_lib 'utils'
 PhusionPassenger.require_passenger_lib 'standalone/utils'
 
 module PhusionPassenger
@@ -75,6 +76,10 @@ private
 	def require_erb
 		require 'erb' unless defined?(ERB)
 	end
+
+	def require_etc
+		require 'etc' unless defined?(Etc)
+	end
 	
 	def require_optparse
 		require 'optparse' unless defined?(OptionParser)
@@ -89,9 +94,11 @@ private
 	end
 	
 	def parse_options!(command_name, description = nil)
+		require_etc
 		help = false
 		
-		global_config_file = File.join(ENV['HOME'], USER_NAMESPACE_DIRNAME, "standalone", "config")
+		home_dir = PhusionPassenger::Utils.home_dir
+		global_config_file = File.join(home_dir, USER_NAMESPACE_DIRNAME, "standalone", "config")
 		if File.exist?(global_config_file)
 			PhusionPassenger.require_passenger_lib 'standalone/config_file' unless defined?(ConfigFile)
 			global_options = ConfigFile.new(:global_config, global_config_file).options

@@ -365,6 +365,9 @@ public:
 		// Get a connection to the logging server.
 		ConnectionPtr connection = checkoutConnection();
 		if (connection == NULL) {
+			P_TRACE(2, "Created NULL Union Station transaction: group=" << groupName <<
+				", category=" << category << ", txnId=" <<
+				StaticString(txnId, txnIdEnd - txnId));
 			return createNullTransaction();
 		}
 
@@ -379,8 +382,14 @@ public:
 				category,
 				unionStationKey);
 			guard.clear();
+			P_TRACE(2, "Created new Union Station transaction: group=" << groupName <<
+				", category=" << category << ", txnId=" <<
+				StaticString(txnId, txnIdEnd - txnId));
 			return transaction;
 		} else {
+			P_TRACE(2, "Created NULL Union Station transaction: group=" << groupName <<
+				", category=" << category << ", txnId=" <<
+				StaticString(txnId, txnIdEnd - txnId));
 			return createNullTransaction();
 		}
 	}

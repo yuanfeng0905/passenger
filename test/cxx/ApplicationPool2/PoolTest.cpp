@@ -34,9 +34,9 @@ namespace tut {
 		ApplicationPool2_PoolTest() {
 			createServerInstanceDirAndGeneration(serverInstanceDir, generation);
 			retainSessions = false;
-			spawnerConfig = boost::make_shared<SpawnerConfig>();
-			spawnerFactory = boost::make_shared<SpawnerFactory>(*resourceLocator,
-				generation, spawnerConfig);
+			spawnerConfig = boost::make_shared<SpawnerConfig>(*resourceLocator);
+			spawnerFactory = boost::make_shared<SpawnerFactory>(generation,
+				spawnerConfig);
 			pool = boost::make_shared<Pool>(spawnerFactory);
 			pool->initialize();
 			callback = boost::bind(&ApplicationPool2_PoolTest::_callback, this, _1, _2);
@@ -637,6 +637,7 @@ namespace tut {
 		Options options = createOptions();
 		options.appRoot = "tmp.wsgi";
 		options.appType = "wsgi";
+		options.startupFile = "passenger_wsgi.py";
 		options.spawnMethod = "direct";
 		options.minProcesses = 0;
 		initPoolDebugging();
@@ -782,6 +783,7 @@ namespace tut {
 		// Create a group tmp.wsgi.
 		options1.appRoot = "tmp.wsgi";
 		options1.appType = "wsgi";
+		options1.startupFile = "passenger_wsgi.py";
 		options1.spawnMethod = "direct";
 		SystemTime::force(1);
 		session = pool->get(options1, &ticket);
@@ -1471,6 +1473,7 @@ namespace tut {
 		Options options = createOptions();
 		options.appRoot = "tmp.wsgi";
 		options.appType = "wsgi";
+		options.startupFile = "passenger_wsgi.py";
 		options.spawnMethod = "direct";
 		pool->setMax(1);
 
@@ -1506,6 +1509,7 @@ namespace tut {
 		Options options = createOptions();
 		options.appRoot = "tmp.wsgi";
 		options.appType = "wsgi";
+		options.startupFile = "passenger_wsgi.py";
 		options.spawnMethod = "direct";
 
 		writeFile("tmp.wsgi/passenger_wsgi.py",
@@ -1530,6 +1534,7 @@ namespace tut {
 		Options options = createOptions();
 		options.appRoot = "tmp.wsgi";
 		options.appType = "wsgi";
+		options.startupFile = "passenger_wsgi.py";
 		options.spawnMethod = "direct";
 		options.minProcesses = 4;
 
@@ -1572,6 +1577,7 @@ namespace tut {
 		Options options = createOptions();
 		options.appRoot = "stub/wsgi";
 		options.appType = "wsgi";
+		options.startupFile = "passenger_wsgi.py";
 		options.spawnMethod = "direct";
 
 		pool->asyncGet(options, callback);
@@ -1734,6 +1740,7 @@ namespace tut {
 		Options options = createOptions();
 		options.appRoot = "tmp.wsgi";
 		options.appType = "wsgi";
+		options.startupFile = "passenger_wsgi.py";
 		options.spawnMethod = "direct";
 		pool->setMax(1);
 
@@ -1783,6 +1790,7 @@ namespace tut {
 		Options options = createOptions();
 		options.appRoot = "tmp.wsgi";
 		options.appType = "wsgi";
+		options.startupFile = "passenger_wsgi.py";
 		options.spawnMethod = "direct";
 		options.minProcesses = 2;
 
@@ -1816,6 +1824,7 @@ namespace tut {
 		Options options = createOptions();
 		options.appRoot = "tmp.wsgi";
 		options.appType = "wsgi";
+		options.startupFile = "passenger_wsgi.py";
 		options.spawnMethod = "direct";
 		options.maxOutOfBandWorkInstances = 2;
 		initPoolDebugging();
@@ -1975,6 +1984,7 @@ namespace tut {
 		Options options = createOptions();
 		options.appRoot = "tmp.wsgi";
 		options.appType = "wsgi";
+		options.startupFile = "passenger_wsgi.py";
 		options.spawnMethod = "direct";
 
 		SessionPtr session = pool->get(options, &ticket);

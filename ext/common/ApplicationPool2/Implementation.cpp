@@ -9,6 +9,8 @@
 #include <typeinfo>
 #include <algorithm>
 #include <utility>
+#include <sstream>
+#include <limits.h>
 #include <boost/make_shared.hpp>
 #include <boost/date_time/posix_time/posix_time_types.hpp>
 #include <oxt/backtrace.hpp>
@@ -16,10 +18,13 @@
 #include <ApplicationPool2/SuperGroup.h>
 #include <ApplicationPool2/Group.h>
 #include <ApplicationPool2/PipeWatcher.h>
+#include <ApplicationPool2/ErrorRenderer.h>
 #include <Exceptions.h>
 #include <MessageReadersWriters.h>
+#include <Utils.h>
 #include <Utils/ScopeGuard.h>
 #include <Utils/MessageIO.h>
+#include <Utils/JsonUtils.h>
 
 namespace Passenger {
 namespace ApplicationPool2 {
@@ -120,6 +125,146 @@ rethrowException(const ExceptionPtr &e) {
 	throw tracable_exception(*e);
 }
 
+void processAndLogNewSpawnException(SpawnException &e, const Options &options,
+	const SpawnerConfigPtr &config)
+{
+	TRACE_POINT();
+	UnionStation::TransactionPtr transaction;
+	ErrorRenderer renderer(config->resourceLocator);
+	string appMessage = e.getErrorPage();
+	string errorId;
+	char filename[PATH_MAX];
+	stringstream stream;
+
+	if (options.analytics && config->unionStationCore != NULL) {
+		try {
+			UPDATE_TRACE_POINT();
+			transaction = config->unionStationCore->newTransaction(
+				options.getAppGroupName(),
+				"exceptions",
+				options.unionStationKey);
+			errorId = transaction->getTxnId();
+		} catch (const tracable_exception &e2) {
+			transaction.reset();
+			P_WARN("Cannot log to Union Station: " << e2.what() <<
+				"\n  Backtrace:\n" << e2.backtrace());
+		}
+	}
+
+	UPDATE_TRACE_POINT();
+	if (appMessage.empty()) {
+		appMessage = "none";
+	}
+	if (errorId.empty()) {
+		errorId = config->randomGenerator->generateHexString(4);
+	}
+	e.set("error_id", errorId);
+
+	try {
+		int fd = -1;
+		FdGuard guard(fd, true);
+		string errorPage;
+
+		UPDATE_TRACE_POINT();
+		errorPage = renderer.renderWithDetails(appMessage, options, &e);
+
+		#if defined(__linux__) || defined(__APPLE__) || defined(__FreeBSD__)
+			snprintf(filename, PATH_MAX, "%s/passenger-error-XXXXXX.html",
+				getSystemTempDir());
+			fd = mkstemps(filename, sizeof(".html") - 1);
+		#else
+			snprintf(filename, PATH_MAX, "%s/passenger-error.XXXXXX",
+				getSystemTempDir());
+			fd = mkstemp(filename);
+		#endif
+		if (fd == -1) {
+			int e = errno;
+			throw SystemException("Cannot generate a temporary filename",
+				e);
+		}
+
+		UPDATE_TRACE_POINT();
+		writeExact(fd, errorPage);
+	} catch (const SystemException &e2) {
+		filename[0] = '\0';
+		P_ERROR("Cannot render an error page: " << e2.what() << "\n" <<
+			e2.backtrace());
+	}
+
+	if (transaction != NULL) {
+		try {
+			UPDATE_TRACE_POINT();
+			transaction->message("Context: spawning");
+			transaction->message("Message: " +
+				jsonString(e.what()));
+			transaction->message("App message: " +
+				jsonString(appMessage));
+
+			const char *kind;
+			switch (e.getErrorKind()) {
+			case SpawnException::PRELOADER_STARTUP_ERROR:
+				kind = "PRELOADER_STARTUP_ERROR";
+				break;
+			case SpawnException::PRELOADER_STARTUP_PROTOCOL_ERROR:
+				kind = "PRELOADER_STARTUP_PROTOCOL_ERROR";
+				break;
+			case SpawnException::PRELOADER_STARTUP_TIMEOUT:
+				kind = "PRELOADER_STARTUP_TIMEOUT";
+				break;
+			case SpawnException::PRELOADER_STARTUP_EXPLAINABLE_ERROR:
+				kind = "PRELOADER_STARTUP_EXPLAINABLE_ERROR";
+				break;
+			case SpawnException::APP_STARTUP_ERROR:
+				kind = "APP_STARTUP_ERROR";
+				break;
+			case SpawnException::APP_STARTUP_PROTOCOL_ERROR:
+				kind = "APP_STARTUP_PROTOCOL_ERROR";
+				break;
+			case SpawnException::APP_STARTUP_TIMEOUT:
+				kind = "APP_STARTUP_TIMEOUT";
+				break;
+			case SpawnException::APP_STARTUP_EXPLAINABLE_ERROR:
+				kind = "APP_STARTUP_EXPLAINABLE_ERROR";
+				break;
+			default:
+				kind = "UNDEFINED_ERROR";
+				break;
+			}
+			transaction->message(string("Kind: ") + kind);
+
+			Json::Value details;
+			const map<string, string> &annotations = e.getAnnotations();
+			map<string, string>::const_iterator it, end = annotations.end();
+
+			for (it = annotations.begin(); it != end; it++) {
+				details[it->first] = it->second;
+			}
+
+			// This information is not very useful. Union Station
+			// already collects system metrics.
+			details.removeMember("system_metrics");
+			// Don't include environment variables because they may
+			// contain sensitive information.
+			details.removeMember("envvars");
+
+			transaction->message("Details: " + stringifyJson(details));
+		} catch (const tracable_exception &e2) {
+			P_WARN("Cannot log to Union Station: " << e2.what() <<
+				"\n  Backtrace:\n" << e2.backtrace());
+		}
+	}
+
+	UPDATE_TRACE_POINT();
+	stream << "Could not spawn process for application " << options.appRoot <<
+		": " << e.what() << "\n" <<
+		"  Error ID: " << errorId << "\n";
+	if (filename[0] != '\0') {
+		stream << "  Error details saved to: " << filename << "\n";
+	}
+	stream << "  Message from application: " << appMessage << "\n";
+	P_ERROR(stream.str());
+}
+
 
 const SuperGroupPtr
 Pool::getSuperGroup(const char *name) {
@@ -139,7 +284,7 @@ SuperGroup::runAllActions(const vector<Callback> &actions) {
 
 string
 SuperGroup::generateSecret() const {
-	return getPool()->randomGenerator->generateAsciiString(43);
+	return getPool()->getRandomGenerator()->generateAsciiString(43);
 }
 
 void
@@ -171,6 +316,8 @@ SuperGroup::realDoInitialize(const Options &options, unsigned int generation) {
 	vector<ComponentInfo> componentInfos;
 	vector<ComponentInfo>::const_iterator it;
 	ExceptionPtr exception;
+
+	PoolPtr pool = getPool();
 	
 	P_TRACE(2, "Initializing SuperGroup " << inspect() << " in the background...");
 	try {
@@ -182,13 +329,15 @@ SuperGroup::realDoInitialize(const Options &options, unsigned int generation) {
 		string message = "The directory " +
 			options.appRoot +
 			" does not seem to contain a web application.";
-		exception = boost::make_shared<SpawnException>(
-			message, message, false);
+		boost::shared_ptr<SpawnException> spawnException =
+			boost::make_shared<SpawnException>(
+				message, message, false);
+		exception = spawnException;
+		processAndLogNewSpawnException(*spawnException, options,
+			pool->getSpawnerConfig());
 	}
 	
-	PoolPtr pool = getPool();
 	Pool::DebugSupportPtr debug = pool->debugSupport;
-	
 	vector<Callback> actions;
 	{
 		if (debug != NULL && debug->superGroup) {
@@ -791,7 +940,9 @@ Group::spawnThreadRealMain(const SpawnerPtr &spawner, const Options &options, un
 			this_thread::restore_interruption ri(di);
 			this_thread::restore_syscall_interruption rsi(dsi);
 			if (shouldFail) {
-				throw SpawnException("Simulated failure");
+				SpawnException e("Simulated failure");
+				processAndLogNewSpawnException(e, options, pool->getSpawnerConfig());
+				throw e;
 			} else {
 				process = spawner->spawn(options);
 				process->setGroup(shared_from_this());
@@ -870,9 +1021,6 @@ Group::spawnThreadRealMain(const SpawnerPtr &spawner, const Options &options, un
 
 			// TODO: sure this is the best thing? if there are
 			// processes currently alive we should just use them.
-			P_ERROR("Could not spawn process for group " << name <<
-				": " << exception->what() << "\n" <<
-				exception->backtrace());
 			if (!options.ignoreSpawnErrors || enabledCount == 0) {
 				if (enabledCount == 0) {
 					enableAllDisablingProcesses(actions);
@@ -1209,7 +1357,7 @@ Group::testOverflowRequestQueue() const {
 
 const ResourceLocator &
 Group::getResourceLocator() const {
-	return getPool()->spawnerFactory->getResourceLocator();
+	return getPool()->getSpawnerConfig()->resourceLocator;
 }
 
 // 'process' is not a reference so that bind(runAttachHooks, ...) causes the shared
@@ -1234,7 +1382,7 @@ Group::setupAttachOrDetachHook(const ProcessPtr process, HookScriptOptions &opti
 
 string
 Group::generateSecret(const SuperGroupPtr &superGroup) {
-	return superGroup->getPool()->randomGenerator->generateAsciiString(43);
+	return superGroup->getPool()->getRandomGenerator()->generateAsciiString(43);
 }
 
 

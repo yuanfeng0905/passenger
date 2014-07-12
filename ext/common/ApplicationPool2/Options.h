@@ -30,13 +30,13 @@ using namespace boost;
 
 /**
  * This struct encapsulates information for ApplicationPool::get() and for
- * SpawnManager::spawn(), such as which application is to be spawned.
+ * Spawner::spawn(), such as which application is to be spawned.
  *
- * <h2>Privilege lowering support</h2>
+ * ## Privilege lowering support
  *
  * If <em>user</em> is given and isn't the empty string, then the application process
  * will run as the given username. Otherwise, the owner of the application's startup
- * file (e.g. config.ru or config/environment.rb) will be used.
+ * file (e.g. config.ru) will be used.
  *
  * If <em>group</em> is given and isn't the empty string, then the application process
  * will run as the given group name. If it's set to the special value
@@ -264,10 +264,14 @@ public:
 	 */
 	bool loadShellEnvvars;
 	
-	/** Whether Union Station logging should be enabled. This option only affects
-	 * whether the application enables Union Station support; whether a request
-	 * actually results in data being logged to Union Station depends on whether
-	 * the 'logger' member is set.
+	/** Whether Union Station logging should be enabled. Enabling this option will
+	 * result in:
+	 * 
+	 *  - The application enabling its Union Station support.
+	 *  - Periodic tasks such as `collectAnalytics()` to log things to Union Station.
+	 *
+	 * It does *not* necessarily result in a request logging data to Union Station.
+	 * That depends on whether the `transaction` member is set.
 	 *
 	 * If this is set to true, then 'loggingAgentAddress', 'loggingAgentUsername'
 	 * and 'loggingAgentPassword' must be non-empty.
@@ -371,6 +375,11 @@ public:
 	 * The Union Station log transaction that this request belongs to.
 	 * May be the null pointer, in which case Union Station logging is
 	 * disabled for this request.
+	 *
+	 * When an Options object is passed to another thread (either direct or through
+	 * a copy), the caller should call `detachFromUnionStationTransaction()`.
+	 * Each Union Station transaction object is only supposed to be used in the same
+	 * thread.
 	 */
 	UnionStation::TransactionPtr transaction;
 

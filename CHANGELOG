@@ -1,7 +1,23 @@
 Release 4.0.46
 --------------
 
+ * Further improved Node.js and Socket.io compatibility.
  * Sticky session cookies have been made more reliable.
+ * Fixed WebSocket upgrade issues on Firefox. Closes GH-1232.
+ * The Python application loader now inserts the application root into `sys.path`.
+   The fact that this was not done previously caused a lot of confusion amongst
+   Python users, who wondered why their `passenger_wsgi.py` could not import any
+   modules from the same directory.
+ * Fixed a compatibility problem with Django, which could cause Django apps to
+   freeze indefinitely. Closes GH-1215.
+ * Logging of application spawning errors has been much improved. Full details
+   about the error, such as environment variables, are saved to a private log file.
+   In the past, these details were only viewable in the browser. This change also
+   fixes a bug on Phusion Passenger Enterprise, where enabling Deployment Error
+   Resistance causes error messages to get lost. Closes GH-1021 and GH-1175.
+ * Fixed a regression in Node.js support. When a Node.js app is deployed on
+   a HTTPS host, the `X-Forwarded-Proto` header wasn't set in 4.0.45.
+   Closes GH-1231.
  * Passenger Standalone no longer, by default, loads shell startup files before
    loading the application. This is because Passenger Standalone is often invoked
    from the shell anyway. Indeed, loading shell startup files again can interfere
@@ -9,12 +25,22 @@ Release 4.0.46
    still tell Passenger Standalone to load shell startup files by passing
    `--load-shell-envvars`. Passenger for Apache and Passenger for Nginx still
    load shell startup files by default.
- * The Python application loader now inserts the application root into `sys.path`.
-   The fact that this was not done previously caused a lot of confusion amongst
-   Python users, who wondered why their `passenger_wsgi.py` could not import any
-   modules from the same directory.
- * Fixed a compatibility problem with Django, which could cause Django apps to
-   freeze indefinitely. Closes GH-1215.
+ * Passenger Standalone now works properly when the HOME environment variable
+   isn't set. Closes GH-713.
+ * Passenger Standalone's `package-runtime` command has been removed. It has
+   been broken for a while and has nowadays been obsolete by our automatic
+   [binary generation system](https://github.com/phusion/passenger_autobuilder).
+   Closes GH-1133.
+ * The `passenger_startup_file` option now also works on Python apps. Closes GH-1233.
+ * If you are a [Union Station](https://www.unionstationapp.com) customer, then
+   Phusion Passenger will now also log application spawning errors to Union Station.
+   This data isn't shown in the Union Station interface yet, but it will be
+   implemented in the future.
+ * Fixed compilation problems on OmniOS and OpenIndiana. Closes GH-1212.
+ * Fixed compilation problems when Nginx is configured with OpenResty.
+   Thanks to Yichun Zhang. Closes GH-1226.
+ * Documentation contributions by Tim Bishop and Tugdual de Kerviler.
+ * Minor Nginx bug fix by Feng Gu. Closes GH-1235.
 
 
 Release 4.0.45

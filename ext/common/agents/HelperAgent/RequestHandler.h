@@ -96,6 +96,7 @@
 #include <boost/shared_ptr.hpp>
 #include <boost/weak_ptr.hpp>
 #include <boost/make_shared.hpp>
+#include <boost/regex.hpp>
 #include <ev++.h>
 
 #if defined(__GLIBCXX__) || defined(__APPLE__)
@@ -119,6 +120,7 @@
 #include <UnionStation/Transaction.h>
 #include <UnionStation/ScopeLog.h>
 #include <ApplicationPool2/Pool.h>
+#include <ApplicationPool2/ErrorRenderer.h>
 #include <Utils/StrIntUtils.h>
 #include <Utils/IOUtils.h>
 #include <Utils/HttpHeaderBufferer.h>
@@ -209,6 +211,8 @@ private:
 		sessionCheckoutTry = 0;
 		responseHeaderSeen = false;
 		chunkedResponse = false;
+		responseContentLength = -1;
+		responseBodyAlreadyRead = 0;
 		appRoot.clear();
 
 		maxRequestTime = 0;
@@ -322,6 +326,21 @@ public:
 
 	bool responseHeaderSeen;
 	bool chunkedResponse;
+	/** The size of the response body, set based on the values of
+	 * the Content-Length and Transfer-Encoding response headers.
+	 * Possible values:
+	 *
+	 * -1: infinite. Should keep forwarding response body until end of stream.
+	 *     This is the case for WebSockets or for responses without Content-Length.
+	 *     Responses with "Transfer-Encoding: chunked" also fall under this
+	 *     category, though in this case encountering the zero-length chunk is
+	 *     treated the same as end of stream.
+	 * 0 : no client body. Should immediately close connection after forwarding
+	 *     headers.
+	 * >0: Should forward exactly this many bytes of the response body.
+	 */
+	long long responseContentLength;
+	unsigned long long responseBodyAlreadyRead;
 	HttpHeaderBufferer responseHeaderBufferer;
 	Dechunker responseDechunker;
 
@@ -574,6 +593,8 @@ public:
 			<< indent << "requestIsChunked            = " << boolStr(requestIsChunked) << "\n"
 			<< indent << "requestBodyLength           = " << requestBodyLength << "\n"
 			<< indent << "requestBodyAlreadyRead      = " << requestBodyAlreadyRead << "\n"
+			<< indent << "responseContentLength       = " << responseContentLength << "\n"
+			<< indent << "responseBodyAlreadyRead     = " << responseBodyAlreadyRead << "\n"
 			<< indent << "clientInput                 = " << clientInput.get() <<  " " << clientInput->inspect() << "\n"
 			<< indent << "clientInput started         = " << boolStr(clientInput->isStarted()) << "\n"
 			<< indent << "clientBodyBuffer started    = " << boolStr(clientBodyBuffer->isStarted()) << "\n"
@@ -617,6 +638,7 @@ private:
 	HashMap<int, ClientPtr> clients;
 	Timer inactivityTimer;
 	bool accept4Available;
+	boost::regex upgradeHeaderRegex;
 
 
 	void disconnect(const ClientPtr &client) {
@@ -762,47 +784,12 @@ private:
 		assert(client->state < Client::FORWARDING_BODY_TO_APP);
 		client->state = Client::WRITING_SIMPLE_RESPONSE;
 
-		string templatesDir = resourceLocator.getResourcesDir() + "/templates";
+		ErrorRenderer renderer(resourceLocator);
 		string data;
 
 		if (friendlyErrorPagesEnabled(client)) {
 			try {
-				string cssFile = templatesDir + "/error_layout.css";
-				string errorLayoutFile = templatesDir + "/error_layout.html.template";
-				string generalErrorFile =
-					(e != NULL && e->isHTML())
-					? templatesDir + "/general_error_with_html.html.template"
-					: templatesDir + "/general_error.html.template";
-				string css = readAll(cssFile);
-				StringMap<StaticString> params;
-
-				params.set("CSS", css);
-				params.set("APP_ROOT", client->options.appRoot);
-				params.set("RUBY", client->options.ruby);
-				params.set("ENVIRONMENT", client->options.environment);
-				params.set("MESSAGE", message);
-				params.set("IS_RUBY_APP",
-					(client->options.appType == "classic-rails" || client->options.appType == "rack")
-					? "true" : "false");
-				if (e != NULL) {
-					params.set("TITLE", "Web application could not be started");
-					// Store all SpawnException annotations into 'params',
-					// but convert its name to uppercase.
-					const map<string, string> &annotations = e->getAnnotations();
-					map<string, string>::const_iterator it, end = annotations.end();
-					for (it = annotations.begin(); it != end; it++) {
-						string name = it->first;
-						for (string::size_type i = 0; i < name.size(); i++) {
-							name[i] = toupper(name[i]);
-						}
-						params.set(name, it->second);
-					}
-				} else {
-					params.set("TITLE", "Internal server error");
-				}
-				string content = Template::apply(readAll(generalErrorFile), params);
-				params.set("CONTENT", content);
-				data = Template::apply(readAll(errorLayoutFile), params);
+				data = renderer.renderWithDetails(message, client->options, e);
 			} catch (const SystemException &e2) {
 				P_ERROR("Cannot render an error page: " << e2.what() << "\n" <<
 					e2.backtrace());
@@ -810,13 +797,7 @@ private:
 			}
 		} else {
 			try {
-				StringMap<StaticString> params;
-				params.set("PROGRAM_NAME", PROGRAM_NAME);
-				params.set("NGINX_DOC_URL", NGINX_DOC_URL);
-				params.set("APACHE2_DOC_URL", APACHE2_DOC_URL);
-				params.set("STANDALONE_DOC_URL", STANDALONE_DOC_URL);
-				data = Template::apply(readAll(templatesDir + "/undisclosed_error.html.template"),
-					params);
+				data = renderer.renderWithoutDetails();
 			} catch (const SystemException &e2) {
 				P_ERROR("Cannot render an error page: " << e2.what() << "\n" <<
 					e2.backtrace());
@@ -1109,6 +1090,20 @@ private:
 			RH_TRACE(client, 3, "Response with chunked transfer encoding detected.");
 			client->chunkedResponse = true;
 			removeHeader(headerData, transferEncoding);
+		} else {
+			Header contentLength = lookupHeader(headerData, "Content-Length", "content-length");
+			if (!contentLength.empty()) {
+				client->responseContentLength = stringToLL(contentLength.value);
+			}
+		}
+
+		Header connection = lookupHeader(headerData, "Connection", "connection");
+		if (!connection.empty() && (connection.value == "keep-alive"
+			|| connection.value == "Keep-Alive"))
+		{
+			RH_TRACE(client, 3, "Keep-alive response detected. Changing to non-keep alive.");
+			removeHeader(headerData, connection);
+			headerData.append("Connection: close\r\n");
 		}
 
 		// Add X-Powered-By.
@@ -1188,6 +1183,7 @@ private:
 			removeHeader(headerData, oobw);
 		}
 
+		P_TRACE(2, "Fowarding response header from app client: " << headerData);
 		headerData.append("\r\n");
 		writeToClientOutputPipe(client, headerData);
 		return true;
@@ -1231,6 +1227,10 @@ private:
 						client->responseHeaderSeen = true;
 						StaticString header = client->responseHeaderBufferer.getData();
 						if (processResponseHeader(client, header)) {
+							if (client->responseContentLength == 0) {
+								RH_TRACE(client, 3, "Disconnecting client because response Content-Length = 0");
+								onAppInputEof(client);
+							}
 							return consumed;
 						} else {
 							assert(!client->connected());
@@ -1255,7 +1255,40 @@ private:
 
 	void onAppInputChunk(const ClientPtr &client, const StaticString &data) {
 		RH_LOG_EVENT(client, "onAppInputChunk");
-		writeToClientOutputPipe(client, data);
+		StaticString data2;
+
+		if (client->responseContentLength == -1) {
+			data2 = data;
+		} else {
+			size_t rest = client->responseContentLength -
+				client->responseBodyAlreadyRead;
+			data2 = StaticString(data.data(), std::min<size_t>(
+				rest, data.size()));
+		}
+
+		client->responseBodyAlreadyRead += data2.size();
+		assert(client->responseContentLength == -1 || client->responseBodyAlreadyRead <=
+			(unsigned long long) client->responseContentLength);
+		if (data2.empty()) {
+			// Client sent more data than was advertised through
+			// Content-Length. Ignore them.
+			return;
+		}
+
+		writeToClientOutputPipe(client, data2);
+
+		if (client->responseContentLength > 0) {
+			RH_TRACE(client, 3, client->responseBodyAlreadyRead << "/" <<
+				client->responseContentLength <<
+				" bytes of application data forwarded so far.");
+
+			if (client->connected() && (unsigned long long) client->responseContentLength
+				== client->responseBodyAlreadyRead)
+			{
+				RH_TRACE(client, 3, "Disconnecting client because application data has been fully forwarded.");
+				onAppInputEof(client);
+			}
+		}
 	}
 
 	void onAppInputChunkEnd(const ClientPtr &client) {
@@ -1267,11 +1300,15 @@ private:
 		RH_LOG_EVENT(client, "onAppInputEof");
 		// Check for session == NULL in order to avoid executing the code twice on
 		// responses with chunked encoding.
+		// This also ensures that when onAppInputEof() is called twice (e.g. because
+		// additional data was received after onAppInputChunk has already called onAppInputEof()),
+		// we don't do things twice.
 		if (!client->connected() || client->session == NULL) {
 			return;
 		}
 
 		RH_DEBUG(client, "Application sent EOF");
+		client->appInput->stop();
 		client->session.reset();
 		client->endScopeLog(&client->scopeLogs.requestProxying);
 		client->clientOutputPipe->end();
@@ -2279,14 +2316,10 @@ private:
 	}
 
 	void writeSpawnExceptionErrorResponse(const ClientPtr &client, const boost::shared_ptr<SpawnException> &e) {
-		if (strip(e->getErrorPage()).empty()) {
-			RH_WARN(client, "Cannot checkout session. " << e->what());
-			writeErrorResponse(client, e->what());
-		} else {
-			RH_WARN(client, "Cannot checkout session.\nError page:\n" <<
-				e->getErrorPage());
-			writeErrorResponse(client, e->getErrorPage(), e.get());
-		}
+		RH_ERROR(client, "Cannot checkout session because a spawning error occurred. " <<
+			"The identifier of the error is " << e->get("ERROR_ID") << ". Please see earlier logs for " <<
+			"details about the error.");
+		writeErrorResponse(client, e->getErrorPage(), e.get());
 	}
 
 	void writeOtherExceptionErrorResponse(const ClientPtr &client, const ExceptionPtr &e) {
@@ -2448,7 +2481,9 @@ private:
 			}
 
 			StaticString connection = parser.getHeader("HTTP_CONNECTION");
-			if (connection == "upgrade" || connection == "Upgrade") {
+			if (regex_match(connection.data(), connection.data() + connection.size(),
+				upgradeHeaderRegex))
+			{
 				data.append("Connection: ");
 				data.append(connection.data(), connection.size());
 				data.append("\r\n");
@@ -2470,12 +2505,25 @@ private:
 				data.append("\r\n");
 			}
 
+			header = parser.getHeader("HTTPS");
+			if (!header.empty()) {
+				data.append("X-Forwarded-Proto: https\r\n");
+			}
+
+			header = parser.getHeader("REMOTE_ADDR");
+			if (!header.empty()) {
+				data.append("X-Forwarded-For: ");
+				data.append(header);
+				data.append("\r\n");
+			}
+
 			if (client->options.analytics) {
 				data.append("Passenger-Txn-Id: ");
 				data.append(client->options.transaction->getTxnId());
 				data.append("\r\n");
 			}
 
+			P_TRACE(3, "Sending headers to application: " << data);
 			data.append("\r\n");
 
 			StaticString datas[] = { data };
@@ -2680,11 +2728,13 @@ public:
 		  pool(_pool),
 		  options(_options),
 		  resourceLocator(_options.passengerRoot),
+		  upgradeHeaderRegex("(keep-alive, *)?upgrade(, *keep-alive)?",
+		      boost::regex::perl | boost::regex::icase),
 		  benchmarkPoint(getDefaultBenchmarkPoint())
 	{
 		accept4Available = true;
 		connectPasswordTimeout = 15000;
-		unionStationCore = pool->unionStationCore;
+		unionStationCore = pool->getUnionStationCore();
 
 		requestSocketWatcher.set(_requestSocket, ev::READ);
 		requestSocketWatcher.set(_libev->getLoop());

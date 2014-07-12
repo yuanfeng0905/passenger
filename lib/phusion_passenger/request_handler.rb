@@ -76,7 +76,7 @@ class RequestHandler
 			"app_group_name",
 			"connect_password",
 			"detach_key",
-			"analytics_logger",
+			"union_station_core",
 			"pool_account_username"
 		)
 
@@ -423,7 +423,7 @@ private
 			:app              => @app,
 			:app_group_name   => @app_group_name,
 			:connect_password => @connect_password,
-			:analytics_logger => @analytics_logger
+			:union_station_core => @union_station_core
 		}
 		main_socket_options = common_options.merge(
 			:server_socket => @main_socket,

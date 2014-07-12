@@ -29,7 +29,6 @@
 	#include <sys/sysinfo.h>
 	#include <Exceptions.h>
 	#include <Utils/StringScanning.h>
-	#include <Utils/SpeedMeter.h>
 	#include <Utils/IOUtils.h>
 #endif
 #ifdef __APPLE__
@@ -53,6 +52,7 @@
 #include <Utils/StrIntUtils.h>
 #include <Utils/SystemTime.h>
 #include <Utils/AnsiColorConstants.h>
+#include <Utils/SpeedMeter.h>
 
 /*
  * Useful resources
@@ -330,13 +330,15 @@ public:
 	time_t boottime;
 
 	/** Speed at which processes are created per second.
-	 * NaN if it's not yet known (because too few samples have been taken so far).
+	 * SpeedMeter<unsigned long long>::unknownSpeed() if it's not yet known (because too
+	 * few samples have been taken so far).
 	 * -1 if there was an error querying this information.
 	 * -2 if the OS does not support this metric.
 	 */
 	double forkRate;
 	/** Speed at which the OS swaps in and swaps out data, in KB/sec.
-	 * NaN if it's not yet known (because too few samples have been taken so far).
+	 * SpeedMeter<size_t>::unknownSpeed() if it's not yet known
+	 * (because too few samples have been taken so far).
 	 * -1 if there was an error querying this information.
 	 * -2 if the OS does not support this metric.
 	 */
@@ -521,7 +523,7 @@ public:
 
 			if (forkRate != -2) {
 				stream << "Fork rate         : ";
-				if (std::isnan(forkRate) || forkRate < 0) {
+				if (forkRate == SpeedMeter<unsigned long long>::unknownSpeed() || forkRate < 0) {
 					if (options.colors) {
 						stream << ANSI_COLOR_DGRAY;
 					}
@@ -632,7 +634,7 @@ public:
 
 			if (swapInRate != -2) {
 				stream << "Swap in           : ";
-				if (std::isnan(swapInRate) || swapInRate < 0) {
+				if (swapInRate == SpeedMeter<size_t>::unknownSpeed() || swapInRate < 0) {
 					if (options.colors) {
 						stream << ANSI_COLOR_DGRAY;
 					}
@@ -652,7 +654,7 @@ public:
 
 			if (swapOutRate != -2) {
 				stream << "Swap out          : ";
-				if (std::isnan(swapOutRate) || swapOutRate < 0) {
+				if (swapOutRate == SpeedMeter<size_t>::unknownSpeed() || swapOutRate < 0) {
 					if (options.colors) {
 						stream << ANSI_COLOR_DGRAY;
 					}

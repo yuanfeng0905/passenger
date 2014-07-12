@@ -250,7 +250,7 @@
 	ngx_conf_set_bitmask_slot,
 	NGX_HTTP_LOC_CONF_OFFSET,
 	offsetof(passenger_loc_conf_t, upstream_config.ignore_headers),
-	NULL
+	&ngx_http_upstream_ignore_headers_masks
 },
 
 {
