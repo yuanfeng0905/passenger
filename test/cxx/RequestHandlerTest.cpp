@@ -178,7 +178,7 @@ namespace tut {
 		}
 	};
 
-	DEFINE_TEST_GROUP_WITH_LIMIT(RequestHandlerTest, 80);
+	DEFINE_TEST_GROUP_WITH_LIMIT(RequestHandlerTest, 100);
 
 
 	/***** Basic tests *****/
@@ -1462,7 +1462,7 @@ namespace tut {
 	
 	/***************************/
 
-	TEST_METHOD(70) {
+	TEST_METHOD(90) {
 		set_test_name("It enforces a request time limit.");
 
 		setLogLevel(LVL_CRIT);
