@@ -123,7 +123,7 @@ private
 			opts.on("--pool-idle-time SECONDS", Integer, "Max process idle time (default: #{@watchdog_options[:pool_idle_time]})") do |val|
 				@watchdog_options[:pool_idle_time] = val
 			end
-			opts.on("--max-preloader-idle-time", Integer, "Max preloader idle time") do |val|
+			opts.on("--max-preloader-idle-time SECONDS", Integer, "Max preloader idle time") do |val|
 				@watchdog_options[:max_preloader_idle_time] = val
 			end
 			opts.on("--temp-dir PATH", String, "Directory to store the server instance dir in") do |val|
