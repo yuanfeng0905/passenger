@@ -813,7 +813,7 @@ private:
 		}
 
 		short fracToShort(double x) const {
-			return x * SHRT_MAX;
+			return (short) (x * SHRT_MAX);
 		}
 
 		void updateCpuMetrics(SystemMetrics::CpuUsage &cpuUsage, long long user, long long nice,
