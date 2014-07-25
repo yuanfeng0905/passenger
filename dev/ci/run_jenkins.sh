@@ -30,6 +30,7 @@ run_exec docker run --rm \
 	-v "$PASSENGER_ROOT:/passenger" \
 	-v /var/run/docker.sock:/docker.sock \
 	-v "$JENKINS_CACHE_DIR:/host_cache" \
+	-v /etc/passenger-enterprise-license:/etc/passenger-enterprise-license:ro \
 	-e "DOCKER_HOST=unix:///docker.sock" \
 	-e "DOCKER_GID=`getent group docker | cut -d: -f3`" \
 	-e "PASSENGER_ROOT_ON_DOCKER_HOST=$PASSENGER_ROOT" \

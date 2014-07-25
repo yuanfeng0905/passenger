@@ -229,6 +229,7 @@ if [[ "$TEST_RPM_PACKAGING" = 1 ]]; then
 		-v "$PASSENGER_ROOT_ON_DOCKER_HOST/packaging/rpm:/system:ro" \
 		-v "$PASSENGER_ROOT_ON_DOCKER_HOST:/passenger" \
 		-v "$CACHE_DIR_ON_DOCKER_HOST/passenger_rpm/output/el6-x86_64:/packages:ro" \
+		-v /etc/passenger-enterprise-license:/etc/passenger-enterprise-license:ro \
 		-e "APP_UID=`id -u`" \
 		-e "APP_GID=`id -g`" \
 		phusion/passenger_rpm_automation \
