@@ -9,7 +9,7 @@ env:
   - TEST_APACHE2=1
   - TEST_SOURCE_PACKAGING=1 TEST_DEBIAN_PACKAGING=1
 
-script: ./dev/run_travis.sh
+script: ./dev/ci/run_travis.sh
 
 notifications:
   slack: phusionnl:PH5p7JYXyv2XLDpICHh8Nj6F
