@@ -22,11 +22,11 @@
 
 	#define APACHE2_DOC_URL "https://www.phusionpassenger.com/documentation/Users%20guide%20Apache.html"
 
-	#define DEB_APACHE_MODULE_PACKAGE "libapache2-mod-passenger"
+	#define DEB_APACHE_MODULE_PACKAGE "libapache2-mod-passenger-enterprise"
 
-	#define DEB_DEV_PACKAGE "passenger-dev"
+	#define DEB_DEV_PACKAGE "passenger-enterprise-dev"
 
-	#define DEB_MAIN_PACKAGE "passenger"
+	#define DEB_MAIN_PACKAGE "passenger-enterprise"
 
 	#define DEB_NGINX_PACKAGE "nginx-extras"
 
@@ -86,11 +86,11 @@
 
 	#define PROGRAM_NAME "Phusion Passenger"
 
-	#define RPM_APACHE_MODULE_PACKAGE "mod_passenger"
+	#define RPM_APACHE_MODULE_PACKAGE "mod_passenger_enterprise"
 
-	#define RPM_DEV_PACKAGE "passenger-devel"
+	#define RPM_DEV_PACKAGE "passenger-enterprise-devel"
 
-	#define RPM_MAIN_PACKAGE "passenger"
+	#define RPM_MAIN_PACKAGE "passenger-enterprise"
 
 	#define RPM_NGINX_PACKAGE "nginx"
 
