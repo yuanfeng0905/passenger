@@ -30,12 +30,12 @@ private:
 		pthread_t thr;
 		pthread_attr_t attr;
 		size_t stack_size = 96 * 1024;
-		
+
 		unsigned long min_stack_size;
 		bool stack_min_size_defined;
 		bool round_stack_size;
 		int ret;
-		
+
 		#ifdef PTHREAD_STACK_MIN
 			// PTHREAD_STACK_MIN may not be a constant macro so we need
 			// to evaluate it dynamically.
@@ -52,7 +52,7 @@ private:
 		} else {
 			round_stack_size = true;
 		}
-		
+
 		if (round_stack_size) {
 			// Round stack size up to page boundary.
 			long page_size;
@@ -71,7 +71,7 @@ private:
 				stack_size = stack_size - (stack_size % page_size) + page_size;
 			}
 		}
-		
+
 		pthread_attr_init(&attr);
 		pthread_attr_setdetachstate(&attr, 1);
 		pthread_attr_setstacksize(&attr, stack_size);
@@ -79,25 +79,25 @@ private:
 		pthread_attr_destroy(&attr);
 		return ret;
 	}
-	
+
 	static void *detachProcessMain(void *arg) {
 		this_thread::disable_syscall_interruption dsi;
 		pid_t pid = (pid_t) (long) arg;
 		syscalls::waitpid(pid, NULL, 0);
 		return NULL;
 	}
-	
+
 	void detachProcess(pid_t pid) {
 		startBackgroundThread(detachProcessMain, (void *) (long) pid);
 	}
-	
+
 	vector<string> createCommand(const Options &options, const SpawnPreparationInfo &preparation,
 		shared_array<const char *> &args) const
 	{
 		vector<string> startCommandArgs;
 		string agentsDir = config->resourceLocator.getAgentsDir();
 		vector<string> command;
-		
+
 		split(options.getStartCommand(config->resourceLocator), '\t', startCommandArgs);
 		if (startCommandArgs.empty()) {
 			throw RuntimeException("No startCommand given");
@@ -122,11 +122,11 @@ private:
 		for (unsigned int i = 1; i < startCommandArgs.size(); i++) {
 			command.push_back(startCommandArgs[i]);
 		}
-		
+
 		createCommandArgs(command, args);
 		return command;
 	}
-	
+
 public:
 	DirectSpawner(const ServerInstanceDir::GenerationPtr &_generation,
 		const SpawnerConfigPtr &_config)
@@ -134,7 +134,7 @@ public:
 	{
 		generation = _generation;
 	}
-	
+
 	virtual ProcessPtr spawn(const Options &options) {
 		TRACE_POINT();
 		this_thread::disable_interruption di;
@@ -149,7 +149,7 @@ public:
 		Pipe errorPipe = createPipe();
 		DebugDirPtr debugDir = boost::make_shared<DebugDir>(preparation.uid, preparation.gid);
 		pid_t pid;
-		
+
 		pid = syscalls::fork();
 		if (pid == 0) {
 			setenv("PASSENGER_DEBUG_DIR", debugDir->getPath().c_str(), 1);
@@ -167,7 +167,7 @@ public:
 			switchUser(preparation);
 			setWorkingDirectory(preparation);
 			execvp(args[0], (char * const *) args.get());
-			
+
 			int e = errno;
 			printf("!> Error\n");
 			printf("!> \n");
@@ -178,18 +178,18 @@ public:
 			fflush(stdout);
 			fflush(stderr);
 			_exit(1);
-			
+
 		} else if (pid == -1) {
 			int e = errno;
 			throw SystemException("Cannot fork a new process", e);
-			
+
 		} else {
 			UPDATE_TRACE_POINT();
 			ScopeGuard guard(boost::bind(nonInterruptableKillAndWaitpid, pid));
 			P_DEBUG("Process forked for appRoot=" << options.appRoot << ": PID " << pid);
 			adminSocket.first.close();
 			errorPipe.second.close();
-			
+
 			NegotiationDetails details;
 			details.preparation = &preparation;
 			details.stderrCapturer =
@@ -205,7 +205,7 @@ public:
 			details.errorPipe = errorPipe.first;
 			details.options = &options;
 			details.debugDir = debugDir;
-			
+
 			ProcessPtr process;
 			{
 				this_thread::restore_interruption ri(di);

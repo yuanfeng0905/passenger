@@ -26,7 +26,7 @@ private:
 	void *data;
 	unsigned int size;
 	string *str;
-	
+
 	static void securelyZeroMemory(volatile void *data, unsigned int size) {
 		/* We do not use memset() here because the compiler may
 		 * optimize out memset() calls. Instead, the following
@@ -38,7 +38,7 @@ private:
 			*p++ = 0;
 		}
 	}
-	
+
 public:
 	/**
 	 * Creates a new MemZeroGuard object with a memory region to zero.
@@ -52,7 +52,7 @@ public:
 		this->size = size;
 		this->str  = NULL;
 	}
-	
+
 	/**
 	 * Creates a new MemoryZeroGuard object with a string to zero.
 	 *
@@ -63,7 +63,7 @@ public:
 		this->size = 0;
 		this->str  = &str;
 	}
-	
+
 	/**
 	 * Zero the data immediately. The data will still be zeroed after
 	 * destruction of this object.
@@ -75,7 +75,7 @@ public:
 			securelyZeroMemory((volatile void *) str->c_str(), str->size());
 		}
 	}
-	
+
 	~MemZeroGuard() {
 		zeroNow();
 	}

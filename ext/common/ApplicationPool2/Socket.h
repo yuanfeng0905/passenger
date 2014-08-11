@@ -33,13 +33,13 @@ struct Connection {
 	int fd;
 	bool persistent: 1;
 	bool fail: 1;
-	
+
 	Connection() {
 		fd = -1;
 		persistent = false;
 		fail = false;
 	}
-	
+
 	void close() {
 		if (fd != -1) {
 			int fd2 = fd;
@@ -59,37 +59,37 @@ private:
 	boost::mutex connectionPoolLock;
 	int totalConnections;
 	vector<Connection> idleConnections;
-	
+
 	int connectionPoolLimit() const {
 		return concurrency;
 	}
-	
+
 	Connection connect() const {
 		Connection connection;
 		P_TRACE(3, "Connecting to " << address);
 		connection.fd = connectToServer(address);
 		return connection;
 	}
-	
+
 public:
 	// Read-only.
 	string name;
 	string address;
 	string protocol;
 	int concurrency;
-	
+
 	/** The handle inside the associated Process's 'sessionSockets' priority queue.
 	 * Guaranteed to be valid as long as the Process is alive.
 	 */
 	PriorityQueue<Socket>::Handle pqHandle;
-	
+
 	/** Invariant: sessions >= 0 */
 	int sessions;
-	
+
 	Socket()
 		: concurrency(0)
 		{ }
-	
+
 	Socket(const string &_name, const string &_address, const string &_protocol, int _concurrency)
 		: totalConnections(0),
 		  name(_name),
@@ -98,7 +98,7 @@ public:
 		  concurrency(_concurrency),
 		  sessions(0)
 		{ }
-	
+
 	Socket(const Socket &other)
 		: totalConnections(other.totalConnections),
 		  idleConnections(other.idleConnections),
@@ -109,7 +109,7 @@ public:
 		  pqHandle(other.pqHandle),
 		  sessions(other.sessions)
 		{ }
-	
+
 	Socket &operator=(const Socket &other) {
 		totalConnections = other.totalConnections;
 		idleConnections = other.idleConnections;
@@ -121,7 +121,7 @@ public:
 		sessions = other.sessions;
 		return *this;
 	}
-	
+
 	/**
 	 * Connect to this socket or reuse an existing connection.
 	 *
@@ -130,7 +130,7 @@ public:
 	 */
 	Connection checkoutConnection() {
 		boost::lock_guard<boost::mutex> l(connectionPoolLock);
-		
+
 		if (!idleConnections.empty()) {
 			Connection connection = idleConnections.back();
 			idleConnections.pop_back();
@@ -144,10 +144,10 @@ public:
 			return connect();
 		}
 	}
-	
+
 	void checkinConnection(Connection connection) {
 		boost::unique_lock<boost::mutex> l(connectionPoolLock);
-		
+
 		if (connection.persistent) {
 			if (connection.fail) {
 				totalConnections--;
@@ -161,12 +161,12 @@ public:
 			connection.close();
 		}
 	}
-	
-	
+
+
 	bool isIdle() const {
 		return sessions == 0;
 	}
-	
+
 	int busyness() const {
 		/* Different sockets within a Process may have different
 		 * 'concurrency' values. We want:
@@ -188,7 +188,7 @@ public:
 			return (int) (((long long) sessions * INT_MAX) / (double) concurrency);
 		}
 	}
-	
+
 	bool isTotallyBusy() const {
 		return concurrency != 0 && sessions >= concurrency;
 	}

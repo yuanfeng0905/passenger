@@ -56,14 +56,14 @@ class LoggingServer: public EventedMessageServer {
 private:
 	static const int MAX_LOG_SINK_CACHE_SIZE = 512;
 	static const int GARBAGE_COLLECTION_TIMEOUT = 4500;  // 1 hour 15 minutes
-	
+
 	struct LogSink;
 	typedef boost::shared_ptr<LogSink> LogSinkPtr;
 	typedef map<string, LogSinkPtr> LogSinkCache;
-	
+
 	struct LogSink {
 		LoggingServer *server;
-		
+
 		/**
 		 * Marks how many times this LogSink is currently opened, i.e. the
 		 * number of Transaction objects currently referencing this LogSink.
@@ -71,27 +71,27 @@ private:
 		 *    (opened == 0) == (this LogSink is in LoggingServer.inactiveLogSinks)
 		 */
 		int opened;
-		
+
 		/** Last time this LogSink hit an open count of 0. */
 		ev_tstamp lastUsed;
-		
+
 		/** Last time data was actually written to the underlying storage device. */
 		ev_tstamp lastFlushed;
 
 		/** The amount of data that has been written to this sink so far. */
 		unsigned int writtenTo;
-		
+
 		/**
 		 * This LogSink's iterator inside LoggingServer.logSinkCache.
 		 */
 		LogSinkCache::iterator cacheIterator;
-		
+
 		/**
 		 * This LogSink's iterator inside LoggingServer.inactiveLogSinks.
 		 * Only valid when opened == 0.
 		 */
 		list<LogSinkPtr>::iterator inactiveLogSinksIterator;
-		
+
 		LogSink(LoggingServer *_server) {
 			server = _server;
 			opened = 0;
@@ -99,12 +99,12 @@ private:
 			lastFlushed = lastUsed;
 			writtenTo = 0;
 		}
-		
+
 		virtual ~LogSink() {
 			// We really want to flush() here but can't call virtual
 			// functions in destructor. :(
 		}
-		
+
 		virtual bool isRemote() const {
 			return false;
 		}
@@ -113,25 +113,25 @@ private:
 		virtual unsigned int defaultFlushInterval() const {
 			return 5;
 		}
-		
+
 		virtual void append(const DataStoreId &dataStoreId,
 			const StaticString &data)
 		{
 			writtenTo += data.size();
 		}
-		
+
 		virtual bool flush() {
 			lastFlushed = ev_now(server->getLoop());
 			return true;
 		}
-		
+
 		virtual void dump(ostream &stream) const { }
 	};
-	
+
 	struct LogFileSink: public LogSink {
 		string filename;
 		FileDescriptor fd;
-		
+
 		LogFileSink(LoggingServer *server, const string &filename)
 			: LogSink(server)
 		{
@@ -148,11 +148,11 @@ private:
 				throw FileSystemException("Cannnot open file", e, filename);
 			}
 		}
-		
+
 		virtual ~LogFileSink() {
 			flush();
 		}
-		
+
 		virtual void append(const DataStoreId &dataStoreId, const StaticString &data) {
 			LogSink::append(dataStoreId, data);
 			syscalls::write(fd, data.data(), data.size());
@@ -166,9 +166,9 @@ private:
 			stream << "     WrittenTo  : " << writtenTo << "\n";
 		}
 	};
-	
+
 	typedef boost::shared_ptr<LogFileSink> LogFileSinkPtr;
-	
+
 	struct RemoteSink: public LogSink {
 		/* RemoteSender compresses the data with zlib before sending it
 		 * to the server. Even including Base64 and URL encoding overhead,
@@ -186,13 +186,13 @@ private:
 		static const unsigned int BUFFER_CAPACITY =
 			4 * 64 * 1024 -
 			16 * 1024;
-		
+
 		string unionStationKey;
 		string nodeName;
 		string category;
 		char buffer[BUFFER_CAPACITY];
 		unsigned int bufferSize;
-		
+
 		RemoteSink(LoggingServer *server, const string &unionStationKey,
 			const string &nodeName, const string &category)
 			: LogSink(server)
@@ -202,11 +202,11 @@ private:
 			this->category = category;
 			this->bufferSize = 0;
 		}
-		
+
 		virtual ~RemoteSink() {
 			flush();
 		}
-		
+
 		virtual bool isRemote() const {
 			return true;
 		}
@@ -214,14 +214,14 @@ private:
 		virtual unsigned int defaultFlushInterval() const {
 			return 5;
 		}
-		
+
 		virtual void append(const DataStoreId &dataStoreId, const StaticString &data) {
 			LogSink::append(dataStoreId, data);
 			if (bufferSize + data.size() > BUFFER_CAPACITY) {
 				StaticString data2[2];
 				data2[0] = StaticString(buffer, bufferSize);
 				data2[1] = data;
-				
+
 				server->remoteSender.schedule(unionStationKey, nodeName,
 					category, data2, 2);
 				lastFlushed = ev_now(server->getLoop());
@@ -231,7 +231,7 @@ private:
 				bufferSize += data.size();
 			}
 		}
-		
+
 		virtual bool flush() {
 			if (bufferSize > 0) {
 				lastFlushed = ev_now(server->getLoop());
@@ -250,7 +250,7 @@ private:
 		string inspect() const {
 			return "(key=" + unionStationKey + ", node=" + nodeName + ", category=" + category + ")";
 		}
-		
+
 		virtual void dump(ostream &stream) const {
 			stream << "   * Remote sink\n";
 			stream << "     Key        : " << unionStationKey << "\n";
@@ -263,7 +263,7 @@ private:
 			stream << "     BufferSize : " << bufferSize << "\n";
 		}
 	};
-	
+
 	struct Transaction {
 		LoggingServer *server;
 		LogSinkPtr logSink;
@@ -275,13 +275,13 @@ private:
 		bool crashProtect, discarded;
 		string data;
 		string filters;
-		
+
 		Transaction(LoggingServer *server, ev_tstamp createdAt) {
 			this->server = server;
 			this->createdAt = createdAt;
 			data.reserve(8 * 1024);
 		}
-		
+
 		~Transaction() {
 			if (logSink != NULL) {
 				if (!discarded && passesFilter()) {
@@ -290,24 +290,24 @@ private:
 				server->closeLogSink(logSink);
 			}
 		}
-		
+
 		StaticString getGroupName() const {
 			return dataStoreId.getGroupName();
 		}
-		
+
 		StaticString getNodeName() const {
 			return dataStoreId.getNodeName();
 		}
-		
+
 		StaticString getCategory() const {
 			return dataStoreId.getCategory();
 		}
-		
+
 		void discard() {
 			data.clear();
 			discarded = true;
 		}
-		
+
 		void dump(ostream &stream) const {
 			stream << "   * Transaction " << txnId << "\n";
 			stream << "     Created at: " << distanceOfTimeInWords((time_t) createdAt) << " ago\n";
@@ -316,18 +316,18 @@ private:
 			stream << "     Category  : " << getCategory() << "\n";
 			stream << "     Refcount  : " << refcount << "\n";
 		}
-	
+
 	private:
 		bool passesFilter() {
 			if (filters.empty()) {
 				return true;
 			}
-			
+
 			const char *current = filters.data();
 			const char *end     = filters.data() + filters.size();
 			bool result         = true;
 			FilterSupport::ContextFromLog ctx(data);
-			
+
 			// 'filters' may contain multiple filter sources, separated
 			// by '\1' characters. Process each.
 			while (current < end && result) {
@@ -336,24 +336,24 @@ private:
 				if (pos == string::npos) {
 					pos = tmp.size();
 				}
-				
+
 				StaticString source(current, pos);
 				FilterSupport::Filter &filter = server->compileFilter(source);
 				result = filter.run(ctx);
-				
+
 				current = tmp.data() + pos + 1;
 			}
 			return result;
 		}
 	};
-	
+
 	typedef boost::shared_ptr<Transaction> TransactionPtr;
-	
+
 	enum ClientType {
 		UNINITIALIZED,
 		LOGGER
 	};
-	
+
 	struct Client: public EventedMessageClient {
 		string nodeName;
 		ClientType type;
@@ -366,7 +366,7 @@ private:
 		ScalarMessage dataReader;
 		TransactionPtr currentTransaction;
 		string currentTimestamp;
-		
+
 		Client(struct ev_loop *loop, const FileDescriptor &fd)
 			: EventedMessageClient(loop, fd)
 		{
@@ -390,12 +390,12 @@ private:
 			stream << "     Outbox           : " << outbox.size() << " bytes\n";
 		}
 	};
-	
+
 	typedef boost::shared_ptr<Client> ClientPtr;
 	typedef map<string, TransactionPtr> TransactionMap;
-	
+
 	typedef boost::shared_ptr<FilterSupport::Filter> FilterPtr;
-	
+
 	RemoteSender remoteSender;
 	ev::timer garbageCollectionTimer;
 	ev::timer sinkFlushingTimer;
@@ -418,12 +418,12 @@ private:
 	unsigned long long exitBeginTime;
 	int sinkFlushInterval;
 	string dumpFile;
-	
+
 	void sendErrorToClient(Client *client, const string &message) {
 		client->writeArrayMessage("error", message.c_str(), NULL);
 		logError(client, message);
 	}
-	
+
 	bool expectingArgumentsCount(Client *client, const vector<StaticString> &args, unsigned int size) {
 		if (args.size() == size) {
 			return true;
@@ -433,7 +433,7 @@ private:
 			return false;
 		}
 	}
-	
+
 	bool expectingMinArgumentsCount(Client *client, const vector<StaticString> &args, unsigned int size) {
 		if (args.size() >= size) {
 			return true;
@@ -443,7 +443,7 @@ private:
 			return false;
 		}
 	}
-	
+
 	bool expectingLoggerType(Client *client) {
 		if (client->type == LOGGER) {
 			return true;
@@ -453,7 +453,7 @@ private:
 			return false;
 		}
 	}
-	
+
 	bool checkWhetherConnectionAreAcceptable(Client *client) {
 		if (refuseNewConnections) {
 			client->writeArrayMessage("server shutting down", NULL);
@@ -463,7 +463,7 @@ private:
 			return true;
 		}
 	}
-	
+
 	static bool getBool(const vector<StaticString> &args, unsigned int index,
 		bool defaultValue = false)
 	{
@@ -473,7 +473,7 @@ private:
 			return defaultValue;
 		}
 	}
-	
+
 	static StaticString getStaticString(const vector<StaticString> &args,
 		unsigned int index, const StaticString &defaultValue = "")
 	{
@@ -483,7 +483,7 @@ private:
 			return defaultValue;
 		}
 	}
-	
+
 	bool validTxnId(const StaticString &txnId) const {
 		// must contain timestamp
 		// must contain separator
@@ -491,13 +491,13 @@ private:
 		// must not be too large
 		return !txnId.empty();
 	}
-	
+
 	bool validUnionStationKey(const StaticString &key) const {
 		// TODO: must be hexadecimal
 		// TODO: must not be too large
 		return !key.empty();
 	}
-	
+
 	bool validLogContent(const StaticString &data) const {
 		const char *current = data.c_str();
 		const char *end = current + data.size();
@@ -510,18 +510,18 @@ private:
 		}
 		return true;
 	}
-	
+
 	bool validTimestamp(const StaticString &timestamp) const {
 		// TODO: must be hexadecimal
 		// TODO: must not be too large
 		return true;
 	}
-	
+
 	bool supportedCategory(const StaticString &category) const {
 		return category == "requests" || category == "processes"
 			|| category == "exceptions" || category == "system_metrics";
 	}
-	
+
 	LogSinkPtr openLogFile() {
 		string cacheKey = "file:" + dumpFile;
 		LogSinkPtr result;
@@ -543,7 +543,7 @@ private:
 		}
 		return result;
 	}
-	
+
 	LogSinkPtr openRemoteSink(const StaticString &unionStationKey, const string &nodeName,
 		const string &category)
 	{
@@ -553,7 +553,7 @@ private:
 		cacheKey.append(nodeName);
 		cacheKey.append(1, '\0');
 		cacheKey.append(category);
-		
+
 		LogSinkPtr result;
 		LogSinkCache::iterator it = logSinkCache.find(cacheKey);
 		if (it == logSinkCache.end()) {
@@ -574,7 +574,7 @@ private:
 		}
 		return result;
 	}
-	
+
 	/**
 	 * 'Closes' the given log sink. It's not actually deleted from memory;
 	 * instead it's marked as inactive and cached for later use. May be
@@ -595,7 +595,7 @@ private:
 			trimLogSinkCache(MAX_LOG_SINK_CACHE_SIZE);
 		}
 	}
-	
+
 	/** Try to reduce the log sink cache size to the given size. */
 	void trimLogSinkCache(unsigned int size) {
 		while (!inactiveLogSinks.empty() && logSinkCache.size() > size) {
@@ -605,7 +605,7 @@ private:
 			logSinkCache.erase(logSink->cacheIterator);
 		}
 	}
-	
+
 	FilterSupport::Filter &compileFilter(const StaticString &source) {
 		// TODO: garbage collect filters based on time
 		FilterPtr filter = filters.get(source);
@@ -615,7 +615,7 @@ private:
 		}
 		return *filter;
 	}
-	
+
 	bool writeLogEntry(Client *client, const TransactionPtr &transaction,
 		const StaticString &timestamp, const StaticString &data)
 	{
@@ -636,7 +636,7 @@ private:
 			}
 			return false;
 		}
-		
+
 		char writeCountStr[sizeof(unsigned int) * 2 + 1];
 		integerToHexatri(transaction->writeCount, writeCountStr);
 		transaction->writeCount++;
@@ -650,7 +650,7 @@ private:
 		transaction->data.append("\n");
 		return true;
 	}
-	
+
 	void writeDetachEntry(Client *client, const TransactionPtr &transaction) {
 		char timestamp[2 * sizeof(unsigned long long) + 1];
 		// Must use System::getUsec() here instead of ev_now() because the
@@ -658,13 +658,13 @@ private:
 		integerToHexatri<unsigned long long>(SystemTime::getUsec(), timestamp);
 		writeDetachEntry(client, transaction, timestamp);
 	}
-	
+
 	void writeDetachEntry(Client *client, const TransactionPtr &transaction,
 		const StaticString &timestamp)
 	{
 		writeLogEntry(client, transaction, timestamp, "DETACH");
 	}
-	
+
 	bool requireRights(Client *client, Account::Rights rights) {
 		if (client->messageServer.account->hasRights(rights)) {
 			return true;
@@ -677,7 +677,7 @@ private:
 			return false;
 		}
 	}
-	
+
 	bool isDirectory(const string &dir, struct dirent *entry) const {
 		#if defined(__sun__) || defined(sun) || defined(_AIX)
 			string path = dir;
@@ -688,7 +688,7 @@ private:
 			return entry->d_type == DT_DIR;
 		#endif
 	}
-	
+
 	bool looksLikeNumber(const char *str) const {
 		const char *current = str;
 		while (*current != '\0') {
@@ -700,13 +700,13 @@ private:
 		}
 		return true;
 	}
-	
+
 	/* Release all inactive log sinks that have been inactive for more than
 	 * GARBAGE_COLLECTION_TIMEOUT seconds.
 	 */
 	void releaseInactiveLogSinks(ev_tstamp now) {
 		bool done = false;
-		
+
 		while (!done && !inactiveLogSinks.empty()) {
 			const LogSinkPtr logSink = inactiveLogSinks.front();
 			if (now - logSink->lastUsed >= GARBAGE_COLLECTION_TIMEOUT) {
@@ -718,7 +718,7 @@ private:
 			}
 		}
 	}
-	
+
 	void garbageCollect(ev::timer &timer, int revents) {
 		P_DEBUG("Garbage collection time");
 		releaseInactiveLogSinks(ev_now(getLoop()));
@@ -731,13 +731,13 @@ private:
 			return sinkFlushInterval;
 		}
 	}
-	
+
 	void sinkFlushTimeout(ev::timer &timer, int revents) {
 		P_DEBUG("Flushing all sinks");
 		LogSinkCache::iterator it;
 		LogSinkCache::iterator end = logSinkCache.end();
 		ev_tstamp now = ev_now(getLoop());
-		
+
 		for (it = logSinkCache.begin(); it != end; it++) {
 			LogSink *sink = it->second.get();
 			if (now - sink->lastFlushed >= getFlushInterval(sink)) {
@@ -745,18 +745,18 @@ private:
 			}
 		}
 	}
-	
+
 	void flushAllSinks() {
 		P_TRACE(2, "Flushing all sinks");
 		LogSinkCache::iterator it;
 		LogSinkCache::iterator end = logSinkCache.end();
-		
+
 		for (it = logSinkCache.begin(); it != end; it++) {
 			LogSink *sink = it->second.get();
 			sink->flush();
 		}
 	}
-	
+
 	void exitTimerTimeout(ev::timer &timer, int revents) {
 		if (SystemTime::getMsec() >= exitBeginTime + 5000) {
 			exitTimer.stop();
@@ -765,24 +765,24 @@ private:
 			ev_break(getLoop(), EVBREAK_ONE);
 		}
 	}
-	
+
 protected:
 	virtual EventedClient *createClient(const FileDescriptor &fd) {
 		return new Client(getLoop(), fd);
 	}
-	
+
 	virtual bool onMessageReceived(EventedMessageClient *_client, const vector<StaticString> &args) {
 		Client *client = (Client *) _client;
-		
+
 		if (args[0] == "log") {
 			if (OXT_UNLIKELY( !expectingArgumentsCount(client, args, 3)
 			               || !expectingLoggerType(client) )) {
 				return true;
 			}
-			
+
 			string txnId     = args[1];
 			string timestamp = args[2];
-			
+
 			TransactionMap::iterator it = transactions.find(txnId);
 			if (OXT_UNLIKELY( it == transactions.end() )) {
 				sendErrorToClient(client, "Cannot log data: transaction does not exist");
@@ -800,13 +800,13 @@ protected:
 				client->currentTimestamp = timestamp;
 				return false;
 			}
-			
+
 		} else if (args[0] == "openTransaction") {
 			if (OXT_UNLIKELY( !expectingMinArgumentsCount(client, args, 7)
 			               || !expectingLoggerType(client) )) {
 				return true;
 			}
-			
+
 			string       txnId     = args[1];
 			StaticString groupName = args[2];
 			StaticString nodeName  = args[3];
@@ -816,7 +816,7 @@ protected:
 			bool         crashProtect    = getBool(args, 7, true);
 			bool         ack             = getBool(args, 8, false);
 			StaticString filters         = getStaticString(args, 9);
-			
+
 			if (OXT_UNLIKELY( !validTxnId(txnId) )) {
 				sendErrorToClient(client, "Invalid transaction ID format");
 				client->disconnect();
@@ -835,16 +835,16 @@ protected:
 				client->disconnect();
 				return true;
 			}
-			
+
 			const char *nodeId;
-			
+
 			if (nodeName.empty()) {
 				nodeName = client->nodeName;
 				nodeId = client->nodeId;
 			} else {
 				nodeId = NULL;
 			}
-			
+
 			TransactionMap::iterator it = transactions.find(txnId);
 			TransactionPtr transaction;
 			if (it == transactions.end()) {
@@ -853,11 +853,11 @@ protected:
 					client->disconnect();
 					return true;
 				}
-				
+
 				transaction = boost::make_shared<Transaction>(this, ev_now(getLoop()));
 				if (unionStationKey.empty() || unionStationKey == "-") {
 					char tempNodeId[MD5_HEX_SIZE];
-					
+
 					if (nodeId == NULL) {
 						md5_state_t state;
 						md5_byte_t  digest[MD5_SIZE];
@@ -871,7 +871,7 @@ protected:
 							tempNodeId);
 						nodeId = tempNodeId;
 					}
-					
+
 					transaction->logSink = openLogFile();
 				} else {
 					transaction->logSink = openRemoteSink(unionStationKey,
@@ -911,25 +911,25 @@ protected:
 					return true;
 				}
 			}
-			
+
 			client->openTransactions.insert(txnId);
 			transaction->refcount++;
 			writeLogEntry(client, transaction, timestamp, "ATTACH");
-			
+
 			if (ack) {
 				client->writeArrayMessage("ok", NULL);
 			}
-			
+
 		} else if (args[0] == "closeTransaction") {
 			if (OXT_UNLIKELY( !expectingMinArgumentsCount(client, args, 3)
 			               || !expectingLoggerType(client) )) {
 				return true;
 			}
-			
+
 			string txnId = args[1];
 			StaticString timestamp = args[2];
 			bool         ack       = getBool(args, 3, false);
-			
+
 			TransactionMap::iterator it = transactions.find(txnId);
 			if (OXT_UNLIKELY( it == transactions.end() )) {
 				sendErrorToClient(client,
@@ -938,7 +938,7 @@ protected:
 				client->disconnect();
 			} else {
 				TransactionPtr &transaction = it->second;
-				
+
 				set<string>::const_iterator sit = client->openTransactions.find(txnId);
 				if (OXT_UNLIKELY( sit == client->openTransactions.end() )) {
 					sendErrorToClient(client,
@@ -949,7 +949,7 @@ protected:
 				} else {
 					client->openTransactions.erase(sit);
 				}
-				
+
 				writeDetachEntry(client, transaction, timestamp);
 				transaction->refcount--;
 				assert(transaction->refcount >= 0);
@@ -957,11 +957,11 @@ protected:
 					transactions.erase(it);
 				}
 			}
-			
+
 			if (ack) {
 				client->writeArrayMessage("ok", NULL);
 			}
-		
+
 		} else if (args[0] == "init") {
 			if (OXT_UNLIKELY( client->type != UNINITIALIZED )) {
 				sendErrorToClient(client, "Already initialized");
@@ -974,32 +974,32 @@ protected:
 			if (OXT_UNLIKELY( !checkWhetherConnectionAreAcceptable(client) )) {
 				return true;
 			}
-			
+
 			StaticString nodeName = args[1];
 			client->nodeName = nodeName;
-			
+
 			md5_state_t state;
 			md5_byte_t  digest[MD5_SIZE];
 			md5_init(&state);
 			md5_append(&state, (const md5_byte_t *) nodeName.data(), nodeName.size());
 			md5_finish(&state, digest);
 			toHex(StaticString((const char *) digest, MD5_SIZE), client->nodeId);
-			
+
 			client->type = LOGGER;
 			client->writeArrayMessage("ok", NULL);
-			
+
 		} else if (args[0] == "flush") {
 			flushAllSinks();
 			client->writeArrayMessage("ok", NULL);
-			
+
 		} else if (args[0] == "info") {
 			stringstream stream;
 			dump(stream);
 			client->writeArrayMessage("info", stream.str().c_str(), NULL);
-		
+
 		} else if (args[0] == "ping") {
 			client->writeArrayMessage("pong", NULL);
-		
+
 		} else if (args[0] == "exit") {
 			if (!requireRights(client, Account::EXIT)) {
 				client->disconnect();
@@ -1021,15 +1021,15 @@ protected:
 				exitRequested = true;
 			}
 			client->disconnect();
-			
+
 		} else {
 			sendErrorToClient(client, "Unknown command '" + args[0] + "'");
 			client->disconnect();
 		}
-		
+
 		return true;
 	}
-	
+
 	virtual pair<size_t, bool> onOtherDataReceived(EventedMessageClient *_client,
 		const char *data, size_t size)
 	{
@@ -1049,20 +1049,20 @@ protected:
 			return make_pair(consumed, false);
 		}
 	}
-	
+
 	virtual void onNewClient(EventedClient *client) {
 		if (exitRequested && exitTimer.is_active()) {
 			exitTimer.stop();
 		}
 		EventedMessageServer::onNewClient(client);
 	}
-	
+
 	virtual void onClientDisconnected(EventedClient *_client) {
 		EventedMessageServer::onClientDisconnected(_client);
 		Client *client = (Client *) _client;
 		set<string>::const_iterator sit;
 		set<string>::const_iterator send = client->openTransactions.end();
-		
+
 		// Close any transactions that this client had opened.
 		for (sit = client->openTransactions.begin(); sit != send; sit++) {
 			const string &txnId = *sit;
@@ -1071,7 +1071,7 @@ protected:
 				P_ERROR("Bug: client->openTransactions is not a subset of this->transactions!");
 				abort();
 			}
-			
+
 			TransactionPtr &transaction = it->second;
 			if (transaction->crashProtect) {
 				writeDetachEntry(client, transaction);
@@ -1085,7 +1085,7 @@ protected:
 			}
 		}
 		client->openTransactions.clear();
-		
+
 		// Possibly start exit timer.
 		if (exitRequested && getClients().empty()) {
 			exitTimer.start();
@@ -1125,7 +1125,7 @@ public:
 		exitRequested = false;
 		inactiveLogSinksCount = 0;
 	}
-	
+
 	~LoggingServer() {
 		TransactionMap::iterator it, end = transactions.end();
 		for (it = transactions.begin(); it != end; it++) {
@@ -1136,18 +1136,18 @@ public:
 				transaction->discard();
 			}
 		}
-		
+
 		// Invoke destructors, causing all transactions and log sinks to
 		// be flushed before RemoteSender is being destroyed.
 		transactions.clear();
 		logSinkCache.clear();
 		inactiveLogSinks.clear();
 	}
-	
+
 	void dump(ostream &stream) const {
 		TransactionMap::const_iterator it;
 		TransactionMap::const_iterator end = transactions.end();
-		
+
 		ClientSet::const_iterator cit, cend = getClients().end();
 		stream << "Clients:\n";
 		stream << "  Count: " << getClients().size() << "\n";

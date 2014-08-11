@@ -29,17 +29,17 @@ class MessageClient {
 protected:
 	FileDescriptor fd;
 	bool shouldAutoDisconnect;
-	
+
 	/* sendUsername() and sendPassword() exist and are virtual in order to facilitate unit testing. */
-	
+
 	virtual void sendUsername(int fd, const StaticString &username, unsigned long long *timeout) {
 		writeScalarMessage(fd, username);
 	}
-	
+
 	virtual void sendPassword(int fd, const StaticString &userSuppliedPassword, unsigned long long *timeout) {
 		writeScalarMessage(fd, userSuppliedPassword);
 	}
-	
+
 	/**
 	 * Authenticate to the server with the given username and password.
 	 *
@@ -53,10 +53,10 @@ protected:
 		unsigned long long *timeout)
 	{
 		vector<string> args;
-		
+
 		sendUsername(fd, username, timeout);
 		sendPassword(fd, userSuppliedPassword, timeout);
-		
+
 		if (!readArrayMessage(fd, args, timeout)) {
 			throw IOException("The message server did not send an authentication response.");
 		} else if (args.size() != 1) {
@@ -65,19 +65,19 @@ protected:
 			throw SecurityException("The message server denied authentication: " + args[0]);
 		}
 	}
-	
+
 	void checkConnection() {
 		if (!connected()) {
 			throw IOException("Not connected");
 		}
 	}
-	
+
 	void autoDisconnect() {
 		if (shouldAutoDisconnect) {
 			fd.close(false);
 		}
 	}
-	
+
 public:
 	/**
 	 * Create a new MessageClient object. It doesn't actually connect to the server until
@@ -90,9 +90,9 @@ public:
 		 */
 		shouldAutoDisconnect = true;
 	}
-	
+
 	virtual ~MessageClient() { }
-	
+
 	/**
 	 * Connect to the given MessageServer. If a connection was already established,
 	 * then the old connection will be closed and a new connection will be established.
@@ -118,9 +118,9 @@ public:
 	{
 		TRACE_POINT();
 		ScopeGuard g(boost::bind(&MessageClient::autoDisconnect, this));
-		
+
 		fd = connectToServer(serverAddress.c_str());
-		
+
 		vector<string> args;
 		if (!readArrayMessage(fd, args)) {
 			throw IOException("The message server closed the connection before sending a version identifier.");
@@ -133,29 +133,29 @@ public:
 				args[1] + ".";
 			throw IOException(message);
 		}
-		
+
 		authenticate(username, userSuppliedPassword, NULL);
-		
+
 		g.clear();
 		return this;
 	}
-	
+
 	void disconnect() {
 		fd.close();
 	}
-	
+
 	bool connected() const {
 		return fd != -1;
 	}
-	
+
 	void setAutoDisconnect(bool value) {
 		shouldAutoDisconnect = value;
 	}
-	
+
 	FileDescriptor getConnection() const {
 		return fd;
 	}
-	
+
 	/**
 	 * @throws SystemException
 	 * @throws TimeoutException
@@ -164,7 +164,7 @@ public:
 	bool read(vector<string> &args, unsigned long long *timeout = NULL) {
 		return readArray(args);
 	}
-	
+
 	/**
 	 * @throws SystemException
 	 * @throws TimeoutException
@@ -177,7 +177,7 @@ public:
 		g.clear();
 		return result;
 	}
-	
+
 	/**
 	 * @throws SystemException
 	 * @throws SecurityException
@@ -196,7 +196,7 @@ public:
 			return false;
 		}
 	}
-	
+
 	/**
 	 * @throws SystemExeption
 	 * @throws IOException
@@ -214,7 +214,7 @@ public:
 		g.clear();
 		return result;
 	}
-	
+
 	/**
 	 * @throws SystemException
 	 * @throws boost::thread_interrupted
@@ -236,7 +236,7 @@ public:
 			throw;
 		}
 	}
-	
+
 	/**
 	 * @throws SystemException
 	 * @throws TimeoutException
@@ -248,7 +248,7 @@ public:
 		writeScalarMessage(fd, data, size, timeout);
 		g.clear();
 	}
-	
+
 	/**
 	 * @throws SystemException
 	 * @throws TimeoutException
@@ -260,7 +260,7 @@ public:
 		writeScalarMessage(fd, data, timeout);
 		g.clear();
 	}
-	
+
 	/**
 	 * @throws SystemException
 	 * @throws boost::thread_interrupted

@@ -112,15 +112,15 @@ private:
 	pid_t pid;
 
 	/******* Information about the started services. Only valid when pid != 0. *******/
-	
+
 	 /** The watchdog's feedback file descriptor. */
 	FileDescriptor feedbackFd;
-	
+
 	/** The helper agent's request socket filename and its password. This socket
 	 * is for serving SCGI requests. */
 	string requestSocketFilename;
 	string requestSocketPassword;
-	
+
 	/** The socket on which the helper agent listens for administration commands,
 	 * and the corresponding password for the "web_server" account, which has the
 	 * authorization to shutdown the helper agent.
@@ -131,12 +131,12 @@ private:
 	/** The logging agent's socket address and its password. */
 	string loggingSocketAddress;
 	string loggingSocketPassword;
-	
+
 	/** The server instance dir and generation dir of the agents. */
 	ServerInstanceDirPtr serverInstanceDir;
 	/** The generation dir of the agents. */
 	ServerInstanceDir::GenerationPtr generation;
-	
+
 	/**
 	 * Safely dup2() the given file descriptor to 3 (FEEDBACK_FD).
 	 */
@@ -158,7 +158,7 @@ private:
 			}
 		}
 	}
-	
+
 	/**
 	 * Call this if the watchdog seems to have crashed. This function will try
 	 * to determine whether the watchdog is still running, whether it crashed
@@ -169,7 +169,7 @@ private:
 		this_thread::disable_interruption di;
 		this_thread::disable_syscall_interruption dsi;
 		int ret, status;
-		
+
 		/* Upon noticing that something went wrong, the watchdog
 		 * or its subprocesses might still be writing out an error
 		 * report, so we wait a while before killing the watchdog.
@@ -202,7 +202,7 @@ private:
 				"with exit code " + toString(WEXITSTATUS(status)));
 		}
 	}
-	
+
 	static void killProcessGroupAndWait(pid_t *pid, unsigned long long timeout = 0) {
 		if (*pid != -1 && (timeout == 0 || timedWaitPid(*pid, NULL, timeout) <= 0)) {
 			this_thread::disable_syscall_interruption dsi;
@@ -211,7 +211,7 @@ private:
 			*pid = -1;
 		}
 	}
-	
+
 	/**
 	 * Behaves like `waitpid(pid, status, WNOHANG)`, but waits at most
 	 * `timeout` miliseconds for the process to exit.
@@ -219,7 +219,7 @@ private:
 	static int timedWaitPid(pid_t pid, int *status, unsigned long long timeout) {
 		Timer timer;
 		int ret;
-		
+
 		do {
 			ret = syscalls::waitpid(pid, status, WNOHANG);
 			if (ret > 0 || ret == -1) {
@@ -230,7 +230,7 @@ private:
 		} while (timer.elapsed() < timeout);
 		return 0; // timed out
 	}
-	
+
 	/**
 	 * Gracefully shutdown an agent process by sending an exit command to its socket.
 	 * Returns whether the agent has successfully processed the exit command.
@@ -242,7 +242,7 @@ private:
 		try {
 			MessageClient client;
 			vector<string> args;
-			
+
 			client.connect(address, username, password);
 			client.write("exit", NULL);
 			return client.read(args) && args[0] == "Passed security" &&
@@ -253,7 +253,7 @@ private:
 		}
 		return false;
 	}
-	
+
 public:
 	/**
 	 * Construct a AgentsStarter object. The watchdog and the agents
@@ -265,7 +265,7 @@ public:
 		this->type = type;
 		pid = 0;
 	}
-	
+
 	~AgentsStarter() {
 		if (pid != 0) {
 			this_thread::disable_syscall_interruption dsi;
@@ -274,7 +274,7 @@ public:
 			cleanShutdown = cleanShutdown &&
 				gracefullyShutdownAgent(loggingSocketAddress,
 					"logging", loggingSocketPassword);
-			
+
 			/* Send a message down the feedback fd to tell the watchdog
 			 * Whether this is a clean shutdown. Closing the fd without
 			 * sending anything also indicates an unclean shutdown,
@@ -286,26 +286,26 @@ public:
 			} else {
 				syscalls::write(feedbackFd, "u", 1);
 			}
-			
+
 			/* If we failed to send an exit command to one of the agents then we have
 			 * to forcefully kill all agents now because otherwise one of them might
 			 * never exit. We do this by closing the feedback fd without sending a
 			 * random byte, to indicate that this is an abnormal shutdown. The watchdog
 			 * will then kill all agents.
 			 */
-			
+
 			feedbackFd.close();
 			syscalls::waitpid(pid, NULL, 0);
 		}
 	}
-	
+
 	/**
 	 * Returns the type as was passed to the constructor.
 	 */
 	PP_AgentsStarterType getType() const {
 		return type;
 	}
-	
+
 	/**
 	 * Returns the watchdog's PID. Equals 0 if the watchdog hasn't been started yet
 	 * or if detach() is called.
@@ -313,41 +313,41 @@ public:
 	pid_t getPid() const {
 		return pid;
 	}
-	
+
 	// The 'const string &' here is on purpose. The C getter functions
 	// return the string pointer directly.
 	const string &getRequestSocketFilename() const {
 		return requestSocketFilename;
 	}
-	
+
 	const string &getRequestSocketPassword() const {
 		return requestSocketPassword;
 	}
-	
+
 	string getHelperAgentAdminSocketFilename() const {
 		return parseUnixSocketAddress(helperAgentAdminSocketAddress);
 	}
-	
+
 	string getHelperAgentExitPassword() const {
 		return helperAgentExitPassword;
 	}
-	
+
 	string getLoggingSocketAddress() const {
 		return loggingSocketAddress;
 	}
-	
+
 	string getLoggingSocketPassword() const {
 		return loggingSocketPassword;
 	}
-	
+
 	ServerInstanceDirPtr getServerInstanceDir() const {
 		return serverInstanceDir;
 	}
-	
+
 	ServerInstanceDir::GenerationPtr getGeneration() const {
 		return generation;
 	}
-	
+
 	/**
 	 * Start the agents through the watchdog.
 	 *
@@ -383,7 +383,7 @@ public:
 		pid = syscalls::fork();
 		if (pid == 0) {
 			// Child
-			
+
 			/* Become the session leader so that Apache can't kill the
 			 * watchdog with killpg() during shutdown, so that a
 			 * Ctrl-C only affects the web server, and so that
@@ -408,7 +408,7 @@ public:
 			if (afterFork) {
 				afterFork();
 			}
-			
+
 			execl(watchdogFilename.c_str(), "PassengerWatchdog", (char *) 0);
 			e = errno;
 			try {
@@ -433,13 +433,13 @@ public:
 			FileDescriptor feedbackFd = fds[0];
 			vector<string> args;
 			bool result = false;
-			
+
 			ScopeGuard guard(boost::bind(&AgentsStarter::killProcessGroupAndWait, &pid, 0));
 			fds[1].close();
-			
-			
+
+
 			/****** Send arguments to watchdog through the feedback channel ******/
-			
+
 			UPDATE_TRACE_POINT();
 			/* Here we don't care about EPIPE and ECONNRESET errors. The watchdog
 			 * could have sent an error message over the feedback fd without
@@ -452,14 +452,14 @@ public:
 					inspectWatchdogCrashReason(pid);
 				}
 			}
-			
-			
+
+
 			/****** Read agents information report ******/
-			
+
 			this_thread::restore_interruption ri(di);
 			this_thread::restore_syscall_interruption rsi(dsi);
 			UPDATE_TRACE_POINT();
-			
+
 			try {
 				result = readArrayMessage(feedbackFd, args);
 			} catch (const SystemException &ex) {
@@ -477,7 +477,7 @@ public:
 				UPDATE_TRACE_POINT();
 				inspectWatchdogCrashReason(pid);
 			}
-			
+
 			if (args[0] == "Agents information") {
 				if ((args.size() - 1) % 2 != 0) {
 					throw RuntimeException("Unable to start the Phusion Passenger watchdog "
@@ -548,7 +548,7 @@ public:
 			}
 		}
 	}
-	
+
 	/**
 	 * Close any file descriptors that this object has, and make it so that the destructor
 	 * doesn't try to shut down the agents.

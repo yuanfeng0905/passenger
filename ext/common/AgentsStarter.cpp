@@ -71,7 +71,7 @@ pp_variant_map_set_strset(PP_VariantMap *m,
 {
 	Passenger::VariantMap *vm = (Passenger::VariantMap *) m;
 	std::set<string> the_set;
-	
+
 	for (unsigned int i = 0; i < count; i++) {
 		the_set.insert(strs[i]);
 	}
@@ -101,7 +101,7 @@ pp_agents_starter_start(PP_AgentsStarter *as,
 	this_thread::disable_syscall_interruption dsi;
 	try {
 		boost::function<void ()> afterForkFunctionObject;
-		
+
 		if (afterFork != NULL) {
 			afterForkFunctionObject = boost::bind(afterFork, callbackArgument);
 		}

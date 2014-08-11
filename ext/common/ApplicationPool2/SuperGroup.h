@@ -106,12 +106,12 @@ public:
 		 * failed it will transition to `DESTROYED`.
 		 */
 		INITIALIZING,
-		
+
 		/** This SuperGroup is loaded and is ready for action. From
 		 * here the state can transition to `RESTARTING` or `DESTROYING`.
 		 */
 		READY,
-		
+
 		/** This SuperGroup is being restarted. The SuperGroup
 		 * information is being reloaded from the data source
 		 * and processes are being restarted. In this state
@@ -127,7 +127,7 @@ public:
 		 * cause a transition to `DESTROYING`.
 		 */
 		RESTARTING,
-		
+
 		/** This SuperGroup is being destroyed. Processes are being shut
 		 * down and other resources are being cleaned up. In this state,
 		 * `groups` is empty.
@@ -135,7 +135,7 @@ public:
 		 * transition to `INITIALIZING`.
 		 */
 		DESTROYING,
-		
+
 		/** This SuperGroup has been destroyed and all resources have been
 		 * freed. Restarting won't have any effect but calling `get()` will
 		 * make it transition to `INITIALIZING`.
@@ -153,11 +153,11 @@ public:
 	};
 
 	typedef boost::function<void (ShutdownResult result)> ShutdownCallback;
-	
+
 private:
 	friend class Pool;
 	friend class Group;
-	
+
 	Options options;
 	/** A number for concurrency control, incremented every time the state changes.
 	 * Every background thread that SuperGroup spawns knows the generation number
@@ -170,8 +170,8 @@ private:
 	 * problems.
 	 */
 	unsigned int generation;
-	
-	
+
+
 	// Thread-safe.
 	static boost::mutex &getPoolSyncher(const PoolPtr &pool);
 	static void runAllActions(const vector<Callback> &actions);
@@ -179,13 +179,13 @@ private:
 	void runInitializationHooks() const;
 	void runDestructionHooks() const;
 	void setupInitializationOrDestructionHook(HookScriptOptions &options) const;
-	
+
 	void createInterruptableThread(const boost::function<void ()> &func, const string &name,
 		unsigned int stackSize);
-	
+
 	void verifyInvariants() const {
 		// !a || b: logical equivalent of a IMPLIES b.
-		
+
 		assert(groups.empty() ==
 			(state == INITIALIZING || state == DESTROYING || state == DESTROYED));
 		assert((defaultGroup == NULL) ==
@@ -194,7 +194,7 @@ private:
 			( getWaitlist.empty() ));
 		assert(!( state == DESTROYED ) || ( detachedGroups.empty() ));
 	}
-	
+
 	void setState(State newState) {
 		state = newState;
 		generation++;
@@ -208,10 +208,10 @@ private:
 		infos.push_back(info);
 		return infos;
 	}
-	
+
 	Group *findDefaultGroup(const vector<GroupPtr> &groups) const {
 		vector<GroupPtr>::const_iterator it;
-		
+
 		for (it = groups.begin(); it != groups.end(); it++) {
 			const GroupPtr &group = *it;
 			if (group->componentInfo.isDefault) {
@@ -220,7 +220,7 @@ private:
 		}
 		return NULL;
 	}
-	
+
 	pair<GroupPtr, unsigned int> findGroupCorrespondingToComponent(
 		const vector<GroupPtr> &groups, const ComponentInfo &info) const
 	{
@@ -233,7 +233,7 @@ private:
 		}
 		return make_pair(GroupPtr(), 0);
 	}
-	
+
 	static void oneGroupHasBeenShutDown(SuperGroupPtr self, GroupPtr group) {
 		// This function is either called from the pool event loop or directly from
 		// the detachAllGroups post lock actions. In both cases getPool() is never NULL.
@@ -248,7 +248,7 @@ private:
 			}
 		}
 	}
-	
+
 	/** One of the post lock actions can potentially perform a long-running
 	 * operation, so running them in a thread is advised.
 	 */
@@ -258,7 +258,7 @@ private:
 			if (group == NULL) {
 				continue;
 			}
-			
+
 			while (!group->getWaitlist.empty()) {
 				getWaitlist.push_back(group->getWaitlist.front());
 				group->getWaitlist.pop_front();
@@ -274,7 +274,7 @@ private:
 
 		groups.clear();
 	}
-	
+
 	void assignGetWaitlistToGroups(vector<Callback> &postLockActions) {
 		while (!getWaitlist.empty()) {
 			GetWaiter &waiter = getWaitlist.front();
@@ -290,7 +290,7 @@ private:
 			getWaitlist.pop_front();
 		}
 	}
-	
+
 	void adjustOptions(Options &options, const Group *group) const {
 		// No-op.
 	}
@@ -305,12 +305,12 @@ private:
 
 	void realDoInitialize(const Options &options, unsigned int generation);
 	void realDoRestart(const Options &options, unsigned int generation);
-	
+
 	void doDestroy(SuperGroupPtr self, unsigned int generation, ShutdownCallback callback) {
 		TRACE_POINT();
-		
+
 		runDestructionHooks();
-		
+
 		// Wait until 'detachedGroups' is empty.
 		UPDATE_TRACE_POINT();
 		PoolPtr pool = getPool();
@@ -334,7 +334,7 @@ private:
 				verifyInvariants();
 			}
 		}
-		
+
 		UPDATE_TRACE_POINT();
 		assert(state == DESTROYING);
 		state = DESTROYED;
@@ -345,29 +345,29 @@ private:
 			callback(SUCCESS);
 		}
 	}
-	
+
 	/*********************/
-	
+
 	/*********************/
-	
+
 public:
 	mutable boost::mutex backrefSyncher;
 	const boost::weak_ptr<Pool> pool;
-	
+
 	State state;
 	string name;
 	string secret;
-	
+
 	/** Invariant:
 	 * groups.empty() == (state == INITIALIZING || state == DESTROYING || state == DESTROYED)
 	 */
 	vector<GroupPtr> groups;
-	
+
 	/** Invariant:
 	 * (defaultGroup == NULL) == (state == INITIALIZING || state == DESTROYING || state == DESTROYED)
 	 */
 	Group *defaultGroup;
-	
+
 	/**
 	 * get() requests for this super group that cannot be immediately satisfied
 	 * are put on this wait list, which must be processed as soon as the
@@ -397,7 +397,7 @@ public:
 	 *       detachedGroups.empty()
 	 */
 	vector<GroupPtr> detachedGroups;
-	
+
 	/** One MUST call initialize() after construction because shared_from_this()
 	 * is not available in the constructor.
 	 */
@@ -430,7 +430,7 @@ public:
 			"SuperGroup initializer: " + name,
 			POOL_HELPER_THREAD_STACK_SIZE);
 	}
-	
+
 	/**
 	 * Thread-safe.
 	 *
@@ -446,7 +446,7 @@ public:
 	bool isAlive() const {
 		return state != DESTROYING && state != DESTROYED;
 	}
-	
+
 	const char *getStateName() const {
 		switch (state) {
 		case INITIALIZING:
@@ -535,7 +535,7 @@ public:
 			verifyInvariants();
 		}
 	}
-	
+
 	/**
 	 * @post
 	 *    if result:
@@ -545,7 +545,7 @@ public:
 		/* if (state == READY) {
 			vector<GroupPtr>::const_iterator it, end = groups.end();
 			bool result = true;
-			
+
 			for (it = groups.begin(); result && it != end; it++) {
 				result = result && (*it)->garbageCollectable(now);
 			}
@@ -557,7 +557,7 @@ public:
 		} */
 		return false;
 	}
-	
+
 	SessionPtr get(const Options &newOptions, const GetCallback &callback,
 		vector<Callback> &postLockActions)
 	{
@@ -600,15 +600,15 @@ public:
 			return SessionPtr(); // Shut up compiler warning.
 		};
 	}
-	
+
 	Group *route(const Options &options) const {
 		return defaultGroup;
 	}
-	
+
 	unsigned int capacityUsed() const {
 		vector<GroupPtr>::const_iterator it, end = groups.end();
 		unsigned int result = 0;
-		
+
 		for (it = groups.begin(); it != end; it++) {
 			result += (*it)->capacityUsed();
 		}
@@ -631,7 +631,7 @@ public:
 	bool needsRestart() const {
 		return false;
 	}
-	
+
 	void restart(const Options &options) {
 		verifyInvariants();
 		if (state == READY) {

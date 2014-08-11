@@ -49,13 +49,13 @@ public:
 	private:
 		/** The last return value of stat(). */
 		int last_result;
-		
+
 		/** The errno set by the last stat() call. */
 		int last_errno;
-		
+
 		/** The last time a stat() was performed. */
 		time_t last_time;
-		
+
 		/**
 		 * Checks whether `interval` seconds have elapsed since `begin`.
 		 * The current time is returned via the `currentTime` argument,
@@ -71,14 +71,14 @@ public:
 			currentTime = SystemTime::get();
 			return (unsigned int) (currentTime - begin) >= interval;
 		}
-		
+
 	public:
 		/** The cached stat info. */
 		struct stat info;
-		
+
 		/** This entry's filename. */
 		string filename;
-		
+
 		/**
 		 * Creates a new Entry object. The file will not be
 		 * stat()ted until you call refresh().
@@ -93,7 +93,7 @@ public:
 			last_errno = 0;
 			last_time = 0;
 		}
-		
+
 		/**
 		 * Re-stat() the file, if necessary. If <tt>throttleRate</tt> seconds have
 		 * passed since the last time stat() was called, then the file will be
@@ -124,16 +124,16 @@ public:
 			}
 		}
 	};
-	
+
 	typedef boost::shared_ptr<Entry> EntryPtr;
 	typedef list<EntryPtr> EntryList;
 	typedef StringMap<EntryList::iterator> EntryMap;
-	
+
 	unsigned int maxSize;
 	EntryList entries;
 	EntryMap cache;
 	mutable boost::mutex lock;
-	
+
 	/**
 	 * Creates a new CachedFileStat object.
 	 *
@@ -142,7 +142,7 @@ public:
 	CachedFileStat(unsigned int maxSize = 0) {
 		this->maxSize = maxSize;
 	}
-	
+
 	/**
 	 * Stats the given file. If `throttleRate` seconds have passed since
 	 * the last time stat() was called on this file, then the file will be
@@ -166,7 +166,7 @@ public:
 		EntryList::iterator it(cache.get(filename, entries.end()));
 		EntryPtr entry;
 		int ret;
-		
+
 		if (it == entries.end()) {
 			// Filename not in cache.
 			// If cache is full, remove the least recently used
@@ -178,7 +178,7 @@ public:
 				entries.pop_back();
 				cache.remove(filename2);
 			}
-			
+
 			// Add to cache as most recently used.
 			entry = boost::make_shared<Entry>(filename);
 			entries.push_front(entry);
@@ -186,7 +186,7 @@ public:
 		} else {
 			// Cache hit.
 			entry = *it;
-			
+
 			// Mark this cache item as most recently used.
 			entries.splice(entries.begin(), entries, it);
 			cache.set(filename, entries.begin());
@@ -195,7 +195,7 @@ public:
 		*buf = entry->info;
 		return ret;
 	}
-	
+
 	/**
 	 * Change the maximum size of the cache. If the new size is larger
 	 * than the old size, then the oldest entries in the cache are
@@ -215,7 +215,7 @@ public:
 		}
 		this->maxSize = maxSize;
 	}
-	
+
 	/**
 	 * Returns whether `filename` is in the cache.
 	 */

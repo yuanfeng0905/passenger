@@ -36,15 +36,15 @@ class ScopeGuard: public noncopyable {
 private:
 	boost::function<void ()> func;
 	bool interruptable;
-	
+
 public:
 	ScopeGuard() { }
-	
+
 	ScopeGuard(const boost::function<void ()> &func, bool interruptable = false) {
 		this->func = func;
 		this->interruptable = interruptable;
 	}
-	
+
 	~ScopeGuard() {
 		if (func) {
 			if (interruptable) {
@@ -56,11 +56,11 @@ public:
 			}
 		}
 	}
-	
+
 	void clear() {
 		func = boost::function<void()>();
 	}
-	
+
 	void runNow() {
 		boost::function<void ()> oldFunc = func;
 		func = boost::function<void()>();
@@ -86,7 +86,7 @@ public:
 	StdioGuard(FILE *_f)
 		: f(_f)
 		{ }
-	
+
 	~StdioGuard() {
 		if (f != NULL) {
 			fclose(f);
@@ -104,7 +104,7 @@ public:
 		: fd(_fd),
 		  ignoreErrors(_ignoreErrors)
 		{ }
-	
+
 	~FdGuard() {
 		if (fd != -1) {
 			safelyClose(fd, ignoreErrors);

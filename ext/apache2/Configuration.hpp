@@ -39,7 +39,7 @@ using namespace std;
 
 #define UNSET_INT_VALUE INT_MIN
 
-	
+
 /**
  * Per-directory configuration information.
  *
@@ -49,23 +49,23 @@ using namespace std;
 struct DirConfig {
 	enum Threeway { ENABLED, DISABLED, UNSET };
 	enum SpawnMethod { SM_UNSET, SM_SMART, SM_DIRECT };
-	
+
 	#include "ConfigurationFields.hpp"
 
 	std::set<std::string> baseURIs;
-	
+
 	/** The path to the application's root (for example: RAILS_ROOT
 	 * for Rails applications, directory containing 'config.ru'
 	 * for Rack applications). If this value is NULL, the default
 	 * autodetected path will be used.
 	 */
 	const char *appRoot;
-	
+
 	string appGroupName;
-	
+
 	/** The spawn method to use. */
 	SpawnMethod spawnMethod;
-	
+
 	/**
 	 * The idle timeout, in seconds, of preloader processes.
 	 * May also be 0 (which indicates that the application spawner should
@@ -79,91 +79,91 @@ struct DirConfig {
 	 * "How Phusion Passenger detects whether a virtual host is a web application".
 	 */
 	Threeway resolveSymlinksInDocRoot;
-	
+
 	/**
 	 * Whether encoded slashes in URLs should be supported. This however conflicts
 	 * with mod_rewrite support because of a bug/limitation in Apache, so it's one
 	 * or the other.
 	 */
 	Threeway allowEncodedSlashes;
-	
+
 	/**
 	 * Throttle the number of stat() calls on files like
 	 * restart.txt to the once per given number of seconds.
 	 */
 	unsigned long statThrottleRate;
-	
+
 	/** Indicates whether the statThrottleRate option was
 	 * explicitly specified in the directory configuration. */
 	bool statThrottleRateSpecified;
-	
+
 	/** The directory in which Passenger should look for
 	 * restart.txt. NULL means that the default directory
 	 * should be used.
 	 */
 	const char *restartDir;
-	
+
 	/**
 	 * The directory in which Passenger should place upload buffer
 	 * files. NULL means that the default directory should be used.
 	 */
 	const char *uploadBufferDir;
-	
+
 	string unionStationKey;
-	
+
 	vector<string> unionStationFilters;
-	
+
 	/**
 	 * Whether Phusion Passenger should show friendly error pages.
 	 */
 	Threeway friendlyErrorPages;
-	
+
 	/**
 	 * Whether analytics logging should be enabled.
 	 */
 	Threeway unionStationSupport;
-	
+
 	/**
 	 * Whether response buffering support is enabled.
 	 */
 	Threeway bufferResponse;
 
+	/*************************************/
+
 	const char *concurrencyModel;
 	unsigned int threadCount;
 	bool threadCountSpecified;
-	
-	/*************************************/
-	
+
 	/*
 	 * The maximum number of instances that may be spawned
 	 * for the corresponding application.
 	 */
 	unsigned long maxInstances;
-	
+
 	/** Indicates whether the maxInstances option was explicitly specified
 	 * in the directory configuration. */
 	bool maxInstancesSpecified;
-	
+
 	/**
 	 * The maximum amount of time (in seconds) that the current application
 	 * may spend on a request.
 	 */
 	unsigned long maxRequestTime;
-	
+
 	/** Indicates whether the maxRequestTime option was explicitly.
 	 * specified in the directory configuration. */
 	bool maxRequestTimeSpecified;
-	
+
 	/**
 	 * The maximum amount of memory (in MB) the spawned application may use.
 	 * A value of 0 means unlimited.
 	 */
 	unsigned long memoryLimit;
-	
+
 	/** Indicates whether the memoryLimit option was explicitly specified
 	 * in the directory configuration. */
 	bool memoryLimitSpecified;
-	
+
 	/** Whether rolling restarts should be used. */
 	Threeway rollingRestarts;
 
@@ -172,13 +172,13 @@ struct DirConfig {
 
 	/** Whether debugger support should be enabled. */
 	Threeway debugger;
-	
+
 	/*************************************/
-	
+
 	bool isEnabled() const {
 		return enabled != DISABLED;
 	}
-	
+
 	StaticString getAppGroupName(const StaticString &appRoot) const {
 		if (appGroupName.empty()) {
 			return appRoot;
@@ -186,7 +186,7 @@ struct DirConfig {
 			return appGroupName;
 		}
 	}
-	
+
 	StaticString getSpawnMethodString() const {
 		switch (spawnMethod) {
 		case SM_SMART:
@@ -201,11 +201,11 @@ struct DirConfig {
 	bool highPerformanceMode() const {
 		return highPerformance == ENABLED;
 	}
-	
+
 	bool allowsEncodedSlashes() const {
 		return allowEncodedSlashes == ENABLED;
 	}
-	
+
 	unsigned long getStatThrottleRate() const {
 		if (statThrottleRateSpecified) {
 			return statThrottleRate;
@@ -213,7 +213,7 @@ struct DirConfig {
 			return 0;
 		}
 	}
-	
+
 	StaticString getRestartDir() const {
 		if (restartDir != NULL) {
 			return restartDir;
@@ -221,7 +221,7 @@ struct DirConfig {
 			return "";
 		}
 	}
-	
+
 	string getUploadBufferDir(const ServerInstanceDir::Generation *generation) const {
 		if (uploadBufferDir != NULL) {
 			return uploadBufferDir;
@@ -231,17 +231,60 @@ struct DirConfig {
 			return getSystemTempDir();
 		}
 	}
-	
+
 	bool showFriendlyErrorPages() const {
 		return friendlyErrorPages != DISABLED;
 	}
-	
+
 	bool useUnionStation() const {
 		return unionStationSupport == ENABLED;
 	}
 
 	bool getBufferResponse() const {
 		return bufferResponse == ENABLED;
+	}
+
+	string getUnionStationFilterString() const {
+		if (unionStationFilters.empty()) {
+			return string();
+		} else {
+			string result;
+			vector<string>::const_iterator it;
+
+			for (it = unionStationFilters.begin(); it != unionStationFilters.end(); it++) {
+				if (it != unionStationFilters.begin()) {
+					result.append(1, '\1');
+				}
+				result.append(*it);
+			}
+			return result;
+		}
+	}
+
+	/*************************************/
+
+	unsigned long getMaxInstances() const {
+		if (maxInstancesSpecified) {
+			return maxInstances;
+		} else {
+			return 0;
+		}
+	}
+
+	unsigned long getMaxRequestTime() const {
+		if (maxRequestTimeSpecified) {
+			return maxRequestTime;
+		} else {
+			return 0;
+		}
+	}
+
+	unsigned long getMemoryLimit() const {
+		if (memoryLimitSpecified) {
+			return memoryLimit;
+		} else {
+			return 0;
+		}
 	}
 
 	const char *getConcurrencyModel() const {
@@ -259,50 +302,7 @@ struct DirConfig {
 			return 1;
 		}
 	}
-	
-	string getUnionStationFilterString() const {
-		if (unionStationFilters.empty()) {
-			return string();
-		} else {
-			string result;
-			vector<string>::const_iterator it;
-			
-			for (it = unionStationFilters.begin(); it != unionStationFilters.end(); it++) {
-				if (it != unionStationFilters.begin()) {
-					result.append(1, '\1');
-				}
-				result.append(*it);
-			}
-			return result;
-		}
-	}
-	
-	/*************************************/
-	
-	unsigned long getMaxInstances() const {
-		if (maxInstancesSpecified) {
-			return maxInstances;
-		} else {
-			return 0;
-		}
-	}
-	
-	unsigned long getMaxRequestTime() const {
-		if (maxRequestTimeSpecified) {
-			return maxRequestTime;
-		} else {
-			return 0;
-		}
-	}
-	
-	unsigned long getMemoryLimit() const {
-		if (memoryLimitSpecified) {
-			return memoryLimit;
-		} else {
-			return 0;
-		}
-	}
-	
+
 	bool useRollingRestarts() const {
 		return rollingRestarts == ENABLED;
 	}
@@ -331,45 +331,45 @@ struct ServerConfig {
 
 	/** The default Ruby interpreter to use. */
 	const char *defaultRuby;
-	
+
 	const char *flyWith;
 
 	/** The log verbosity. */
 	int logLevel;
-	
+
 	/** A file to print debug messages to, or NULL to just use STDERR. */
 	const char *debugLogFile;
-	
+
 	/** The maximum number of simultaneously alive application
 	 * instances. */
 	unsigned int maxPoolSize;
-	
+
 	/** The maximum number of seconds that an application may be
 	 * idle before it gets terminated. */
 	unsigned int poolIdleTime;
-	
+
 	/** Whether user switching support is enabled. */
 	bool userSwitching;
-	
+
 	/** See PoolOptions for more info. */
 	string defaultUser;
 	/** See PoolOptions for more info. */
 	string defaultGroup;
-	
+
 	/** The temp directory that Passenger should use. */
 	string tempDir;
-	
+
 	string unionStationGatewayAddress;
 	int unionStationGatewayPort;
 	string unionStationGatewayCert;
 	string unionStationProxyAddress;
-	
+
 	/** Directory in which analytics logs should be saved. */
 	string analyticsLogUser;
 	string analyticsLogGroup;
-	
+
 	set<string> prestartURLs;
-	
+
 	ServerConfig() {
 		root               = NULL;
 		defaultRuby        = DEFAULT_RUBY;
@@ -388,7 +388,7 @@ struct ServerConfig {
 		analyticsLogUser   = DEFAULT_ANALYTICS_LOG_USER;
 		analyticsLogGroup  = DEFAULT_ANALYTICS_LOG_GROUP;
 	}
-	
+
 	/** Called after the configuration files have been loaded, inside
 	 * the control process.
 	 */
@@ -400,7 +400,7 @@ struct ServerConfig {
 					string("The user that PassengerDefaultUser refers to, '") +
 					defaultUser + "', does not exist.");
 			}
-			
+
 			struct group *groupEntry = getgrgid(userEntry->pw_gid);
 			if (groupEntry == NULL) {
 				throw ConfigurationException(
@@ -409,7 +409,7 @@ struct ServerConfig {
 					"In other words, your system's user account database "
 					"is broken. Please fix it."));
 			}
-			
+
 			defaultGroup = groupEntry->gr_name;
 		}
 	}

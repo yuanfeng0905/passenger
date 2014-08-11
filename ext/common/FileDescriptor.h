@@ -52,19 +52,19 @@ private:
 	struct SharedData {
 		int fd;
 		bool autoClose;
-		
+
 		SharedData(int fd, bool autoClose) {
 			this->fd = fd;
 			this->autoClose = autoClose;
 		}
-		
+
 		~SharedData() {
 			if (fd >= 0 && autoClose) {
 				this_thread::disable_syscall_interruption dsi;
 				syscalls::close(fd);
 			}
 		}
-		
+
 		void close(bool checkErrors = true) {
 			if (fd >= 0) {
 				this_thread::disable_syscall_interruption dsi;
@@ -73,7 +73,7 @@ private:
 				safelyClose(theFd, !checkErrors);
 			}
 		}
-		
+
 		void detach() {
 			fd = -1;
 		}
@@ -83,14 +83,14 @@ private:
 	boost::shared_ptr<SharedData> data;
 
 public:
-	/** 
+	/**
 	 * Creates a new empty FileDescriptor instance that has no underlying
 	 * file descriptor.
 	 *
 	 * @post *this == -1
 	 */
 	FileDescriptor() { }
-	
+
 	/**
 	 * Creates a new FileDescriptor instance with the given fd as a handle.
 	 *
@@ -111,7 +111,7 @@ public:
 			errno = e;
 		}
 	}
-	
+
 	/**
 	 * Close the underlying file descriptor. If it was already closed, then
 	 * nothing will happen. If there are multiple copies of this FileDescriptor
@@ -131,7 +131,7 @@ public:
 			data.reset();
 		}
 	}
-	
+
 	/**
 	 * Detach from the underlying file descriptor without closing it.
 	 * This FileDescriptor and all copies will no longer affect the
@@ -150,7 +150,7 @@ public:
 			return -1;
 		}
 	}
-	
+
 	/**
 	 * Overloads the integer cast operator so that it will return the underlying
 	 * file descriptor handle as an integer.
@@ -164,7 +164,7 @@ public:
 			return data->fd;
 		}
 	}
-	
+
 	FileDescriptor &operator=(int fd) {
 		/* Make sure that the 'new' and 'delete' operators don't
 		 * overwrite errno so that we can write code like this:
@@ -184,7 +184,7 @@ public:
 		errno = e;
 		return *this;
 	}
-	
+
 	FileDescriptor &operator=(const FileDescriptor &other) {
 		/* Make sure that the 'delete' operator implicitly invoked by
 		 * boost::shared_ptr doesn't overwrite errno so that we can write code
@@ -210,11 +210,11 @@ public:
 class FileDescriptorPair: public pair<FileDescriptor, FileDescriptor> {
 public:
 	FileDescriptorPair() { }
-	
+
 	FileDescriptorPair(const FileDescriptor &a, const FileDescriptor &b)
 		: pair<FileDescriptor, FileDescriptor>(a, b)
 		{ }
-	
+
 	FileDescriptor &operator[](int index) {
 		if (index == 0) {
 			return first;
@@ -241,11 +241,11 @@ class EventFd {
 private:
 	int reader;
 	int writer;
-	
+
 public:
 	EventFd() {
 		int fds[2];
-		
+
 		if (syscalls::pipe(fds) == -1) {
 			int e = errno;
 			throw SystemException("Cannot create a pipe", e);
@@ -253,13 +253,13 @@ public:
 		reader = fds[0];
 		writer = fds[1];
 	}
-	
+
 	~EventFd() {
 		this_thread::disable_syscall_interruption dsi;
 		syscalls::close(reader);
 		syscalls::close(writer);
 	}
-	
+
 	void notify() {
 		ssize_t ret = syscalls::write(writer, "x", 1);
 		if (ret == -1 && errno != EAGAIN) {
@@ -267,7 +267,7 @@ public:
 			throw SystemException("Cannot write notification data", e);
 		}
 	}
-	
+
 	int fd() const {
 		return reader;
 	}

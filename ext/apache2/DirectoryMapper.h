@@ -62,7 +62,7 @@ private:
 	unsigned int throttleRate;
 	PassengerAppType appType: 7;
 	bool autoDetectionDone: 1;
-	
+
 	const char *findBaseURI() const {
 		set<string>::const_iterator it, end = config->baseURIs.end();
 		const char *uri = r->uri;
@@ -172,7 +172,7 @@ public:
 		baseURI = NULL;
 		autoDetectionDone = false;
 	}
-	
+
 	/**
 	 * Determines whether the given HTTP request falls under one of the specified
 	 * PassengerBaseURIs. If yes, then the first matching base URI will be returned.
@@ -190,7 +190,7 @@ public:
 		autoDetect();
 		return baseURI;
 	}
-	
+
 	/**
 	 * Returns the filename of the 'public' directory of the application
 	 * that's associated with the HTTP request.
@@ -218,7 +218,7 @@ public:
 		autoDetect();
 		return appRoot;
 	}
-	
+
 	/**
 	 * Returns the application type that's associated with the HTTP request.
 	 *
@@ -231,7 +231,7 @@ public:
 		autoDetect();
 		return appType;
 	}
-	
+
 	/**
 	 * Returns the application type (as a string) that's associated
 	 * with the HTTP request.

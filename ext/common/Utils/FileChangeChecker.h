@@ -43,24 +43,24 @@ private:
 		string filename;
 		time_t lastMtime;
 		time_t lastCtime;
-		
+
 		Entry(const string &filename) {
 			this->filename  = filename;
 			this->lastMtime = 0;
 			this->lastCtime = 0;
 		}
 	};
-	
+
 	typedef boost::shared_ptr<Entry> EntryPtr;
 	typedef list<EntryPtr> EntryList;
 	typedef map<string, EntryList::iterator> EntryMap;
-	
+
 	CachedFileStat cstat;
 	mutable boost::mutex lock;
 	unsigned int maxSize;
 	EntryList entries;
 	EntryMap fileToEntry;
-	
+
 public:
 	/**
 	 * Create a FileChangeChecker object.
@@ -72,7 +72,7 @@ public:
 	{
 		this->maxSize = maxSize;
 	}
-	
+
 	/**
 	 * Checks whether, since the last call to changed() with this filename,
 	 * the file's timestamp has changed or whether the file has been created
@@ -103,7 +103,7 @@ public:
 		struct stat buf;
 		bool result, newEntry = false;
 		int ret;
-		
+
 		if (it == fileToEntry.end()) {
 			// Filename not in file list.
 			// If file list is full, remove the least recently used
@@ -115,7 +115,7 @@ public:
 				entries.pop_back();
 				fileToEntry.erase(filename);
 			}
-			
+
 			// Add to file list as most recently used.
 			entry = EntryPtr(new Entry(filename));
 			entries.push_front(entry);
@@ -124,13 +124,13 @@ public:
 		} else {
 			// Filename is in file list.
 			entry = *it->second;
-			
+
 			// Mark this entry as most recently used.
 			entries.erase(it->second);
 			entries.push_front(entry);
 			fileToEntry[filename] = entries.begin();
 		}
-		
+
 		ret = cstat.stat(filename, &buf, throttleRate);
 		if (newEntry) {
 			// The file's information isn't in the file list.
@@ -178,7 +178,7 @@ public:
 		this->maxSize = maxSize;
 		cstat.setMaxSize(maxSize);
 	}
-	
+
 	/**
 	 * Returns whether <tt>filename</tt> is in the internal file list.
 	 */

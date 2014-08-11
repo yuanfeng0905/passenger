@@ -49,7 +49,7 @@ public:
 			stop();
 		}
 	}
-	
+
 	/**
 	 * Start the timer. If the timer was already started, then this will
 	 * restart the timer.
@@ -64,7 +64,7 @@ public:
 			ret = gettimeofday(&startTime, NULL);
 		} while (ret == -1 && errno == EINTR);
 	}
-	
+
 	/**
 	 * Stop the timer. If there's currently another thread waiting on the wait()
 	 * call, then that wait() call will block indefinitely until you call start()
@@ -102,7 +102,7 @@ public:
 			struct timeval t;
 			unsigned long long now, beginning;
 			int ret;
-			
+
 			do {
 				ret = gettimeofday(&t, NULL);
 			} while (ret == -1 && errno == EINTR);
@@ -111,7 +111,7 @@ public:
 			return now - beginning;
 		}
 	}
-	
+
 	/**
 	 * Returns the amount of time that has elapsed since the timer was last started,
 	 * in microseconds. If the timer is currently stopped, then 0 is returned.
@@ -124,7 +124,7 @@ public:
 			struct timeval t;
 			unsigned long long now, beginning;
 			int ret;
-			
+
 			do {
 				ret = gettimeofday(&t, NULL);
 			} while (ret == -1 && errno == EINTR);
@@ -133,7 +133,7 @@ public:
 			return now - beginning;
 		}
 	}
-	
+
 	/**
 	 * Wait until <em>time</em> miliseconds have elapsed since the timer
 	 * was last started.

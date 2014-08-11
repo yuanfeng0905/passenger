@@ -1,6 +1,6 @@
 /*
  *  Phusion Passenger - https://www.phusionpassenger.com/
- *  Copyright (c) 2010, 2011, 2012 Phusion
+ *  Copyright (c) 2010-2014 Phusion
  *
  *  "Phusion Passenger" is a trademark of Hongli Lai & Ninh Bui.
  *
@@ -45,12 +45,12 @@ private:
 	struct ev_loop *loop;
 	pthread_t loopThread;
 	ev_async async;
-	
+
 	boost::mutex syncher;
 	boost::condition_variable cond;
 	vector<Command> commands;
 	unsigned int nextCommandId;
-	
+
 	static void asyncHandler(EV_P_ ev_async *w, int revents) {
 		SafeLibev *self = (SafeLibev *) w->data;
 		self->runCommands();
@@ -66,13 +66,13 @@ private:
 		vector<Command> commands = this->commands;
 		this->commands.clear();
 		l.unlock();
-		
+
 		vector<Command>::const_iterator it, end = commands.end();
 		for (it = commands.begin(); it != end; it++) {
 			it->callback();
 		}
 	}
-	
+
 	template<typename Watcher>
 	void startWatcherAndNotify(Watcher *watcher, bool *done) {
 		watcher->set(loop);
@@ -81,7 +81,7 @@ private:
 		*done = true;
 		cond.notify_all();
 	}
-	
+
 	template<typename Watcher>
 	void stopWatcherAndNotify(Watcher *watcher, bool *done) {
 		watcher->stop();
@@ -89,7 +89,7 @@ private:
 		*done = true;
 		cond.notify_all();
 	}
-	
+
 	void runAndNotify(const Callback *callback, bool *done) {
 		(*callback)();
 		boost::unique_lock<boost::mutex> l(syncher);
@@ -99,25 +99,25 @@ private:
 
 	void incNextCommandId() {
 		if (nextCommandId == INT_MAX) {
-			nextCommandId = 0;
+			nextCommandId = 1;
 		} else {
 			nextCommandId++;
 		}
 	}
-	
+
 public:
 	/** SafeLibev takes over ownership of the loop object. */
 	SafeLibev(struct ev_loop *loop) {
 		this->loop = loop;
 		loopThread = pthread_self();
-		nextCommandId = 0;
-		
+		nextCommandId = 1;
+
 		ev_async_init(&async, asyncHandler);
 		ev_set_priority(&async, EV_MAXPRI);
 		async.data = this;
 		ev_async_start(loop, &async);
 	}
-	
+
 	~SafeLibev() {
 		destroy();
 		ev_loop_destroy(loop);
@@ -126,11 +126,11 @@ public:
 	void destroy() {
 		ev_async_stop(loop, &async);
 	}
-	
+
 	struct ev_loop *getLoop() const {
 		return loop;
 	}
-	
+
 	void setCurrentThread() {
 		loopThread = pthread_self();
 	}
@@ -138,7 +138,7 @@ public:
 	pthread_t getCurrentThread() const {
 		return loopThread;
 	}
-	
+
 	template<typename Watcher>
 	void start(Watcher &watcher) {
 		if (pthread_equal(pthread_self(), loopThread)) {
@@ -157,7 +157,7 @@ public:
 			}
 		}
 	}
-	
+
 	template<typename Watcher>
 	void stop(Watcher &watcher) {
 		if (pthread_equal(pthread_self(), loopThread)) {
@@ -175,7 +175,7 @@ public:
 			}
 		}
 	}
-	
+
 	void run(const Callback &callback) {
 		assert(callback != NULL);
 		if (pthread_equal(pthread_self(), loopThread)) {
@@ -236,6 +236,10 @@ public:
 	 * been called or is currently being called.
 	 */
 	bool cancelCommand(int id) {
+		if (id == 0) {
+			return false;
+		}
+
 		boost::unique_lock<boost::mutex> l(syncher);
 		// TODO: we can do a binary search because the command ID
 		// is monotically increasing except on overflow.

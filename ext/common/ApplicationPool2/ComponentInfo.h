@@ -20,10 +20,10 @@ using namespace std;
 struct ComponentInfo {
 	string name;
 	bool   isDefault;
-	
+
 	/****************/
 	/****************/
-	
+
 	ComponentInfo() {
 		isDefault = false;
 		/******************/

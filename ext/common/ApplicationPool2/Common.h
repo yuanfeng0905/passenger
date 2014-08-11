@@ -19,6 +19,7 @@
 #include <UnionStation/Transaction.h>
 #include <ApplicationPool2/Options.h>
 #include <Utils/StringMap.h>
+#include <Utils/VariantMap.h>
 
 namespace tut {
 	struct ApplicationPool2_PoolTest;
@@ -103,17 +104,17 @@ enum DisableResult {
 	// The process has been successfully disabled.
 	// Returned by functions and passed to the callback.
 	DR_SUCCESS,
-	
+
 	// The disabling of the process was canceled before completion.
 	// The process still exists.
 	// Only passed to the callback.
 	DR_CANCELED,
-	
+
 	// Nothing happened: the requested process does not exist (anymore)
 	// or was already disabled.
 	// Returned by functions and passed to the callback.
 	DR_NOOP,
-	
+
 	// The disabling of the process failed: an error occurred.
 	// Returned by functions and passed to the callback.
 	DR_ERROR,
@@ -153,7 +154,7 @@ typedef boost::function<void ()> Callback;
 struct GetWaiter {
 	Options options;
 	GetCallback callback;
-	
+
 	GetWaiter(const Options &o, const GetCallback &cb)
 		: options(o),
 		  callback(cb)
@@ -170,8 +171,9 @@ struct Ticket {
 };
 
 struct SpawnerConfig {
-	// Used by error pages.
+	// Used by error pages and hooks.
 	ResourceLocator resourceLocator;
+	const VariantMap *agentsOptions;
 
 	// Used for Union Station logging.
 	UnionStation::CorePtr unionStationCore;
@@ -187,8 +189,10 @@ struct SpawnerConfig {
 
 	SpawnerConfig(const ResourceLocator &_resourceLocator,
 		const UnionStation::CorePtr &_unionStationCore = UnionStation::CorePtr(),
-		const RandomGeneratorPtr &randomGenerator = RandomGeneratorPtr())
+		const RandomGeneratorPtr &randomGenerator = RandomGeneratorPtr(),
+		const VariantMap *_agentsOptions = NULL)
 		: resourceLocator(_resourceLocator),
+		  agentsOptions(_agentsOptions),
 		  unionStationCore(_unionStationCore),
 		  concurrency(1),
 		  spawnerCreationSleepTime(0),

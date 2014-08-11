@@ -16,14 +16,14 @@ class ServerInstanceDirToucher {
 private:
 	WorkingObjectsPtr wo;
 	oxt::thread *thr;
-	
+
 	void
 	threadMain() {
 		while (!this_thread::interruption_requested()) {
 			syscalls::sleep(60 * 60 * 6);
-			
+
 			begin_touch:
-			
+
 			this_thread::disable_interruption di;
 			this_thread::disable_syscall_interruption dsi;
 			// Fork a process which touches everything in the server instance dir.
@@ -31,9 +31,9 @@ private:
 			if (pid == 0) {
 				// Child
 				int prio, ret, e;
-				
+
 				closeAllFileDescriptors(2);
-				
+
 				// Make process nicer.
 				do {
 					prio = getpriority(PRIO_PROCESS, getpid());
@@ -49,7 +49,7 @@ private:
 				} else {
 					perror("getpriority");
 				}
-				
+
 				do {
 					ret = chdir(wo->serverInstanceDir->getPath().c_str());
 				} while (ret == -1 && errno == EINTR);
@@ -61,9 +61,9 @@ private:
 					fflush(stderr);
 					_exit(1);
 				}
-				
+
 				setOomScore(oldOomScore);
-				
+
 				execlp("/bin/sh", "/bin/sh", "-c", "find . | xargs touch", (char *) 0);
 				e = errno;
 				fprintf(stderr, "Cannot execute 'find . | xargs touch': %s (%d)\n",
@@ -90,7 +90,7 @@ public:
 		thr = new oxt::thread(boost::bind(&ServerInstanceDirToucher::threadMain, this),
 			"Server instance dir toucher", 256 * 1024);
 	}
-	
+
 	~ServerInstanceDirToucher() {
 		thr->interrupt_and_join();
 		delete thr;

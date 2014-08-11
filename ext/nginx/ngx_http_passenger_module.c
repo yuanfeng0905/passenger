@@ -61,57 +61,57 @@ ngx_cycle_t              *pp_current_cycle;
 
 
 /*
-    HISTORIC NOTE:
-    We used to register passenger_content_handler as a default content handler,
-    instead of setting ngx_http_core_loc_conf_t->handler. However, if
-    ngx_http_read_client_request_body (and thus passenger_content_handler)
-    returns NGX_AGAIN, then Nginx will pass the not-fully-receive file upload
-    data to the upstream handler even though it shouldn't. Is this an Nginx
-    bug? In any case, setting ngx_http_core_loc_conf_t->handler fixed the
-    problem.
-    
+	HISTORIC NOTE:
+	We used to register passenger_content_handler as a default content handler,
+	instead of setting ngx_http_core_loc_conf_t->handler. However, if
+	ngx_http_read_client_request_body (and thus passenger_content_handler)
+	returns NGX_AGAIN, then Nginx will pass the not-fully-receive file upload
+	data to the upstream handler even though it shouldn't. Is this an Nginx
+	bug? In any case, setting ngx_http_core_loc_conf_t->handler fixed the
+	problem.
+
 static ngx_int_t
 register_content_handler(ngx_conf_t *cf)
 {
-    ngx_http_handler_pt        *h;
-    ngx_http_core_main_conf_t  *cmcf;
+	ngx_http_handler_pt        *h;
+	ngx_http_core_main_conf_t  *cmcf;
 
-    cmcf = ngx_http_conf_get_module_main_conf(cf, ngx_http_core_module);
+	cmcf = ngx_http_conf_get_module_main_conf(cf, ngx_http_core_module);
 
-    h = ngx_array_push(&cmcf->phases[NGX_HTTP_CONTENT_PHASE].handlers);
-    if (h == NULL) {
-        return NGX_ERROR;
-    }
-    *h = passenger_content_handler;
-    
-    return NGX_OK;
+	h = ngx_array_push(&cmcf->phases[NGX_HTTP_CONTENT_PHASE].handlers);
+	if (h == NULL) {
+		return NGX_ERROR;
+	}
+	*h = passenger_content_handler;
+
+	return NGX_OK;
 }
 */
 
 static void
 ignore_sigpipe() {
-    struct sigaction action;
-    
-    action.sa_handler = SIG_IGN;
-    action.sa_flags   = 0;
-    sigemptyset(&action.sa_mask);
-    sigaction(SIGPIPE, &action, NULL);
+	struct sigaction action;
+
+	action.sa_handler = SIG_IGN;
+	action.sa_flags   = 0;
+	sigemptyset(&action.sa_mask);
+	sigaction(SIGPIPE, &action, NULL);
 }
 
 static char *
 ngx_str_null_terminate(ngx_str_t *str) {
-    char *result = malloc(str->len + 1);
-    memcpy(result, str->data, str->len);
-    result[str->len] = '\0';
-    return result;
+	char *result = malloc(str->len + 1);
+	memcpy(result, str->data, str->len);
+	result[str->len] = '\0';
+	return result;
 }
 
 static void
 pp_variant_map_set_ngx_str(PP_VariantMap *m,
-    const char *name,
-    ngx_str_t *value)
+	const char *name,
+	ngx_str_t *value)
 {
-    pp_variant_map_set(m, name, (const char *) value->data, value->len);
+	pp_variant_map_set(m, name, (const char *) value->data, value->len);
 }
 
 /**
@@ -126,24 +126,24 @@ pp_variant_map_set_ngx_str(PP_VariantMap *m,
  */
 static ngx_int_t
 save_master_process_pid(ngx_cycle_t *cycle) {
-    u_char filename[NGX_MAX_PATH];
-    u_char *last;
-    FILE *f;
-    
-    last = ngx_snprintf(filename, sizeof(filename) - 1, "%s/control_process.pid",
-                        pp_agents_starter_get_server_instance_dir(pp_agents_starter));
-    *last = (u_char) '\0';
-    
-    f = fopen((const char *) filename, "w");
-    if (f != NULL) {
-        fprintf(f, "%ld", (long) getppid());
-        fclose(f);
-    } else {
-        ngx_log_error(NGX_LOG_ALERT, cycle->log, ngx_errno,
-                      "could not create %s", filename);
-    }
-    
-    return NGX_OK;
+	u_char filename[NGX_MAX_PATH];
+	u_char *last;
+	FILE *f;
+
+	last = ngx_snprintf(filename, sizeof(filename) - 1, "%s/control_process.pid",
+						pp_agents_starter_get_server_instance_dir(pp_agents_starter));
+	*last = (u_char) '\0';
+
+	f = fopen((const char *) filename, "w");
+	if (f != NULL) {
+		fprintf(f, "%ld", (long) getppid());
+		fclose(f);
+	} else {
+		ngx_log_error(NGX_LOG_ALERT, cycle->log, ngx_errno,
+					  "could not create %s", filename);
+	}
+
+	return NGX_OK;
 }
 
 /**
@@ -151,91 +151,91 @@ save_master_process_pid(ngx_cycle_t *cycle) {
  */
 static void
 starting_helper_server_after_fork(void *arg) {
-    ngx_cycle_t *cycle = (void *) arg;
-    char        *log_filename;
-    FILE        *log_file;
-    ngx_core_conf_t *ccf;
-    ngx_uint_t   i;
-    ngx_str_t   *envs;
-    const char  *env;
-    
-    /* At this point, stdout and stderr may still point to the console.
-     * Make sure that they're both redirected to the log file.
-     */
-    log_file = NULL;
-    if (cycle->new_log.file->name.len > 0) {
-        log_filename = ngx_str_null_terminate(&cycle->new_log.file->name);
-        log_file = fopen((const char *) log_filename, "a");
-        if (log_file == NULL) {
-            ngx_log_error(NGX_LOG_ALERT, cycle->log, ngx_errno,
-                          "could not open the error log file for writing");
-        }
-        free(log_filename);
-    } else if (cycle->log != NULL && cycle->log->file->name.len > 0) {
-        log_filename = ngx_str_null_terminate(&cycle->log->file->name);
-        log_file = fopen((const char *) log_filename, "a");
-        if (log_file == NULL) {
-            ngx_log_error(NGX_LOG_ALERT, cycle->log, ngx_errno,
-                          "could not open the error log file for writing");
-        }
-        free(log_filename);
-    }
-    if (log_file == NULL) {
-        /* If the log file cannot be opened then we redirect stdout
-         * and stderr to /dev/null, because if the user disconnects
-         * from the console on which Nginx is started, then on Linux
-         * any writes to stdout or stderr will result in an EIO error.
-         */
-        log_file = fopen("/dev/null", "w");
-    }
-    if (log_file != NULL) {
-        dup2(fileno(log_file), 1);
-        dup2(fileno(log_file), 2);
-        fclose(log_file);
-    }
+	ngx_cycle_t *cycle = (void *) arg;
+	char        *log_filename;
+	FILE        *log_file;
+	ngx_core_conf_t *ccf;
+	ngx_uint_t   i;
+	ngx_str_t   *envs;
+	const char  *env;
 
-    /* Set environment variables in Nginx config file. */
-    ccf = (ngx_core_conf_t *) ngx_get_conf(cycle->conf_ctx, ngx_core_module);
-    envs = ccf->env.elts;
-    for (i = 0; i < ccf->env.nelts; i++) {
-        env = (const char *) envs[i].data;
-        if (strchr(env, '=') != NULL) {
-            putenv(strdup(env));
-        }
-    }
-    
-    /* Set SERVER_SOFTWARE so that application processes know what web
-     * server they're running on during startup. */
-    setenv("SERVER_SOFTWARE", NGINX_VER, 1);
+	/* At this point, stdout and stderr may still point to the console.
+	 * Make sure that they're both redirected to the log file.
+	 */
+	log_file = NULL;
+	if (cycle->new_log.file->name.len > 0) {
+		log_filename = ngx_str_null_terminate(&cycle->new_log.file->name);
+		log_file = fopen((const char *) log_filename, "a");
+		if (log_file == NULL) {
+			ngx_log_error(NGX_LOG_ALERT, cycle->log, ngx_errno,
+						  "could not open the error log file for writing");
+		}
+		free(log_filename);
+	} else if (cycle->log != NULL && cycle->log->file->name.len > 0) {
+		log_filename = ngx_str_null_terminate(&cycle->log->file->name);
+		log_file = fopen((const char *) log_filename, "a");
+		if (log_file == NULL) {
+			ngx_log_error(NGX_LOG_ALERT, cycle->log, ngx_errno,
+						  "could not open the error log file for writing");
+		}
+		free(log_filename);
+	}
+	if (log_file == NULL) {
+		/* If the log file cannot be opened then we redirect stdout
+		 * and stderr to /dev/null, because if the user disconnects
+		 * from the console on which Nginx is started, then on Linux
+		 * any writes to stdout or stderr will result in an EIO error.
+		 */
+		log_file = fopen("/dev/null", "w");
+	}
+	if (log_file != NULL) {
+		dup2(fileno(log_file), 1);
+		dup2(fileno(log_file), 2);
+		fclose(log_file);
+	}
+
+	/* Set environment variables in Nginx config file. */
+	ccf = (ngx_core_conf_t *) ngx_get_conf(cycle->conf_ctx, ngx_core_module);
+	envs = ccf->env.elts;
+	for (i = 0; i < ccf->env.nelts; i++) {
+		env = (const char *) envs[i].data;
+		if (strchr(env, '=') != NULL) {
+			putenv(strdup(env));
+		}
+	}
+
+	/* Set SERVER_SOFTWARE so that application processes know what web
+	 * server they're running on during startup. */
+	setenv("SERVER_SOFTWARE", NGINX_VER, 1);
 }
 
 static ngx_int_t
 create_file(ngx_cycle_t *cycle, const u_char *filename, const u_char *contents, size_t len) {
-    FILE  *f;
-    int    ret;
-    size_t total_written = 0, written;
+	FILE  *f;
+	int    ret;
+	size_t total_written = 0, written;
 
-    f = fopen((const char *) filename, "w");
-    if (f != NULL) {
-        /* We must do something with these return values because
-         * otherwise on some platforms it will cause a compiler
-         * warning.
-         */
-        do {
-            ret = fchmod(fileno(f), S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
-        } while (ret == -1 && errno == EINTR);
-        do {
-            written = fwrite(contents + total_written, 1,
-                len - total_written, f);
-            total_written += written;
-        } while (total_written < len);
-        fclose(f);
-        return NGX_OK;
-    } else {
-        ngx_log_error(NGX_LOG_ALERT, cycle->log, ngx_errno,
-            "could not create %s", filename);
-            return NGX_ERROR;
-    }
+	f = fopen((const char *) filename, "w");
+	if (f != NULL) {
+		/* We must do something with these return values because
+		 * otherwise on some platforms it will cause a compiler
+		 * warning.
+		 */
+		do {
+			ret = fchmod(fileno(f), S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+		} while (ret == -1 && errno == EINTR);
+		do {
+			written = fwrite(contents + total_written, 1,
+				len - total_written, f);
+			total_written += written;
+		} while (total_written < len);
+		fclose(f);
+		return NGX_OK;
+	} else {
+		ngx_log_error(NGX_LOG_ALERT, cycle->log, ngx_errno,
+			"could not create %s", filename);
+			return NGX_ERROR;
+	}
 }
 
 /**
@@ -246,129 +246,129 @@ create_file(ngx_cycle_t *cycle, const u_char *filename, const u_char *contents, 
  */
 static ngx_int_t
 start_watchdog(ngx_cycle_t *cycle) {
-    ngx_core_conf_t *core_conf;
-    ngx_int_t        ret, result;
-    ngx_uint_t       i;
-    ngx_str_t       *prestart_uris;
-    char           **prestart_uris_ary = NULL;
-    ngx_keyval_t    *ctl = NULL;
-    PP_VariantMap  *params = NULL;
-    u_char  filename[NGX_MAX_PATH], *last;
-    char   *passenger_root = NULL;
-    char   *error_message = NULL;
-    
-    core_conf = (ngx_core_conf_t *) ngx_get_conf(cycle->conf_ctx, ngx_core_module);
-    result    = NGX_OK;
-    params    = pp_variant_map_new();
-    passenger_root = ngx_str_null_terminate(&passenger_main_conf.root_dir);
-    
-    prestart_uris = (ngx_str_t *) passenger_main_conf.prestart_uris->elts;
-    prestart_uris_ary = calloc(sizeof(char *), passenger_main_conf.prestart_uris->nelts);
-    for (i = 0; i < passenger_main_conf.prestart_uris->nelts; i++) {
-        prestart_uris_ary[i] = malloc(prestart_uris[i].len + 1);
-        if (prestart_uris_ary[i] == NULL) {
-            ngx_log_error(NGX_LOG_ALERT, cycle->log, ENOMEM, "Cannot allocate memory");
-            result = NGX_ERROR;
-            goto cleanup;
-        }
-        memcpy(prestart_uris_ary[i], prestart_uris[i].data, prestart_uris[i].len);
-        prestart_uris_ary[i][prestart_uris[i].len] = '\0';
-    }
+	ngx_core_conf_t *core_conf;
+	ngx_int_t        ret, result;
+	ngx_uint_t       i;
+	ngx_str_t       *prestart_uris;
+	char           **prestart_uris_ary = NULL;
+	ngx_keyval_t    *ctl = NULL;
+	PP_VariantMap  *params = NULL;
+	u_char  filename[NGX_MAX_PATH], *last;
+	char   *passenger_root = NULL;
+	char   *error_message = NULL;
 
-    pp_variant_map_set_int    (params, "web_server_pid", getpid());
-    pp_variant_map_set_int    (params, "web_server_worker_uid", core_conf->user);
-    pp_variant_map_set_int    (params, "web_server_worker_gid", core_conf->group);
-    pp_variant_map_set_int    (params, "log_level", passenger_main_conf.log_level);
-    pp_variant_map_set_ngx_str(params, "debug_log_file", &passenger_main_conf.debug_log_file);
-    pp_variant_map_set_ngx_str(params, "temp_dir", &passenger_main_conf.temp_dir);
-    pp_variant_map_set_bool   (params, "user_switching", passenger_main_conf.user_switching);
-    pp_variant_map_set_ngx_str(params, "default_user", &passenger_main_conf.default_user);
-    pp_variant_map_set_ngx_str(params, "default_group", &passenger_main_conf.default_group);
-    pp_variant_map_set_ngx_str(params, "default_ruby", &passenger_main_conf.default_ruby);
-    pp_variant_map_set_int    (params, "max_pool_size", passenger_main_conf.max_pool_size);
-    pp_variant_map_set_int    (params, "pool_idle_time", passenger_main_conf.pool_idle_time);
-    pp_variant_map_set_ngx_str(params, "analytics_log_user", &passenger_main_conf.analytics_log_user);
-    pp_variant_map_set_ngx_str(params, "analytics_log_group", &passenger_main_conf.analytics_log_group);
-    pp_variant_map_set_ngx_str(params, "union_station_gateway_address", &passenger_main_conf.union_station_gateway_address);
-    pp_variant_map_set_int    (params, "union_station_gateway_port", passenger_main_conf.union_station_gateway_port);
-    pp_variant_map_set_ngx_str(params, "union_station_gateway_cert", &passenger_main_conf.union_station_gateway_cert);
-    pp_variant_map_set_ngx_str(params, "union_station_proxy_address", &passenger_main_conf.union_station_proxy_address);
-    pp_variant_map_set_strset (params, "prestart_urls", (const char **) prestart_uris_ary, passenger_main_conf.prestart_uris->nelts);
+	core_conf = (ngx_core_conf_t *) ngx_get_conf(cycle->conf_ctx, ngx_core_module);
+	result    = NGX_OK;
+	params    = pp_variant_map_new();
+	passenger_root = ngx_str_null_terminate(&passenger_main_conf.root_dir);
 
-    ctl = (ngx_keyval_t *) passenger_main_conf.ctl->elts;
-    for (i = 0; i < passenger_main_conf.ctl->nelts; i++) {
-        pp_variant_map_set2(params,
-            (const char *) ctl[i].key.data, ctl[i].key.len - 1,
-            (const char *) ctl[i].value.data, ctl[i].value.len - 1);
-    }
-    
-    ret = pp_agents_starter_start(pp_agents_starter,
-        passenger_root,
-        params,
-        starting_helper_server_after_fork,
-        cycle,
-        &error_message);
-    if (!ret) {
-        ngx_log_error(NGX_LOG_ALERT, cycle->log, ngx_errno, "%s", error_message);
-        result = NGX_ERROR;
-        goto cleanup;
-    }
-    
-    /* Create the file passenger_temp_dir + "/control_process.pid"
-     * and make it writable by the worker processes. This is because
-     * save_master_process_pid is run after Nginx has lowered privileges.
-     */
-    last = ngx_snprintf(filename, sizeof(filename) - 1,
-                        "%s/control_process.pid",
-                        pp_agents_starter_get_server_instance_dir(pp_agents_starter));
-    *last = (u_char) '\0';
-    if (create_file(cycle, filename, (const u_char *) "", 0) != NGX_OK) {
-        result = NGX_ERROR;
-        goto cleanup;
-    }
-    do {
-        ret = chown((const char *) filename, (uid_t) core_conf->user, (gid_t) -1);
-    } while (ret == -1 && errno == EINTR);
-    if (ret == -1) {
-        result = NGX_ERROR;
-        goto cleanup;
-    }
+	prestart_uris = (ngx_str_t *) passenger_main_conf.prestart_uris->elts;
+	prestart_uris_ary = calloc(sizeof(char *), passenger_main_conf.prestart_uris->nelts);
+	for (i = 0; i < passenger_main_conf.prestart_uris->nelts; i++) {
+		prestart_uris_ary[i] = malloc(prestart_uris[i].len + 1);
+		if (prestart_uris_ary[i] == NULL) {
+			ngx_log_error(NGX_LOG_ALERT, cycle->log, ENOMEM, "Cannot allocate memory");
+			result = NGX_ERROR;
+			goto cleanup;
+		}
+		memcpy(prestart_uris_ary[i], prestart_uris[i].data, prestart_uris[i].len);
+		prestart_uris_ary[i][prestart_uris[i].len] = '\0';
+	}
 
-    /* Create various other info files. */
-    last = ngx_snprintf(filename, sizeof(filename) - 1,
-                        "%s/web_server.txt",
-                        pp_agents_starter_get_generation_dir(pp_agents_starter));
-    *last = (u_char) '\0';
-    if (create_file(cycle, filename, (const u_char *) NGINX_VER, strlen(NGINX_VER)) != NGX_OK) {
-        result = NGX_ERROR;
-        goto cleanup;
-    }
+	pp_variant_map_set_int    (params, "web_server_pid", getpid());
+	pp_variant_map_set_int    (params, "web_server_worker_uid", core_conf->user);
+	pp_variant_map_set_int    (params, "web_server_worker_gid", core_conf->group);
+	pp_variant_map_set_int    (params, "log_level", passenger_main_conf.log_level);
+	pp_variant_map_set_ngx_str(params, "debug_log_file", &passenger_main_conf.debug_log_file);
+	pp_variant_map_set_ngx_str(params, "temp_dir", &passenger_main_conf.temp_dir);
+	pp_variant_map_set_bool   (params, "user_switching", passenger_main_conf.user_switching);
+	pp_variant_map_set_ngx_str(params, "default_user", &passenger_main_conf.default_user);
+	pp_variant_map_set_ngx_str(params, "default_group", &passenger_main_conf.default_group);
+	pp_variant_map_set_ngx_str(params, "default_ruby", &passenger_main_conf.default_ruby);
+	pp_variant_map_set_int    (params, "max_pool_size", passenger_main_conf.max_pool_size);
+	pp_variant_map_set_int    (params, "pool_idle_time", passenger_main_conf.pool_idle_time);
+	pp_variant_map_set_ngx_str(params, "analytics_log_user", &passenger_main_conf.analytics_log_user);
+	pp_variant_map_set_ngx_str(params, "analytics_log_group", &passenger_main_conf.analytics_log_group);
+	pp_variant_map_set_ngx_str(params, "union_station_gateway_address", &passenger_main_conf.union_station_gateway_address);
+	pp_variant_map_set_int    (params, "union_station_gateway_port", passenger_main_conf.union_station_gateway_port);
+	pp_variant_map_set_ngx_str(params, "union_station_gateway_cert", &passenger_main_conf.union_station_gateway_cert);
+	pp_variant_map_set_ngx_str(params, "union_station_proxy_address", &passenger_main_conf.union_station_proxy_address);
+	pp_variant_map_set_strset (params, "prestart_urls", (const char **) prestart_uris_ary, passenger_main_conf.prestart_uris->nelts);
 
-    last = ngx_snprintf(filename, sizeof(filename) - 1,
-                        "%s/config_files.txt",
-                        pp_agents_starter_get_generation_dir(pp_agents_starter));
-    *last = (u_char) '\0';
-    if (create_file(cycle, filename, cycle->conf_file.data, cycle->conf_file.len) != NGX_OK) {
-        result = NGX_ERROR;
-        goto cleanup;
-    }
-    
+	ctl = (ngx_keyval_t *) passenger_main_conf.ctl->elts;
+	for (i = 0; i < passenger_main_conf.ctl->nelts; i++) {
+		pp_variant_map_set2(params,
+			(const char *) ctl[i].key.data, ctl[i].key.len - 1,
+			(const char *) ctl[i].value.data, ctl[i].value.len - 1);
+	}
+
+	ret = pp_agents_starter_start(pp_agents_starter,
+		passenger_root,
+		params,
+		starting_helper_server_after_fork,
+		cycle,
+		&error_message);
+	if (!ret) {
+		ngx_log_error(NGX_LOG_ALERT, cycle->log, ngx_errno, "%s", error_message);
+		result = NGX_ERROR;
+		goto cleanup;
+	}
+
+	/* Create the file passenger_temp_dir + "/control_process.pid"
+	 * and make it writable by the worker processes. This is because
+	 * save_master_process_pid is run after Nginx has lowered privileges.
+	 */
+	last = ngx_snprintf(filename, sizeof(filename) - 1,
+						"%s/control_process.pid",
+						pp_agents_starter_get_server_instance_dir(pp_agents_starter));
+	*last = (u_char) '\0';
+	if (create_file(cycle, filename, (const u_char *) "", 0) != NGX_OK) {
+		result = NGX_ERROR;
+		goto cleanup;
+	}
+	do {
+		ret = chown((const char *) filename, (uid_t) core_conf->user, (gid_t) -1);
+	} while (ret == -1 && errno == EINTR);
+	if (ret == -1) {
+		result = NGX_ERROR;
+		goto cleanup;
+	}
+
+	/* Create various other info files. */
+	last = ngx_snprintf(filename, sizeof(filename) - 1,
+						"%s/web_server.txt",
+						pp_agents_starter_get_generation_dir(pp_agents_starter));
+	*last = (u_char) '\0';
+	if (create_file(cycle, filename, (const u_char *) NGINX_VER, strlen(NGINX_VER)) != NGX_OK) {
+		result = NGX_ERROR;
+		goto cleanup;
+	}
+
+	last = ngx_snprintf(filename, sizeof(filename) - 1,
+						"%s/config_files.txt",
+						pp_agents_starter_get_generation_dir(pp_agents_starter));
+	*last = (u_char) '\0';
+	if (create_file(cycle, filename, cycle->conf_file.data, cycle->conf_file.len) != NGX_OK) {
+		result = NGX_ERROR;
+		goto cleanup;
+	}
+
 cleanup:
-    pp_variant_map_free(params);
-    free(passenger_root);
-    free(error_message);
-    if (prestart_uris_ary != NULL) {
-        for (i = 0; i < passenger_main_conf.prestart_uris->nelts; i++) {
-            free(prestart_uris_ary[i]);
-        }
-        free(prestart_uris_ary);
-    }
-    
-    if (result == NGX_ERROR && passenger_main_conf.abort_on_startup_error) {
-        exit(1);
-    }
-    
-    return result;
+	pp_variant_map_free(params);
+	free(passenger_root);
+	free(error_message);
+	if (prestart_uris_ary != NULL) {
+		for (i = 0; i < passenger_main_conf.prestart_uris->nelts; i++) {
+			free(prestart_uris_ary[i]);
+		}
+		free(prestart_uris_ary);
+	}
+
+	if (result == NGX_ERROR && passenger_main_conf.abort_on_startup_error) {
+		exit(1);
+	}
+
+	return result;
 }
 
 /**
@@ -376,10 +376,10 @@ cleanup:
  */
 static void
 shutdown_helper_server() {
-    if (pp_agents_starter != NULL) {
-        pp_agents_starter_free(pp_agents_starter);
-        pp_agents_starter = NULL;
-    }
+	if (pp_agents_starter != NULL) {
+		pp_agents_starter_free(pp_agents_starter);
+		pp_agents_starter = NULL;
+	}
 }
 
 
@@ -391,27 +391,27 @@ shutdown_helper_server() {
 static ngx_int_t
 pre_config_init(ngx_conf_t *cf)
 {
-    char *error_message;
-    
-    shutdown_helper_server();
-    
-    ngx_memzero(&passenger_main_conf, sizeof(passenger_main_conf_t));
-    pp_schema_string.data = (u_char *) "passenger:";
-    pp_schema_string.len  = sizeof("passenger:") - 1;
-    pp_placeholder_upstream_address.data = (u_char *) "unix:/passenger_helper_server";
-    pp_placeholder_upstream_address.len  = sizeof("unix:/passenger_helper_server") - 1;
-    pp_stat_cache = pp_cached_file_stat_new(1024);
-    pp_app_type_detector = pp_app_type_detector_new();
-    if (passenger_main_conf.fly_with.len == 0) {
-        pp_agents_starter = pp_agents_starter_new(AS_NGINX, &error_message);
-        if (pp_agents_starter == NULL) {
-            ngx_log_error(NGX_LOG_ALERT, cf->log, ngx_errno, "%s", error_message);
-            free(error_message);
-            return NGX_ERROR;
-        }
-    }
-    
-    return NGX_OK;
+	char *error_message;
+
+	shutdown_helper_server();
+
+	ngx_memzero(&passenger_main_conf, sizeof(passenger_main_conf_t));
+	pp_schema_string.data = (u_char *) "passenger:";
+	pp_schema_string.len  = sizeof("passenger:") - 1;
+	pp_placeholder_upstream_address.data = (u_char *) "unix:/passenger_helper_server";
+	pp_placeholder_upstream_address.len  = sizeof("unix:/passenger_helper_server") - 1;
+	pp_stat_cache = pp_cached_file_stat_new(1024);
+	pp_app_type_detector = pp_app_type_detector_new();
+	if (passenger_main_conf.fly_with.len == 0) {
+		pp_agents_starter = pp_agents_starter_new(AS_NGINX, &error_message);
+		if (pp_agents_starter == NULL) {
+			ngx_log_error(NGX_LOG_ALERT, cf->log, ngx_errno, "%s", error_message);
+			free(error_message);
+			return NGX_ERROR;
+		}
+	}
+
+	return NGX_OK;
 }
 
 /**
@@ -421,36 +421,36 @@ pre_config_init(ngx_conf_t *cf)
  */
 static ngx_int_t
 init_module(ngx_cycle_t *cycle) {
-    char *error_message;
+	char *error_message;
 
-    if (passenger_main_conf.fly_with.len != 0
-     || passenger_main_conf.root_dir.len != 0) {
-        passenger_enterprise_license_init();
-        error_message = passenger_enterprise_license_check();
-        if (error_message != NULL) {
-            ngx_errno = 0;
-            ngx_log_error(NGX_LOG_CRIT, cycle->log, ngx_errno, "%s", error_message);
-            free(error_message);
-            return NGX_ERROR;
-        }
+	if (passenger_main_conf.fly_with.len != 0
+	 || passenger_main_conf.root_dir.len != 0) {
+		passenger_enterprise_license_init();
+		error_message = passenger_enterprise_license_check();
+		if (error_message != NULL) {
+			ngx_errno = 0;
+			ngx_log_error(NGX_LOG_CRIT, cycle->log, ngx_errno, "%s", error_message);
+			free(error_message);
+			return NGX_ERROR;
+		}
 
-        if (first_start) {
-            /* Ignore SIGPIPE now so that, if the helper server fails to start,
-             * Nginx doesn't get killed by the default SIGPIPE handler upon
-             * writing the password to the helper server.
-             */
-            ignore_sigpipe();
-            first_start = 0;
-        }
-        if (passenger_main_conf.fly_with.len != 0) {
-            ngx_log_error(NGX_LOG_INFO, cycle->log, 0, "Using Flying Passenger");
-        } else if (start_watchdog(cycle) != NGX_OK) {
-            passenger_main_conf.root_dir.len = 0;
-            return NGX_OK;
-        }
-        pp_current_cycle = cycle;
-    }
-    return NGX_OK;
+		if (first_start) {
+			/* Ignore SIGPIPE now so that, if the helper server fails to start,
+			 * Nginx doesn't get killed by the default SIGPIPE handler upon
+			 * writing the password to the helper server.
+			 */
+			ignore_sigpipe();
+			first_start = 0;
+		}
+		if (passenger_main_conf.fly_with.len != 0) {
+			ngx_log_error(NGX_LOG_INFO, cycle->log, 0, "Using Flying Passenger");
+		} else if (start_watchdog(cycle) != NGX_OK) {
+			passenger_main_conf.root_dir.len = 0;
+			return NGX_OK;
+		}
+		pp_current_cycle = cycle;
+	}
+	return NGX_OK;
 }
 
 /**
@@ -463,18 +463,18 @@ init_module(ngx_cycle_t *cycle) {
  */
 static ngx_int_t
 init_worker_process(ngx_cycle_t *cycle) {
-    ngx_core_conf_t *core_conf;
-    
-    if (passenger_main_conf.fly_with.len == 0
-     && passenger_main_conf.root_dir.len != 0) {
-        save_master_process_pid(cycle);
-        
-        core_conf = (ngx_core_conf_t *) ngx_get_conf(cycle->conf_ctx, ngx_core_module);
-        if (core_conf->master) {
-            pp_agents_starter_detach(pp_agents_starter);
-        }
-    }
-    return NGX_OK;
+	ngx_core_conf_t *core_conf;
+
+	if (passenger_main_conf.fly_with.len == 0
+	 && passenger_main_conf.root_dir.len != 0) {
+		save_master_process_pid(cycle);
+
+		core_conf = (ngx_core_conf_t *) ngx_get_conf(cycle->conf_ctx, ngx_core_module);
+		if (core_conf->master) {
+			pp_agents_starter_detach(pp_agents_starter);
+		}
+	}
+	return NGX_OK;
 }
 
 /**
@@ -482,36 +482,36 @@ init_worker_process(ngx_cycle_t *cycle) {
  */
 static void
 exit_master(ngx_cycle_t *cycle) {
-    shutdown_helper_server();
+	shutdown_helper_server();
 }
 
 
 static ngx_http_module_t passenger_module_ctx = {
-    pre_config_init,                     /* preconfiguration */
-    /* register_content_handler */ NULL, /* postconfiguration */
+	pre_config_init,                     /* preconfiguration */
+	/* register_content_handler */ NULL, /* postconfiguration */
 
-    passenger_create_main_conf,          /* create main configuration */
-    passenger_init_main_conf,            /* init main configuration */
+	passenger_create_main_conf,          /* create main configuration */
+	passenger_init_main_conf,            /* init main configuration */
 
-    NULL,                                /* create server configuration */
-    NULL,                                /* merge server configuration */
+	NULL,                                /* create server configuration */
+	NULL,                                /* merge server configuration */
 
-    passenger_create_loc_conf,           /* create location configuration */
-    passenger_merge_loc_conf             /* merge location configuration */
+	passenger_create_loc_conf,           /* create location configuration */
+	passenger_merge_loc_conf             /* merge location configuration */
 };
 
 
 ngx_module_t ngx_http_passenger_module = {
-    NGX_MODULE_V1,
-    &passenger_module_ctx,                  /* module context */
-    (ngx_command_t *) passenger_commands,   /* module directives */
-    NGX_HTTP_MODULE,                        /* module type */
-    NULL,                                   /* init master */
-    init_module,                            /* init module */
-    init_worker_process,                    /* init process */
-    NULL,                                   /* init thread */
-    NULL,                                   /* exit thread */
-    NULL,                                   /* exit process */
-    exit_master,                            /* exit master */
-    NGX_MODULE_V1_PADDING
+	NGX_MODULE_V1,
+	&passenger_module_ctx,                  /* module context */
+	(ngx_command_t *) passenger_commands,   /* module directives */
+	NGX_HTTP_MODULE,                        /* module type */
+	NULL,                                   /* init master */
+	init_module,                            /* init module */
+	init_worker_process,                    /* init process */
+	NULL,                                   /* init thread */
+	NULL,                                   /* exit thread */
+	NULL,                                   /* exit process */
+	exit_master,                            /* exit master */
+	NGX_MODULE_V1_PADDING
 };

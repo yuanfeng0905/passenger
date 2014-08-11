@@ -140,9 +140,9 @@ Client::onAppInputData(const EventedBufferedInputPtr &source, const StaticString
 void
 Client::onAppInputChunk(const char *data, size_t size, void *userData) {
 	Client *client = (Client *) userData;
-	assert(client != NULL);
-	assert(client->requestHandler != NULL);
-	client->requestHandler->onAppInputChunk(client->shared_from_this(), StaticString(data, size));
+	if (client != NULL && client->connected()) {
+		client->requestHandler->onAppInputChunk(client->shared_from_this(), StaticString(data, size));
+	}
 }
 
 void
@@ -262,7 +262,7 @@ main() {
 	FileDescriptor requestSocket(createTcpServer("127.0.0.1", 3000));
 	setNonBlocking(requestSocket);
 	handler = new RequestHandler(libev, requestSocket, pool, options);
-	
+
 	ev_signal_init(&sigquitwatcher, sigquit_cb, SIGQUIT);
 	ev_signal_start(loop, &sigquitwatcher);
 

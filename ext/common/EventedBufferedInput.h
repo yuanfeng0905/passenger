@@ -74,7 +74,7 @@ private:
 	/**
 	 * Whether this EventedBufferedInput is paused (not started). If it's
 	 * paused it should not emit data events.
-	 * 
+	 *
 	 * @invariant
 	 *    if paused:
 	 *       socketPaused
@@ -107,13 +107,13 @@ private:
 
 	void verifyInvariants() {
 		// !a || b: logical equivalent of a IMPLIES b.
-		
+
 		assert(!( state == END_OF_STREAM ) || ( paused ));
 		assert(!( state == END_OF_STREAM ) || ( socketPaused ));
-		
+
 		assert(!( state == READ_ERROR ) || ( paused ));
 		assert(!( state == READ_ERROR ) || ( socketPaused ));
-		
+
 		assert(!( paused ) || ( socketPaused ));
 	}
 
@@ -365,7 +365,7 @@ public:
 			EBI_TRACE("start()");
 			verifyInvariants();
 			assert(socketPaused);
-			
+
 			paused = false;
 			if (!buffer.empty()) {
 				processBufferInNextTick();
