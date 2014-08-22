@@ -12,7 +12,7 @@ module Standalone
 class AppFinder
 	attr_accessor :dirs
 	attr_reader :apps
-	
+
 	def self.looks_like_app_directory?(dir)
 		return File.exist?("#{dir}/config.ru") ||
 			File.exist?("#{dir}/config/environment.rb") ||
@@ -20,7 +20,7 @@ class AppFinder
 			File.exist?("#{dir}/app.js") ||
 			File.exist?("#{dir}/.meteor")
 	end
-	
+
 	def initialize(dirs, options = {})
 		@dirs = dirs
 		@options = options.dup
@@ -29,11 +29,11 @@ class AppFinder
 	def global_options
 		return @options
 	end
-	
+
 	def scan
 		apps = []
 		watchlist = []
-		
+
 		if single_mode?
 			app_root = find_app_root
 			apps << {
@@ -101,15 +101,15 @@ class AppFinder
 		@watchlist = watchlist
 		return apps
 	end
-	
+
 	def monitor(termination_pipe)
 		raise "You must call #scan first" if !@apps
-		
+
 		watcher = PhusionPassenger::Utils::FileSystemWatcher.new(@watchlist, termination_pipe)
 		if wait_on_io(termination_pipe, 3)
 			return
 		end
-		
+
 		while true
 			changed = watcher.wait_for_change
 			watcher.close
@@ -120,13 +120,13 @@ class AppFinder
 				if wait_on_io(termination_pipe, 0.25)
 					return
 				end
-				
+
 				new_apps = scan
 				watcher = PhusionPassenger::Utils::FileSystemWatcher.new(@watchlist, termination_pipe)
 				if old_apps != new_apps
 					yield(new_apps)
 				end
-				
+
 				# Don't process change events again for a short while,
 				# but do detect changes while waiting.
 				if wait_on_io(termination_pipe, 3)
@@ -144,11 +144,11 @@ class AppFinder
 		return (@dirs.empty? && looks_like_app_directory?(".")) ||
 			(@dirs.size == 1 && looks_like_app_directory?(@dirs[0]))
 	end
-	
+
 	def multi_mode?
 		return !single_mode?
 	end
-	
+
 	##################
 private
 	class ConfigLoadError < StandardError
@@ -161,7 +161,7 @@ private
 			return File.expand_path(@dirs[0])
 		end
 	end
-	
+
 	def load_config_file!(context, filename)
 		PhusionPassenger.require_passenger_lib 'utils/json' if !defined?(PhusionPassenger::Utils::JSON)
 		begin
@@ -194,11 +194,11 @@ private
 		STDERR.puts "*** Warning: #{e.message}"
 		return {}
 	end
-	
+
 	def looks_like_app_directory?(dir)
 		return AppFinder.looks_like_app_directory?(dir)
 	end
-	
+
 	def filename_to_server_names(filename)
 		basename = File.basename(filename)
 		names = [basename]
@@ -207,7 +207,7 @@ private
 		end
 		return names
 	end
-	
+
 	# Wait until the given IO becomes readable, or until the timeout has
 	# been reached. Returns true if the IO became readable, false if the
 	# timeout has been reached.
