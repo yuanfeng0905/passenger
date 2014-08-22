@@ -624,7 +624,7 @@ public:
 			stream << "<rolling_restarting/>";
 		}
 		if (!codeRevision.empty()) {
-			stream << "<code_revision>" << codeRevision << "</code_revision>";
+			stream << "<code_revision>" << escapeForXml(codeRevision) << "</code_revision>";
 		}
 		switch (lifeStatus) {
 		case ALIVE:
