@@ -13,11 +13,11 @@
 #include <vector>
 #include <list>
 #include <memory>
-#include <climits>
 #include <boost/thread.hpp>
 #include <boost/shared_ptr.hpp>
 #include <boost/function.hpp>
 #include <boost/bind.hpp>
+#include <oxt/thread.hpp>
 
 namespace Passenger {
 
@@ -30,15 +30,21 @@ using namespace boost;
  */
 class SafeLibev {
 private:
+	// 2^28-1. Command IDs are 28-bit so that we can pack DataSource's state and
+	// its planId in 32-bits total.
+	static const unsigned int MAX_COMMAND_ID = 268435455;
+
 	typedef boost::function<void ()> Callback;
 
 	struct Command {
-		int id;
 		Callback callback;
+		unsigned int id: 31;
+		bool canceled: 1;
 
 		Command(unsigned int _id, const Callback &_callback)
-			: id(_id),
-			  callback(_callback)
+			: callback(_callback),
+			  id(_id),
+			  canceled(false)
 			{ }
 	};
 
@@ -69,7 +75,9 @@ private:
 
 		vector<Command>::const_iterator it, end = commands.end();
 		for (it = commands.begin(); it != end; it++) {
-			it->callback();
+			if (!it->canceled) {
+				it->callback();
+			}
 		}
 	}
 
@@ -98,7 +106,7 @@ private:
 	}
 
 	void incNextCommandId() {
-		if (nextCommandId == INT_MAX) {
+		if (nextCommandId == MAX_COMMAND_ID) {
 			nextCommandId = 1;
 		} else {
 			nextCommandId++;
@@ -133,10 +141,27 @@ public:
 
 	void setCurrentThread() {
 		loopThread = pthread_self();
+		#ifdef OXT_THREAD_LOCAL_KEYWORD_SUPPORTED
+			oxt::thread_signature = this;
+		#endif
 	}
 
 	pthread_t getCurrentThread() const {
 		return loopThread;
+	}
+
+	bool onEventLoopThread() const {
+		#ifdef OXT_THREAD_LOCAL_KEYWORD_SUPPORTED
+			// Avoid double reads of the thread-local variable.
+			const void *sig = oxt::thread_signature;
+			if (OXT_UNLIKELY(sig == NULL)) {
+				return pthread_equal(pthread_self(), loopThread);
+			} else {
+				return sig == this;
+			}
+		#else
+			return pthread_equal(pthread_self(), loopThread);
+		#endif
 	}
 
 	template<typename Watcher>
@@ -235,7 +260,7 @@ public:
 	 * in the future, while a return value of false means that the callback has already
 	 * been called or is currently being called.
 	 */
-	bool cancelCommand(int id) {
+	bool cancelCommand(unsigned int id) {
 		if (id == 0) {
 			return false;
 		}
@@ -246,7 +271,7 @@ public:
 		vector<Command>::iterator it, end = commands.end();
 		for (it = commands.begin(); it != end; it++) {
 			if (it->id == id) {
-				commands.erase(it);
+				it->canceled = true;
 				return true;
 			}
 		}

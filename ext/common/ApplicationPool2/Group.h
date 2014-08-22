@@ -965,6 +965,7 @@ public:
 	 * afterwards if necessary, e.g. by calling `assignSessionsToGetWaiters()`.
 	 */
 	AttachResult attach(const ProcessPtr &process, vector<Callback> &postLockActions) {
+		TRACE_POINT();
 		assert(process->getGroup() == NULL || process->getGroup().get() == this);
 		assert(process->isAlive());
 		assert(isAlive());
@@ -1025,9 +1026,15 @@ public:
 	 * that method over this one.
 	 */
 	void detach(const ProcessPtr &process, vector<Callback> &postLockActions) {
+		TRACE_POINT();
 		assert(process->getGroup().get() == this);
 		assert(process->isAlive());
 		assert(isAlive());
+
+		if (process->enabled == Process::DETACHED) {
+			P_DEBUG("Detaching process " << process->inspect() << ", which was already being detached");
+			return;
+		}
 
 		const ProcessPtr p = process; // Keep an extra reference just in case.
 		P_DEBUG("Detaching process " << process->inspect());
@@ -1041,6 +1048,7 @@ public:
 				removeFromDisableWaitlist(process, DR_NOOP, postLockActions);
 			}
 		} else {
+			assert(process->enabled == Process::DISABLED);
 			assert(!disabledProcesses.empty());
 			removeProcessFromList(process, disabledProcesses);
 		}

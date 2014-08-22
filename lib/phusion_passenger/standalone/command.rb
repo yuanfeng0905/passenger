@@ -24,17 +24,17 @@ class Command
 		:thread_count  => DEFAULT_THREAD_COUNT,
 		:nginx_version => PREFERRED_NGINX_VERSION
 	}.freeze
-	
+
 	include Utils
-	
+
 	def self.show_in_command_list
 		return true
 	end
-	
+
 	def self.description
 		return nil
 	end
-	
+
 	def initialize(args)
 		@args = args.dup
 		@original_args = args.dup
@@ -57,7 +57,7 @@ private
 					gem_command = PlatformInfo.gem_command(:sudo => true)
 					error "Your version of daemon_controller is too old. " <<
 					      "You must install 1.1.0 or later. Please upgrade:\n\n" <<
-					      
+
 					      " #{gem_command} uninstall FooBarWidget-daemon_controller\n" <<
 					      " #{gem_command} install daemon_controller",
 					      :wrap => false
@@ -72,7 +72,7 @@ private
 			end
 		end
 	end
-	
+
 	def require_erb
 		require 'erb' unless defined?(ERB)
 	end
@@ -80,23 +80,23 @@ private
 	def require_etc
 		require 'etc' unless defined?(Etc)
 	end
-	
+
 	def require_optparse
 		require 'optparse' unless defined?(OptionParser)
 	end
-	
+
 	def require_app_finder
 		PhusionPassenger.require_passenger_lib 'standalone/app_finder' unless defined?(AppFinder)
 	end
-	
+
 	def debugging?
 		return ENV['PASSENGER_DEBUG'] && !ENV['PASSENGER_DEBUG'].empty?
 	end
-	
+
 	def parse_options!(command_name, description = nil)
 		require_etc
 		help = false
-		
+
 		home_dir = PhusionPassenger::Utils.home_dir
 		global_config_file = File.join(home_dir, USER_NAMESPACE_DIRNAME, "standalone", "config")
 		if File.exist?(global_config_file)
@@ -104,7 +104,7 @@ private
 			global_options = ConfigFile.new(:global_config, global_config_file).options
 			@options.merge!(global_options)
 		end
-		
+
 		require_optparse
 		parser = OptionParser.new do |opts|
 			opts.banner = "Usage: passenger #{command_name} [options]"
@@ -121,7 +121,7 @@ private
 			exit 0
 		end
 	end
-	
+
 	def error(message, options = {})
 		wrap = options.fetch(:wrap, true)
 		if message =~ /\n/
@@ -141,7 +141,7 @@ private
 		end
 		@plugin.call_hook(:error, message) if @plugin
 	end
-	
+
 	# Word wrap the given option description text so that it is formatted
 	# nicely in the --help output.
 	def wrap_desc(description_text, max_width = 43, newline_prefix_size = 37)
@@ -157,7 +157,7 @@ private
 			FileUtils.mkdir_p(dir)
 		end
 	end
-	
+
 	def determine_various_resource_locations(create_subdirs = true)
 		require_app_finder
 		if @options[:socket_file]
@@ -184,7 +184,7 @@ private
 			@options[:log_file] ||= File.expand_path(File.join(@args[0], log_basename))
 		end
 	end
-	
+
 	def write_nginx_config_file
 		PhusionPassenger.require_passenger_lib 'platform_info/ruby'
 		PhusionPassenger.require_passenger_lib 'utils/tmpio'
@@ -204,7 +204,7 @@ private
 			PhusionPassenger::REQUIRED_LOCATIONS_INI_FIELDS +
 			PhusionPassenger::OPTIONAL_LOCATIONS_INI_FIELDS -
 			[:agents_dir, :lib_dir]
-		
+
 		File.open(location_config_filename, 'w') do |f|
 			f.puts '[locations]'
 			f.puts "natively_packaged=#{PhusionPassenger.natively_packaged?}"
@@ -219,13 +219,13 @@ private
 			end
 		end
 		puts File.read(location_config_filename) if debugging?
-		
+
 		File.open(@config_filename, 'w') do |f|
 			f.chmod(0644)
 			require_erb
 			erb = ERB.new(File.read(nginx_config_template_filename), nil, "-")
 			current_user = Etc.getpwuid(Process.uid).name
-			
+
 			# The template requires some helper methods which are defined in start_command.rb.
 			output = erb.result(binding)
 			f.write(output)
@@ -255,7 +255,7 @@ private
 		end
 		return [items.join(null)].pack('m*').gsub("\n", "").strip
 	end
-	
+
 	def determine_nginx_start_command
 		if @options[:nginx_bin]
 			nginx_bin = @options[:nginx_bin]
@@ -264,7 +264,7 @@ private
 		end
 		return "#{nginx_bin} -c '#{@config_filename}' -p '#{@temp_dir}/'"
 	end
-	
+
 	# Returns the port on which to ping Nginx.
 	def nginx_ping_port
 		if @options[:ping_port]
@@ -273,7 +273,7 @@ private
 			return @options[:port]
 		end
 	end
-	
+
 	def create_nginx_controller(extra_options = {})
 		require_daemon_controller
 		require 'socket' unless defined?(UNIXSocket)

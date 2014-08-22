@@ -607,6 +607,7 @@ Group::onSessionClose(const ProcessPtr &process, Session *session) {
 		&& enabledCount > 0;
 
 	if (shouldDetach || shouldDisable) {
+		UPDATE_TRACE_POINT();
 		vector<Callback> actions;
 
 		if (shouldDetach) {
@@ -640,6 +641,8 @@ Group::onSessionClose(const ProcessPtr &process, Session *session) {
 		runAllActions(actions);
 
 	} else {
+		UPDATE_TRACE_POINT();
+
 		// This could change process->enabled.
 		maybeInitiateOobw(process);
 
