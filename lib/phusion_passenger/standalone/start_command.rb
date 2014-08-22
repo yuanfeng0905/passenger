@@ -557,7 +557,7 @@ private
 					hosts_file = nil
 				end
 				warnings = 0
-				
+
 				if listening_on_unix_domain_socket?
 					puts "Serving these applications:"
 				else
@@ -804,22 +804,22 @@ private
 	end
 
 	#################
-	
+
 	def should_check_hosts_file?
 		require_platform_info_operating_system
 		return PlatformInfo.os_name == "macosx"
 	end
-	
+
 	def require_platform_info_operating_system
 		require 'phusion_passenger/platform_info/operating_system' \
 			if !defined?(PlatformInfo) || !PlatformInfo.respond_to?(:os_name)
 	end
-	
+
 	def require_hosts_file_parser
 		require 'phusion_passenger/utils/hosts_file_parser' \
 			if !defined?(PhusionPassenger::Utils::HostsFileParser)
 	end
-	
+
 	def monitor_app_directories_in_background
 		@threads << Thread.new do
 			Thread.current.abort_on_exception = true
@@ -865,7 +865,7 @@ private
 			end
 		end
 	end
-	
+
 	def show_new_app_list(apps)
 		if apps.empty?
 			puts "No web applications detected. Waiting until you create one..."
@@ -879,7 +879,7 @@ private
 				hosts_file = nil
 			end
 			warnings = 0
-			
+
 			puts "Now serving these applications:"
 			puts " Host name                     Directory"
 			puts "------------------------------------------------------------"

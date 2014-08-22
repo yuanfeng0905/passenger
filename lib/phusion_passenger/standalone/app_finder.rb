@@ -121,7 +121,12 @@ class AppFinder
 					return
 				end
 
-				new_apps = scan
+				begin
+					new_apps = scan
+				rescue AppFinder::ConfigLoadError => e
+					STDERR.puts " *** ERROR: #{e}"
+					new_apps = old_apps
+				end
 				watcher = PhusionPassenger::Utils::FileSystemWatcher.new(@watchlist, termination_pipe)
 				if old_apps != new_apps
 					yield(new_apps)
@@ -214,7 +219,7 @@ private
 	def wait_on_io(io, timeout)
 		return !!select([io], nil, nil, timeout)
 	end
-	
+
 	##################
 end
 
