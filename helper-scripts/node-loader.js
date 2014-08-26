@@ -1,6 +1,6 @@
 /*
  *  Phusion Passenger - https://www.phusionpassenger.com/
- *  Copyright (c) 2010-2013 Phusion
+ *  Copyright (c) 2010-2014 Phusion
  *
  *  "Phusion Passenger" is a trademark of Hongli Lai & Ninh Bui.
  *
@@ -9,6 +9,8 @@
 
 module.paths.unshift(__dirname + "/../node_lib");
 var EventEmitter = require('events').EventEmitter;
+var os = require('os');
+var fs = require('fs');
 var net = require('net');
 var http = require('http');
 
@@ -97,8 +99,9 @@ function configure(_options) {
 }
 
 function loadApplication() {
+	var appRoot = PhusionPassenger.options.app_root || process.cwd();
 	var startupFile = PhusionPassenger.options.startup_file || 'app.js';
-	require(PhusionPassenger.options.app_root + '/' + startupFile);
+	require(appRoot + '/' + startupFile);
 }
 
 function extractCallback(args) {
@@ -108,8 +111,21 @@ function extractCallback(args) {
 }
 
 function generateServerSocketPath() {
-	return PhusionPassenger.options.generation_dir + "/backends/"
-		+ process.pid + "." + ((Math.random() * 0xFFFFFFFF) & 0xFFFFFFF);
+	var options = PhusionPassenger.options;
+	var socketDir, socketPrefix, socketSuffix;
+
+	if (options.generation_dir) {
+		socketDir = options.generation_dir + "/backends";
+		socketPrefix = "node";
+	} else {
+		socketDir = os.tmpdir().replace(/\/$/, '');
+		socketPrefix = "PsgNodeApp";
+	}
+	socketSuffix = ((Math.random() * 0xFFFFFFFF) & 0xFFFFFFF);
+
+	var result = socketDir + "/" + socketPrefix + "." + socketSuffix.toString(36);
+	var UNIX_PATH_MAX = options.UNIX_PATH_MAX || 100;
+	return result.substr(0, UNIX_PATH_MAX);
 }
 
 function addListenerAtBeginning(emitter, event, callback) {
@@ -160,8 +176,9 @@ function installServer() {
 				}
 			}
 
+			var socketPath = PhusionPassenger.options.socket_path = generateServerSocketPath();
 			server.once('error', errorHandler);
-			server.originalListen(generateServerSocketPath(), function() {
+			server.originalListen(socketPath, function() {
 				server.removeListener('error', errorHandler);
 				doneListening(callback);
 				process.nextTick(finalizeStartup);
@@ -208,6 +225,11 @@ function finalizeStartup() {
 }
 
 function shutdown() {
+	try {
+		fs.unlinkSync(PhusionPassenger.options.socket_path);
+	} catch (e) {
+		// Ignore error.
+	}
 	if (PhusionPassenger.listeners('exit').length == 0) {
 		process.exit(0);
 	} else {

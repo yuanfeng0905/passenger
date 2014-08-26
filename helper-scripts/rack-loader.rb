@@ -1,7 +1,7 @@
 #!/usr/bin/env ruby
 # encoding: binary
 #  Phusion Passenger - https://www.phusionpassenger.com/
-#  Copyright (c) 2013 Phusion
+#  Copyright (c) 2013-2014 Phusion
 #
 #  "Phusion Passenger" is a trademark of Hongli Lai & Ninh Bui.
 #
@@ -115,6 +115,7 @@ module App
 	LoaderSharedHelpers.advertise_sockets(STDOUT, handler)
 	puts "!> "
 	handler.main_loop
+	handler.cleanup
 	LoaderSharedHelpers.after_handling_requests
 	
 end # module App

@@ -77,6 +77,7 @@ class UnionStationExtension < ActiveSupport::LogSubscriber
 	end
 
 	def initialize(options)
+		super()
 		install_event_preprocessor(options[:event_preprocessor]) if options[:event_preprocessor]
 	end
 	
