@@ -154,7 +154,8 @@ class RequestHandler
 			end
 		end
 
-		@async_irb_socket_address, @async_irb_socket = create_unix_socket_on_filesystem
+		@async_irb_socket_address, @async_irb_socket =
+			create_unix_socket_on_filesystem(options)
 		@server_sockets[:async_irb] = {
 			:address     => @async_irb_socket_address,
 			:socket      => @async_irb_socket,
