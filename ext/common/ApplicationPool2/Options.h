@@ -96,7 +96,7 @@ private:
 		result.push_back(&options.uri);
 		result.push_back(&options.unionStationKey);
 
-		result.push_back(&concurrencyModel);
+		result.push_back(&options.concurrencyModel);
 
 		return result;
 	}
