@@ -260,7 +260,7 @@ protected:
 		char lastErrorMessage[CURL_ERROR_SIZE];
 		CURL *curl = curl_easy_init();
 
-		curl_easy_setopt(curl, CURLOPT_URL, "http://169.254.169.254/latest/meta-data/instance-type");
+		curl_easy_setopt(curl, CURLOPT_URL, "http://169.254.169.254/2014-02-25/meta-data/instance-type");
 		curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1);
 		curl_easy_setopt(curl, CURLOPT_TIMEOUT, 15);
 		curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, lastErrorMessage);
@@ -278,7 +278,9 @@ protected:
 				return false;
 			}
 
-			if (responseCode != 200) {
+			// On some machines, we get a responseCode of 0 even though the response body
+			// is correct. The reason is unknown.
+			if (responseCode != 200 && responseCode != 0) {
 				P_ERROR("Cannot not autodetect Amazon instance type (HTTP error: response "
 					"code " << responseCode << "; body \"" << cEscapeString(responseData) <<
 					"\"). Assuming this is not an Amazon instance");
@@ -325,7 +327,7 @@ protected:
 		struct curl_httppost *post = NULL;
 		struct curl_httppost *last = NULL;
 		string now = toString(SystemTime::get());
-		
+
 		curl_formadd(&post, &last,
 			CURLFORM_PTRNAME, "content",
 			CURLFORM_PTRCONTENTS, content.data(),
@@ -346,7 +348,7 @@ protected:
 			CURLFORM_PTRCONTENTS, now.data(),
 			CURLFORM_CONTENTSLENGTH, (long) now.size(),
 			CURLFORM_END);
-		
+
 		MachineProperties::const_iterator it;
 		for (it = properties.begin(); it != properties.end(); it++) {
 			const pair<const char *, string> &p = *it;
@@ -356,7 +358,7 @@ protected:
 				CURLFORM_CONTENTSLENGTH, (long) p.second.size(),
 				CURLFORM_END);
 		}
-		
+
 		curl_easy_setopt(curl, CURLOPT_HTTPPOST, post);
 		CURLcode code = curl_easy_perform(curl);
 		curl_formfree(post);
