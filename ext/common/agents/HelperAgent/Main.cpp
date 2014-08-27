@@ -583,6 +583,12 @@ public:
 				(certificate.empty() ? "(none)" : certificate));
 			makeDirTree(licensingDataDir);
 
+			CURLcode code = curl_global_init(CURL_GLOBAL_ALL);
+			if (code != CURLE_OK) {
+				P_CRITICAL("Could not initialize libcurl: " << curl_easy_strerror(code));
+				exit(1);
+			}
+
 			CloudUsageTracker *tracker = new CloudUsageTracker(
 				licensingDataDir,
 				options.licensingBaseUrl,
