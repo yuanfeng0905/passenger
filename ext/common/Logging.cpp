@@ -8,6 +8,7 @@
  */
 #include <iomanip>
 #include <cstdlib>
+#include <cstring>
 #include <fcntl.h>
 #include <unistd.h>
 #include <Logging.h>
@@ -20,6 +21,7 @@ namespace Passenger {
 int _logLevel = 0;
 int _logOutput = STDERR_FILENO;
 static bool printAppOutputAsDebuggingMessages = false;
+AssertionFailureInfo lastAssertionFailure;
 
 int
 getLogLevel() {
@@ -90,6 +92,15 @@ _writeLogEntry(const StaticString &str) {
 void
 _writeLogEntry(const std::string &str) {
 	_writeLogEntry(StaticString(str));
+}
+
+const char *
+_strdupStringStream(const std::stringstream &stream) {
+	string str = stream.str();
+	char *buf = (char *) malloc(str.size() + 1);
+	memcpy(buf, str.data(), str.size());
+	buf[str.size()] = '\0';
+	return buf;
 }
 
 static void

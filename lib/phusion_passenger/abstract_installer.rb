@@ -1,5 +1,5 @@
 #  Phusion Passenger - https://www.phusionpassenger.com/
-#  Copyright (c) 2010-2013 Phusion
+#  Copyright (c) 2010-2014 Phusion
 #
 #  "Phusion Passenger" is a trademark of Hongli Lai & Ninh Bui.
 #
@@ -44,11 +44,12 @@ class AbstractInstaller
 		@stdout = STDOUT
 		@stderr = STDERR
 		@auto   = !STDIN.tty?
+		@colors = Utils::AnsiColors.new(options[:colorize] || :auto)
 		options.each_pair do |key, value|
 			instance_variable_set(:"@#{key}", value)
 		end
 	end
-	
+
 	# Start the installation by calling the #install! method.
 	def run
 		before_install
@@ -75,11 +76,11 @@ class AbstractInstaller
 protected
 	class Abort < StandardError
 	end
-	
+
 	class CommandError < Abort
 	end
-	
-	
+
+
 	def interactive?
 		return !@auto
 	end
@@ -87,18 +88,18 @@ protected
 	def non_interactive?
 		return !interactive?
 	end
-	
-	
+
+
 	def before_install
 		if STDOUT.respond_to?(:set_encoding)
 			STDOUT.set_encoding("UTF-8")
 		end
-		STDOUT.write(Utils::AnsiColors::DEFAULT_TERMINAL_COLOR)
+		STDOUT.write(@colors.default_terminal_color)
 		STDOUT.flush
 	end
-	
+
 	def after_install
-		STDOUT.write(Utils::AnsiColors::RESET)
+		STDOUT.write(@colors.reset)
 		STDOUT.flush
 	end
 
@@ -109,16 +110,16 @@ protected
 	def users_guide_url
 		return INDEX_DOC_URL
 	end
-	
+
 	def dependencies
 		return [[], []]
 	end
-	
+
 	def check_dependencies(show_new_screen = true)
 		new_screen if show_new_screen
 		puts "<banner>Checking for required software...</banner>"
 		puts
-		
+
 		PhusionPassenger.require_passenger_lib 'platform_info/depcheck'
 		specs, ids = dependencies
 		runner = PlatformInfo::Depcheck::ConsoleRunner.new
@@ -251,8 +252,8 @@ protected
 			raise e
 		end
 	end
-	
-	
+
+
 	def use_stderr
 		old_stdout = @stdout
 		begin
@@ -262,15 +263,15 @@ protected
 			@stdout = old_stdout
 		end
 	end
-	
+
 	def print(text)
-		@stdout.write(Utils::AnsiColors.ansi_colorize(text))
+		@stdout.write(@colors.ansi_colorize(text))
 		@stdout.flush
 	end
-	
+
 	def puts(text = nil)
 		if text
-			@stdout.puts(Utils::AnsiColors.ansi_colorize(text.to_s))
+			@stdout.puts(@colors.ansi_colorize(text.to_s))
 		else
 			@stdout.puts
 		end
@@ -278,34 +279,35 @@ protected
 	end
 
 	def puts_error(text)
-		@stderr.puts(Utils::AnsiColors.ansi_colorize("<red>#{text}</red>"))
+		@stderr.puts(@colors.ansi_colorize("<red>#{text}</red>"))
 		@stderr.flush
 	end
-	
+
 	def render_template(name, options = {})
+		options.merge!(:colors => @colors)
 		puts ConsoleTextTemplate.new({ :file => name }, options).result
 	end
-	
+
 	def new_screen
 		puts
 		line
 		puts
 	end
-	
+
 	def line
 		puts "--------------------------------------------"
 	end
-	
+
 	def prompt(message, default_value = nil)
 		done = false
 		while !done
 			print "#{message}: "
-			
+
 			if non_interactive? && default_value
 				puts default_value
 				return default_value
 			end
-			
+
 			begin
 				result = STDIN.readline
 			rescue EOFError
@@ -327,7 +329,7 @@ protected
 	rescue Interrupt
 		raise Abort
 	end
-	
+
 	def prompt_confirmation(message)
 		result = prompt("#{message} [y/n]") do |value|
 			if value.downcase == 'y' || value.downcase == 'n'
@@ -364,8 +366,8 @@ protected
 	def home_dir
 		Etc.getpwuid(Process.uid).dir
 	end
-	
-	
+
+
 	def sh(*args)
 		puts "# #{args.join(' ')}"
 		result = system(*args)
@@ -377,14 +379,14 @@ protected
 			return false
 		end
 	end
-	
+
 	def sh!(*args)
 		if !sh(*args)
 			puts_error "*** Command failed: #{args.join(' ')}"
 			raise CommandError
 		end
 	end
-	
+
 	def rake(*args)
 		PhusionPassenger.require_passenger_lib 'platform_info/ruby'
 		if !PlatformInfo.rake_command
@@ -402,7 +404,7 @@ protected
 		end
 		sh!("#{PlatformInfo.rake_command} #{args.join(' ')}")
 	end
-	
+
 	def download(url, output, options = {})
 		options[:logger] ||= begin
 			logger = Logger.new(STDOUT)

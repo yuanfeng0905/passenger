@@ -1,15 +1,18 @@
 #  Phusion Passenger - https://www.phusionpassenger.com/
-#  Copyright (c) 2010-2013 Phusion
+#  Copyright (c) 2010-2014 Phusion
 #
 #  "Phusion Passenger" is a trademark of Hongli Lai & Ninh Bui.
 #
 #  See LICENSE file for license information.
+PhusionPassenger.require_passenger_lib 'standalone/utils'
 PhusionPassenger.require_passenger_lib 'utils/file_system_watcher'
 
 module PhusionPassenger
 module Standalone
 
 class AppFinder
+	include Standalone::Utils
+
 	attr_accessor :dirs
 	attr_reader :apps
 
@@ -57,7 +60,7 @@ class AppFinder
 			dirs = @dirs.empty? ? ["."] : @dirs
 			dirs.each do |dir|
 				if looks_like_app_directory?(dir)
-					app_root = File.expand_path(dir)
+					app_root = absolute_path(dir)
 					server_names = filename_to_server_names(dir)
 					apps << {
 						:server_names => server_names,
@@ -67,7 +70,7 @@ class AppFinder
 					watchlist << "#{app_root}/config" if File.exist?("#{app_root}/config")
 					watchlist << "#{app_root}/passenger-standalone.json" if File.exist?("#{app_root}/passenger-standalone.json")
 				else
-					full_dir = File.expand_path(dir)
+					full_dir = absolute_path(dir)
 					watchlist << full_dir
 					Dir["#{full_dir}/*"].each do |subdir|
 						if looks_like_app_directory?(subdir)
@@ -161,9 +164,9 @@ private
 
 	def find_app_root
 		if @dirs.empty?
-			return File.expand_path(".")
+			return absolute_path(".")
 		else
-			return File.expand_path(@dirs[0])
+			return absolute_path(@dirs[0])
 		end
 	end
 
