@@ -1189,6 +1189,16 @@ protected:
 				fflush(stderr);
 				_exit(1);
 			}
+
+			ret = chdir("/");
+			if (ret == -1) {
+				int e = errno;
+				fprintf(stderr, "Cannot chdir(\"/\") inside chroot: %s (errno=%d)\n",
+					strerror(e),
+					e);
+				fflush(stderr);
+				_exit(1);
+			}
 		}
 	}
 
