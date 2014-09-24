@@ -34,24 +34,25 @@ public:
 		cleanCount = 0;
 	}
 
-	virtual ProcessPtr spawn(const Options &options) {
+	virtual SpawnObject spawn(const Options &options) {
 		TRACE_POINT();
 		possiblyRaiseInternalError(options);
 
 		SocketPair adminSocket = createUnixSocketPair();
-		SocketListPtr sockets = boost::make_shared<SocketList>();
-		sockets->add("main", "tcp://127.0.0.1:1234", "session", config->concurrency);
+		SocketList sockets;
+		sockets.add("main", "tcp://127.0.0.1:1234", "session", config->concurrency);
 		syscalls::usleep(config->spawnTime);
 
 		boost::lock_guard<boost::mutex> l(lock);
 		count++;
-		ProcessPtr process = boost::make_shared<Process>(
-			(pid_t) count, "gupid-" + toString(count),
-			toString(count),
+		SpawnObject object;
+		string gupid = "gupid-" + toString(count);
+		object.process = boost::make_shared<Process>(
+			(pid_t) count, gupid,
 			adminSocket.second, FileDescriptor(), sockets,
 			SystemTime::getUsec(), SystemTime::getUsec());
-		process->dummy = true;
-		return process;
+		object.process->dummy = true;
+		return object;
 	}
 
 	virtual bool cleanable() const {

@@ -1,5 +1,5 @@
 #  Phusion Passenger - https://www.phusionpassenger.com/
-#  Copyright (c) 2010-2013 Phusion
+#  Copyright (c) 2010-2014 Phusion
 #
 #  "Phusion Passenger" is a trademark of Hongli Lai & Ninh Bui.
 #
@@ -34,7 +34,6 @@ APACHE2_MODULE_INPUT_FILES = {
 		ext/common/Exceptions.h
 		ext/common/Logging.h
 		ext/common/RandomGenerator.h
-		ext/common/ServerInstanceDir.h
 		ext/common/Utils.h
 		ext/common/Utils/Timer.h)
 }
@@ -55,7 +54,7 @@ APACHE2_MODULE_BOOST_OXT_LIBRARY = define_libboost_oxt_task("apache2",
 	PlatformInfo.apache2_module_cflags)
 APACHE2_MODULE_COMMON_LIBRARIES  = COMMON_LIBRARY.
 	only(:base, 'ApplicationPool2/AppTypes.o', 'Utils/Base64.o',
-		'Utils/MD5.o', 'Utils/LargeFiles.o').
+		'Utils/MD5.o', 'Utils/modp_b64.o').
 	set_namespace("apache2").
 	set_output_dir(APACHE2_OUTPUT_DIR + "module_libpassenger_common").
 	define_tasks(PlatformInfo.apache2_module_cflags).
@@ -74,9 +73,7 @@ auto_generated_sources = [
 desc "Build Apache 2 module"
 task :apache2 => [
 	APACHE2_MODULE,
-	AGENT_OUTPUT_DIR + 'PassengerHelperAgent',
-	AGENT_OUTPUT_DIR + 'PassengerWatchdog',
-	AGENT_OUTPUT_DIR + 'PassengerLoggingAgent',
+	AGENT_OUTPUT_DIR + 'PassengerAgent',
 	AGENT_OUTPUT_DIR + 'SpawnPreparer',
 	AGENT_OUTPUT_DIR + 'TempDirToucher',
 	NATIVE_SUPPORT_TARGET

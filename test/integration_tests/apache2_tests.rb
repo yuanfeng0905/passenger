@@ -1,10 +1,14 @@
 require File.expand_path(File.dirname(__FILE__) + "/spec_helper")
 require 'socket'
 require 'fileutils'
+require 'net/http'
+require 'rexml/document'
 require 'support/apache2_controller'
 PhusionPassenger.require_passenger_lib 'platform_info'
 PhusionPassenger.require_passenger_lib 'admin_tools'
-PhusionPassenger.require_passenger_lib 'admin_tools/server_instance'
+PhusionPassenger.require_passenger_lib 'admin_tools/instance_registry'
+
+WEB_SERVER_DECHUNKS_REQUESTS = false
 
 require 'integration_tests/shared/example_webapp_tests'
 
@@ -17,7 +21,7 @@ describe "Apache 2 module" do
 		@passenger_temp_dir = "/tmp/passenger-test.#{$$}"
 		Dir.mkdir(@passenger_temp_dir)
 		FileUtils.chmod_R(0777, @passenger_temp_dir)
-		ENV['PASSENGER_TEMP_DIR'] = @passenger_temp_dir
+		ENV['TMPDIR'] = @passenger_temp_dir
 	end
 
 	after :all do
@@ -50,7 +54,7 @@ describe "Apache 2 module" do
 			create_apache2_controller
 			@server = "http://1.passenger.test:#{@apache2.port}"
 			@stub = RackStub.new('rack')
-			@apache2 << "RailsMaxPoolSize 1"
+			@apache2 << "PassengerMaxPoolSize 1"
 			@apache2.set_vhost("1.passenger.test", "#{@stub.full_app_root}/public")
 			@apache2.start
 		end
@@ -72,7 +76,7 @@ describe "Apache 2 module" do
 			create_apache2_controller
 			@server = "http://1.passenger.test:#{@apache2.port}/subapp"
 			@stub = RackStub.new('rack')
-			@apache2 << "RailsMaxPoolSize 1"
+			@apache2 << "PassengerMaxPoolSize 1"
 			@apache2.set_vhost("1.passenger.test", File.expand_path("stub")) do |vhost|
 				vhost << %Q{
 					Alias /subapp #{@stub.full_app_root}/public
@@ -107,7 +111,7 @@ describe "Apache 2 module" do
 			create_apache2_controller
 			@server = "http://1.passenger.test:#{@apache2.port}"
 			@stub = PythonStub.new('wsgi')
-			@apache2 << "RailsMaxPoolSize 1"
+			@apache2 << "PassengerMaxPoolSize 1"
 			@apache2.set_vhost("1.passenger.test", "#{@stub.full_app_root}/public")
 			@apache2.start
 		end
@@ -129,7 +133,7 @@ describe "Apache 2 module" do
 			create_apache2_controller
 			@server = "http://1.passenger.test:#{@apache2.port}/subapp"
 			@stub = PythonStub.new('wsgi')
-			@apache2 << "RailsMaxPoolSize 1"
+			@apache2 << "PassengerMaxPoolSize 1"
 			@apache2.set_vhost("1.passenger.test", File.expand_path("stub")) do |vhost|
 				vhost << %Q{
 					Alias /subapp #{@stub.full_app_root}/public
@@ -164,7 +168,7 @@ describe "Apache 2 module" do
 			create_apache2_controller
 			@server = "http://1.passenger.test:#{@apache2.port}"
 			@stub = NodejsStub.new('node')
-			@apache2 << "RailsMaxPoolSize 1"
+			@apache2 << "PassengerMaxPoolSize 1"
 			@apache2.set_vhost("1.passenger.test", "#{@stub.full_app_root}/public")
 			@apache2.start
 		end
@@ -186,7 +190,7 @@ describe "Apache 2 module" do
 			create_apache2_controller
 			@server = "http://1.passenger.test:#{@apache2.port}/subapp"
 			@stub = NodejsStub.new('node')
-			@apache2 << "RailsMaxPoolSize 1"
+			@apache2 << "PassengerMaxPoolSize 1"
 			@apache2.set_vhost("1.passenger.test", File.expand_path("stub")) do |vhost|
 				vhost << %Q{
 					Alias /subapp #{@stub.full_app_root}/public
@@ -219,11 +223,11 @@ describe "Apache 2 module" do
 	describe "compatibility with other modules" do
 		before :all do
 			create_apache2_controller
-			@apache2 << "RailsMaxPoolSize 1"
+			@apache2 << "PassengerMaxPoolSize 1"
+			@apache2 << "PassengerStatThrottleRate 0"
 
 			@stub = RackStub.new('rack')
 			@server = "http://1.passenger.test:#{@apache2.port}"
-			@apache2 << "RailsMaxPoolSize 1"
 			@apache2.set_vhost("1.passenger.test", "#{@stub.full_app_root}/public") do |vhost|
 				vhost << "RewriteEngine on"
 				vhost << "RewriteRule ^/rewritten_frontpage$ / [PT,QSA,L]"
@@ -244,7 +248,7 @@ describe "Apache 2 module" do
 		it "supports environment variable passing through mod_env" do
 			File.write("#{@stub.app_root}/public/.htaccess", 'SetEnv FOO "Foo Bar!"')
 			File.touch("#{@stub.app_root}/tmp/restart.txt", 2)  # Activate ENV changes.
-			get('/env').should =~ /^FOO = Foo Bar\!$/
+			get('/system_env').should =~ /^FOO = Foo Bar\!$/
 		end
 
 		it "supports mod_rewrite in the virtual host block" do
@@ -271,6 +275,7 @@ describe "Apache 2 module" do
 		before :all do
 			create_apache2_controller
 			@apache2 << "PassengerMaxPoolSize 3"
+			@apache2 << "PassengerStatThrottleRate 0"
 
 			@stub = RackStub.new('rack')
 			@stub_url_root = "http://5.passenger.test:#{@apache2.port}"
@@ -289,7 +294,7 @@ describe "Apache 2 module" do
 			@stub2 = RackStub.new('rack')
 			@stub2_url_root = "http://6.passenger.test:#{@apache2.port}"
 			@apache2.set_vhost('6.passenger.test', "#{@stub2.full_app_root}/public") do |vhost|
-				vhost << "RailsEnv development"
+				vhost << "PassengerAppEnv development"
 				vhost << "PassengerSpawnMethod conservative"
 				vhost << "PassengerRestartDir #{@stub2.full_app_root}/public"
 				vhost << "AllowEncodedSlashes off"
@@ -309,12 +314,12 @@ describe "Apache 2 module" do
 			@stub2.reset
 		end
 
-		specify "RailsEnv is per-virtual host" do
+		specify "PassengerAppEnv is per-virtual host" do
 			@server = @stub_url_root
-			get('/system_env').should =~ /RAILS_ENV = production/
+			get('/system_env').should =~ /PASSENGER_APP_ENV = production/
 
 			@server = @stub2_url_root
-			get('/system_env').should =~ /RAILS_ENV = development/
+			get('/system_env').should =~ /PASSENGER_APP_ENV = development/
 		end
 
 		it "looks for restart.txt in the directory specified by PassengerRestartDir" do
@@ -466,13 +471,14 @@ describe "Apache 2 module" do
 			FileUtils.mkdir_p('tmp.webdir')
 			@webdir = File.expand_path('tmp.webdir')
 			@apache2.set_vhost('1.passenger.test', @webdir) do |vhost|
-				vhost << "RailsBaseURI /app-that-crashes-during-startup/public"
+				vhost << "PassengerBaseURI /app-that-crashes-during-startup/public"
 			end
 
 			@stub = RackStub.new('rack')
 			@stub_url_root = "http://2.passenger.test:#{@apache2.port}"
 			@apache2.set_vhost('2.passenger.test', "#{@stub.full_app_root}/public")
 
+			@apache2 << "PassengerFriendlyErrorPages on"
 			@apache2.start
 		end
 
@@ -515,6 +521,7 @@ describe "Apache 2 module" do
 			create_apache2_controller
 			@stub = RackStub.new('rack')
 			@stub_url_root = "http://1.passenger.test:#{@apache2.port}"
+			@apache2 << "PassengerStatThrottleRate 0"
 			@apache2.set_vhost('1.passenger.test', "#{@stub.full_app_root}/public")
 			@apache2.start
 			@server = "http://1.passenger.test:#{@apache2.port}"
@@ -531,19 +538,19 @@ describe "Apache 2 module" do
 
 		it "is restarted if it crashes" do
 			# Make sure that all Apache worker processes have connected to
-			# the helper server.
+			# the helper agent.
 			10.times do
 				get('/').should == "front page"
 				sleep 0.1
 			end
 
-			# Now kill the helper server.
-			instance = AdminTools::ServerInstance.list.first
-			Process.kill('SIGKILL', instance.helper_agent_pid)
+			# Now kill the helper agent.
+			instance = AdminTools::InstanceRegistry.new.list.first
+			Process.kill('SIGKILL', instance.server_pid)
 			sleep 0.02 # Give the signal a small amount of time to take effect.
 
 			# Each worker process should detect that the old
-			# helper server has died, and should reconnect.
+			# helper agent has died, and should reconnect.
 			10.times do
 				get('/').should == "front page"
 				sleep 0.1
@@ -553,17 +560,28 @@ describe "Apache 2 module" do
 		it "exposes the application pool for passenger-status" do
 			File.touch("#{@stub.app_root}/tmp/restart.txt", 1)  # Get rid of all previous app processes.
 			get('/').should == "front page"
-			instance = AdminTools::ServerInstance.list.first
+			instance = AdminTools::InstanceRegistry.new.list.first
 
 			# Wait until the server has processed the session close event.
 			sleep 0.1
 
-			processes = instance.connect(:role => :passenger_status) do |client|
-				instance.processes(client)
+			request = Net::HTTP::Get.new("/pool.xml")
+			request.basic_auth("ro_admin", instance.read_only_admin_password)
+			response = instance.http_request("agents.s/server_admin", request)
+			if response.code.to_i / 100 == 2
+				doc = REXML::Document.new(response.body)
+			else
+				raise response.body
 			end
-			processes.should have(1).item
-			processes[0].group.name.should == @stub.full_app_root + "#default"
-			processes[0].processed.should == 1
+
+			groups = doc.get_elements("info/supergroups/supergroup/group")
+			groups.should have(1).item
+			groups.each do |group|
+				group.elements["name"].text.should == "#{@stub.full_app_root} (production)#default"
+				processes = group.get_elements("processes/process")
+				processes.should have(1).item
+				processes[0].elements["processed"].text.should == "1"
+			end
 		end
 	end
 

@@ -1,6 +1,6 @@
 /*
  *  Phusion Passenger - https://www.phusionpassenger.com/
- *  Copyright (c) 2010-2013 Phusion
+ *  Copyright (c) 2010-2014 Phusion
  *
  *  "Phusion Passenger" is a trademark of Hongli Lai & Ninh Bui.
  *
@@ -215,14 +215,24 @@ void toHex(const StaticString & restrict_ref data, char * restrict output, bool 
 /**
  * Reverse a string in-place.
  */
-inline void
-reverseString(char *str, unsigned int size) {
-	char *end = str + size;
-	for (--end; str < end; str++, end--) {
-		*str = *str ^ *end,
-		*end = *str ^ *end,
-		*str = *str ^ *end;
-	}
+void reverseString(char *str, unsigned int size);
+
+/**
+ * Calculates the size (in characters) of an integer when converted
+ * to another base.
+ */
+template<typename IntegerType, int radix>
+unsigned int
+integerSizeInOtherBase(IntegerType value) {
+	IntegerType remainder = value;
+	unsigned int size = 0;
+
+	do {
+		remainder = remainder / radix;
+		size++;
+	} while (remainder != 0);
+
+	return size;
 }
 
 /**
@@ -247,6 +257,25 @@ integerToOtherBase(IntegerType value, char *output, unsigned int outputSize) {
 	};
 	IntegerType remainder = value;
 	unsigned int size = 0;
+
+	if (outputSize >= 4) {
+		if (value < radix) {
+			output[0] = chars[value];
+			output[1] = '\0';
+			return 1;
+		} else if (value < radix * radix) {
+			output[0] = chars[value / radix];
+			output[1] = chars[value % radix];
+			output[2] = '\0';
+			return 2;
+		} else if (value < radix * radix * radix) {
+			output[0] = chars[value / radix / radix];
+			output[1] = chars[value / radix % radix];
+			output[2] = chars[value % radix];
+			output[3] = '\0';
+			return 3;
+		}
+	}
 
 	do {
 		output[size] = chars[remainder % radix];
@@ -278,6 +307,9 @@ unsigned int
 integerToHex(IntegerType value, char *output) {
 	return integerToOtherBase<IntegerType, 16>(value, output, 2 * sizeof(IntegerType) + 1);
 }
+
+unsigned int uintSizeAsString(unsigned int value);
+unsigned int uintToString(unsigned int value, char *output, unsigned int outputSize);
 
 /**
  * Convert the given integer to a hexadecimal string.
@@ -329,6 +361,11 @@ roundUp(IntegerType number, IntegerType multiple) {
 }
 
 /**
+ * Converts the given character array to lowercase.
+ */
+void convertLowerCase(unsigned char *data, size_t len);
+
+/**
  * Compare two strings using a constant time algorithm to avoid timing attacks.
  */
 bool constantTimeCompare(const StaticString &a, const StaticString &b);
@@ -356,9 +393,12 @@ string cEscapeString(const StaticString &input);
  */
 string escapeHTML(const StaticString &input);
 
-StaticString makeStaticStringWithNull(const char *data);
-
-StaticString makeStaticStringWithNull(const string &data);
+/**
+ * URL-decodes the given string.
+ *
+ * @throws SyntaxError
+ */
+string urldecode(const StaticString &url);
 
 } // namespace Passenger
 

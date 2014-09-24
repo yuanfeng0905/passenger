@@ -1,6 +1,6 @@
 /*
  *  Phusion Passenger - https://www.phusionpassenger.com/
- *  Copyright (c) 2010-2013 Phusion
+ *  Copyright (c) 2010-2014 Phusion
  *
  *  "Phusion Passenger" is a trademark of Hongli Lai & Ninh Bui.
  *
@@ -251,15 +251,26 @@ public:
 		return *this;
 	}
 
-	VariantMap &setStrSet(const string &name, const std::set<string> &value) {
-		std::set<string>::const_iterator it;
+	template <typename StringCollection>
+	VariantMap &setStrSet(const string &name, const StringCollection &value) {
+		typename StringCollection::const_iterator it;
 		string result;
 
 		for (it = value.begin(); it != value.end(); it++) {
+			if (it != value.begin()) {
+				result.append(1, '\0');
+			}
 			result.append(*it);
-			result.append(1, '\0');
 		}
 		set(name, Base64::encode(result));
+		return *this;
+	}
+
+	template <typename StringCollection>
+	VariantMap &setDefaultStrSet(const string &name, const StringCollection &value) {
+		if (store.find(name) == store.end()) {
+			setStrSet(name, value);
+		}
 		return *this;
 	}
 

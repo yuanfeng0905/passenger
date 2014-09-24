@@ -1,6 +1,6 @@
 /*
  *  Phusion Passenger - https://www.phusionpassenger.com/
- *  Copyright (c) 2010-2013 Phusion
+ *  Copyright (c) 2010-2014 Phusion
  *
  *  "Phusion Passenger" is a trademark of Hongli Lai & Ninh Bui.
  *
@@ -40,6 +40,8 @@
 #include "Utils/IOUtils.h"
 #include "Utils/Timer.h"
 #include <Utils/License.c>
+#include "Utils/HttpConstants.h"
+#include "Utils/modp_b64.h"
 #include "Logging.h"
 #include "AgentsStarter.h"
 #include "DirectoryMapper.h"
@@ -71,16 +73,6 @@ extern "C" module AP_MODULE_DECLARE_DATA passenger_module;
 	APLOG_USE_MODULE(passenger);
 #endif
 
-
-/**
- * If the HTTP client sends POST data larger than this value (in bytes),
- * then the POST data will be fully buffered into a temporary file, before
- * allocating a Ruby web application session.
- * File uploads smaller than this are buffered into memory instead.
- */
-#define LARGE_UPLOAD_THRESHOLD 1024 * 8
-
-
 #if HTTP_VERSION(AP_SERVER_MAJORVERSION_NUMBER, AP_SERVER_MINORVERSION_NUMBER) > 2002
 	// Apache > 2.2.x
 	#define AP_GET_SERVER_VERSION_DEPRECATED
@@ -89,11 +81,6 @@ extern "C" module AP_MODULE_DECLARE_DATA passenger_module;
 	#if AP_SERVER_PATCHLEVEL_NUMBER >= 14
 		#define AP_GET_SERVER_VERSION_DEPRECATED
 	#endif
-#endif
-
-#if HTTP_VERSION(AP_SERVER_MAJORVERSION_NUMBER, AP_SERVER_MINORVERSION_NUMBER) >= 2004
-	// Apache >= 2.4
-	#define unixd_config ap_unixd_config
 #endif
 
 
@@ -194,6 +181,7 @@ private:
 	Threeway m_hasModRewrite, m_hasModDir, m_hasModAutoIndex, m_hasModXsendfile;
 	CachedFileStat cstat;
 	AgentsStarter agentsStarter;
+	boost::mutex cstatMutex;
 
 	inline DirConfig *getDirConfig(request_rec *r) {
 		return (DirConfig *) ap_get_module_config(r->per_dir_config, &passenger_module);
@@ -224,17 +212,17 @@ private:
 		}
 	}
 
-	StaticString getRequestSocketFilename() const {
+	StaticString getServerAddress() const {
 		if (serverConfig.flyWith == NULL) {
-			return agentsStarter.getRequestSocketFilename();
+			return agentsStarter.getServerAddress();
 		} else {
 			return serverConfig.flyWith;
 		}
 	}
 
-	StaticString getRequestSocketPassword() const {
+	StaticString getServerPassword() const {
 		if (serverConfig.flyWith == NULL) {
-			return agentsStarter.getRequestSocketPassword();
+			return agentsStarter.getServerPassword();
 		} else {
 			return StaticString();
 		}
@@ -245,13 +233,12 @@ private:
 	 * wait and retry for a short period of time until the helper agent has been
 	 * restarted.
 	 */
-	FileDescriptor connectToHelperAgent() {
+	FileDescriptor connectToInternalServer() {
 		TRACE_POINT();
 		FileDescriptor conn;
 
 		try {
-			conn = connectToUnixServer(getRequestSocketFilename());
-			writeExact(conn, getRequestSocketPassword());
+			conn = connectToServer(getServerAddress());
 		} catch (const SystemException &e) {
 			if (e.code() == EPIPE || e.code() == ECONNREFUSED || e.code() == ENOENT) {
 				UPDATE_TRACE_POINT();
@@ -265,8 +252,7 @@ private:
 				time_t deadline = time(NULL) + 5;
 				while (!connected && time(NULL) < deadline) {
 					try {
-						conn = connectToUnixServer(getRequestSocketFilename());
-						writeExact(conn, getRequestSocketPassword());
+						conn = connectToServer(getServerAddress());
 						connected = true;
 					} catch (const SystemException &e) {
 						if (e.code() == EPIPE || e.code() == ECONNREFUSED || e.code() == ENOENT) {
@@ -283,7 +269,7 @@ private:
 				if (!connected) {
 					UPDATE_TRACE_POINT();
 					throw IOException("Cannot connect to the helper agent at " +
-						getRequestSocketFilename());
+						getServerAddress());
 				}
 			} else {
 				throw;
@@ -366,7 +352,7 @@ private:
 	bool prepareRequest(request_rec *r, DirConfig *config, const char *filename, bool coreModuleWillBeRun = false) {
 		TRACE_POINT();
 
-		DirectoryMapper mapper(r, config, &cstat, config->getStatThrottleRate());
+		DirectoryMapper mapper(r, config, &cstat, &cstatMutex, serverConfig.statThrottleRate);
 		try {
 			if (mapper.getApplicationType() == PAT_NONE) {
 				// (B) is not true.
@@ -547,97 +533,23 @@ private:
 
 			this_thread::disable_interruption di;
 			this_thread::disable_syscall_interruption dsi;
-			bool expectingUploadData;
-			bool shouldBufferUploads;
-			string uploadDataMemory;
-			boost::shared_ptr<BufferedUpload> uploadDataFile;
-			const char *contentLength;
+			bool expectingBody;
 
-			expectingUploadData = ap_should_client_block(r);
-			contentLength = lookupHeader(r, "Content-Length");
-			shouldBufferUploads = config->bufferUpload != DirConfig::DISABLED;
-
-			/* If the HTTP upload data is larger than a threshold, or if the HTTP
-			 * client sent HTTP upload data using the "chunked" transfer encoding
-			 * (which implies Content-Length == NULL), then buffer the upload
-			 * data into a tempfile. Otherwise, buffer it into memory.
-			 *
-			 * We never forward the data directly to the backend process because
-			 * the HTTP client might block indefinitely until it's done uploading.
-			 * This would quickly exhaust the application pool.
-			 */
-			if (expectingUploadData && shouldBufferUploads) {
-				if (contentLength == NULL || atol(contentLength) > LARGE_UPLOAD_THRESHOLD) {
-					uploadDataFile = receiveRequestBody(r);
-				} else {
-					receiveRequestBody(r, contentLength, uploadDataMemory);
-				}
-
-				/* We'll set the Content-Length header to the length of the
-				 * received upload data. Rails 2 requires this header for its
-				 * HTTP upload data multipart parsing process.
-				 * There are two reasons why we don't rely on the Content-Length
-				 * header as sent by the client:
-				 * - The client doesn't always send Content-Length, e.g. in case
-				 *   of "chunked" transfer encoding.
-				 * - mod_deflate input compression can make it so that the
-				 *   amount of upload we receive doesn't match Content-Length:
-				 *   http://httpd.apache.org/docs/2.0/mod/mod_deflate.html#enable
-				 */
-				if (uploadDataFile != NULL) {
-					apr_table_set(r->headers_in, "Content-Length",
-						toString(ftell(uploadDataFile->handle)).c_str());
-				} else {
-					apr_table_set(r->headers_in, "Content-Length",
-						toString(uploadDataMemory.size()).c_str());
-				}
-			}
+			expectingBody = ap_should_client_block(r);
 
 
 			/********** Step 3: forwarding the request and request body
 			                    to the HelperAgent **********/
 
-			vector<StaticString> requestData;
-			string headerData;
-			unsigned int size;
-			char sizeString[16];
 			int ret;
+			bool bodyIsChunked = false;
 
-			requestData.reserve(3);
-			headerData.reserve(1024 * 2);
-			requestData.push_back(StaticString());
-			size = constructHeaders(r, config, requestData, mapper, headerData);
-			requestData.push_back(",");
-
-			ret = snprintf(sizeString, sizeof(sizeString) - 1, "%u:", size);
-			sizeString[ret] = '\0';
-			requestData[0] = StaticString(sizeString, ret);
-
-			if (expectingUploadData && shouldBufferUploads && uploadDataFile == NULL) {
-				requestData.push_back(uploadDataMemory);
-			}
-
-			FileDescriptor conn = connectToHelperAgent();
-			gatheredWrite(conn, &requestData[0], requestData.size());
-
-			if (expectingUploadData) {
-				if (shouldBufferUploads && uploadDataFile != NULL) {
-					sendRequestBody(conn, uploadDataFile);
-					uploadDataFile.reset();
-				} else if (!shouldBufferUploads) {
-					sendRequestBody(conn, r);
-				}
-			}
-
-			do {
-				ret = shutdown(conn, SHUT_WR);
-			} while (ret == -1 && errno == EINTR);
-			if (ret == -1 && errno != ENOTCONN) {
-				// FreeBSD has a kernel bug which causes shutdown()
-				// to harmlessly return ENOTCONN sometimes. See comment
-				// in safelyClose().
-				int e = errno;
-				throw SystemException("Cannot shutdown(SHUT_WR) HelperAgent connection", e);
+			string headers = constructRequestHeaders(r, mapper, bodyIsChunked);
+			FileDescriptor conn = connectToInternalServer();
+			writeExact(conn, headers);
+			headers.clear();
+			if (expectingBody) {
+				sendRequestBody(conn, r, bodyIsChunked);
 			}
 
 
@@ -653,14 +565,16 @@ private:
 			bb = apr_brigade_create(r->connection->pool, r->connection->bucket_alloc);
 
 			bucketState = boost::make_shared<PassengerBucketState>(conn);
-			b = passenger_bucket_create(bucketState, r->connection->bucket_alloc, config->getBufferResponse());
+			b = passenger_bucket_create(bucketState, r->connection->bucket_alloc,
+				config->getBufferResponse());
 			APR_BRIGADE_INSERT_TAIL(bb, b);
 
 			b = apr_bucket_eos_create(r->connection->bucket_alloc);
 			APR_BRIGADE_INSERT_TAIL(bb, b);
 
 			/* Now read the HTTP response header, parse it and fill relevant
-			 * information in our request_rec structure.
+			 * information in our request_rec structure. We skip the status line
+			 * because ap_scan_script_header_err_brigade() can't handle it.
 			 */
 
 			/* I know the required size for backendData because I read
@@ -668,9 +582,10 @@ private:
 			 */
 			char backendData[MAX_STRING_LEN];
 			Timer timer;
-			int result = ap_scan_script_header_err_brigade(r, bb, backendData);
+			getsfunc_BRIGADE(backendData, MAX_STRING_LEN, bb);
+			ret = ap_scan_script_header_err_brigade(r, bb, backendData);
 
-			if (result == OK) {
+			if (ret == OK) {
 				// The API documentation for ap_scan_script_err_brigade() says it
 				// returns HTTP_OK on success, but it actually returns OK.
 
@@ -685,9 +600,12 @@ private:
 				 * Status header for retrieving the HTTP status.
 				 */
 				if (!r->status_line || *r->status_line == '\0') {
-					r->status_line = apr_psprintf(r->pool,
-						"%d Unknown Status",
-						r->status);
+					r->status_line = getStatusCodeAndReasonPhrase(r->status);
+					if (r->status_line == NULL) {
+						r->status_line = apr_psprintf(r->pool,
+							"%d Unknown Status",
+							r->status);
+					}
 				}
 				apr_table_setn(r->headers_out, "Status", r->status_line);
 
@@ -822,94 +740,60 @@ private:
 		return NULL;
 	}
 
-	const char *lookupHeader(request_rec *r, const char *name) {
-		return lookupInTable(r->headers_in, name);
-	}
-
 	const char *lookupEnv(request_rec *r, const char *name) {
 		return lookupInTable(r->subprocess_env, name);
 	}
 
-	void addHeader(string &headers, const char *name, const char *value) {
-		if (name != NULL && value != NULL) {
-			headers.append(name);
-			headers.append(1, '\0');
+	void addHeader(string &headers, const StaticString &name, const char *value) {
+		if (value != NULL) {
+			headers.append(name.data(), name.size());
+			headers.append(": ", 2);
 			headers.append(value);
-			headers.append(1, '\0');
+			headers.append("\r\n", 2);
 		}
 	}
 
-	void addHeader(string &headers, const char *name, const StaticString &value) {
-		if (name != NULL) {
-			headers.append(name);
-			headers.append(1, '\0');
-			headers.append(value.c_str(), value.size());
-			headers.append(1, '\0');
-		}
+	void addHeader(string &headers, const StaticString &name, const StaticString &value) {
+		headers.append(name.data(), name.size());
+		headers.append(": ", 2);
+		headers.append(value.data(), value.size());
+		headers.append("\r\n", 2);
 	}
 
-	void addHeader(request_rec *r, string &headers, const char *name, int value) {
+	void addHeader(request_rec *r, string &headers, const StaticString &name, int value) {
 		if (value != UNSET_INT_VALUE) {
-			headers.append(name);
-			headers.append(1, '\0');
+			headers.append(name.data(), name.size());
+			headers.append(": ", 2);
 			headers.append(apr_psprintf(r->pool, "%d", value));
-			headers.append(1, '\0');
+			headers.append("\r\n", 2);
 		}
 	}
 
-	void addHeader(request_rec *r, string &headers, const char *name, DirConfig::Threeway value) {
+	void addHeader(string &headers, const StaticString &name, DirConfig::Threeway value) {
 		if (value != DirConfig::UNSET) {
-			headers.append(name);
+			headers.append(name.data(), name.size());
+			headers.append(": ", 2);
 			if (value == DirConfig::ENABLED) {
-				headers.append("\0true\0", 6);
+				headers.append("t", 1);
 			} else {
-				headers.append("\0false\0", 7);
+				headers.append("f", 1);
 			}
+			headers.append("\r\n", 2);
 		}
 	}
 
-	unsigned int constructHeaders(request_rec *r, DirConfig *config,
-		vector<StaticString> &requestData, DirectoryMapper &mapper,
-		string &output)
+	string constructRequestHeaders(request_rec *r, DirectoryMapper &mapper,
+		bool &bodyIsChunked)
 	{
 		const char *baseURI = mapper.getBaseURI();
+		DirConfig *config = getDirConfig(r);
+		string result;
 
-		/*
-		 * Apache unescapes URI's before passing them to Phusion Passenger,
-		 * but backend processes expect the escaped version.
-		 * http://code.google.com/p/phusion-passenger/issues/detail?id=404
-		 */
-		size_t uriLen = strlen(r->uri);
-		unsigned int escaped = escapeUri(NULL, (const unsigned char *) r->uri, uriLen);
-		char *escapedUri = (char *) apr_palloc(r->pool, uriLen + 2 * escaped + 1);
-		escapeUri((unsigned char *) escapedUri, (const unsigned char *) r->uri, uriLen);
-		escapedUri[uriLen + 2 * escaped] = '\0';
+		// Construct HTTP status line.
 
-
-		// Set standard CGI variables.
-		#ifdef AP_GET_SERVER_VERSION_DEPRECATED
-			addHeader(output, "SERVER_SOFTWARE", ap_get_server_banner());
-		#else
-			addHeader(output, "SERVER_SOFTWARE", ap_get_server_version());
-		#endif
-		addHeader(output, "SERVER_PROTOCOL", r->protocol);
-		addHeader(output, "SERVER_NAME",     ap_get_server_name(r));
-		addHeader(output, "SERVER_ADMIN",    r->server->server_admin);
-		addHeader(output, "SERVER_ADDR",     r->connection->local_ip);
-		addHeader(output, "SERVER_PORT",     apr_psprintf(r->pool, "%u", ap_get_server_port(r)));
-		#if HTTP_VERSION(AP_SERVER_MAJORVERSION_NUMBER, AP_SERVER_MINORVERSION_NUMBER) >= 2004
-			addHeader(output, "REMOTE_ADDR", r->connection->client_ip);
-			addHeader(output, "REMOTE_PORT", apr_psprintf(r->pool, "%d", r->connection->client_addr->port));
-		#else
-			addHeader(output, "REMOTE_ADDR", r->connection->remote_ip);
-			addHeader(output, "REMOTE_PORT", apr_psprintf(r->pool, "%d", r->connection->remote_addr->port));
-		#endif
-		addHeader(output, "REMOTE_USER",     r->user);
-		addHeader(output, "REQUEST_METHOD",  r->method);
-		addHeader(output, "QUERY_STRING",    r->args ? r->args : "");
-		addHeader(output, "HTTPS",           lookupEnv(r, "HTTPS"));
-		addHeader(output, "CONTENT_TYPE",    lookupHeader(r, "Content-type"));
-		addHeader(output, "DOCUMENT_ROOT",   ap_document_root(r));
+		result.reserve(4096);
+		result.append(r->method);
+		result.append(" ", 1);
 
 		if (config->allowsEncodedSlashes()) {
 			/*
@@ -921,28 +805,30 @@ private:
 			 * http://code.google.com/p/phusion-passenger/issues/detail?id=113
 			 * http://code.google.com/p/phusion-passenger/issues/detail?id=230
 			 */
-			addHeader(output, "REQUEST_URI", r->unparsed_uri);
+			result.append(r->unparsed_uri);
 		} else {
-			const char *request_uri;
+			size_t uriLen = strlen(r->uri);
+			unsigned int escaped = escapeUri(NULL, (const unsigned char *) r->uri, uriLen);
+			size_t escapedUriLen = uriLen + 2 * escaped;
+			char *escapedUri = (char *) apr_palloc(r->pool, escapedUriLen);
+			escapeUri((unsigned char *) escapedUri, (const unsigned char *) r->uri, uriLen);
+
+			result.append(escapedUri, escapedUriLen);
+
 			if (r->args != NULL) {
-				request_uri = apr_pstrcat(r->pool, escapedUri, "?", r->args, (char *) NULL);
-			} else {
-				request_uri = escapedUri;
+				result.append("?", 1);
+				result.append(r->args);
 			}
-			addHeader(output, "REQUEST_URI", request_uri);
 		}
 
-		if (baseURI == NULL) {
-			addHeader(output, "SCRIPT_NAME", "");
-			addHeader(output, "PATH_INFO", escapedUri);
-		} else {
-			addHeader(output, "SCRIPT_NAME", baseURI);
-			addHeader(output, "PATH_INFO", escapedUri + strlen(baseURI));
-		}
+		result.append(" HTTP/1.1\r\n", sizeof(" HTTP/1.1\r\n") - 1);
 
-		// Set HTTP headers.
+		// Construct HTTP headers.
+
 		const apr_array_header_t *hdrs_arr;
 		apr_table_entry_t *hdrs;
+		apr_table_entry_t *connectionHeader = NULL;
+		apr_table_entry_t *transferEncodingHeader = NULL;
 		int i;
 
 		hdrs_arr = apr_table_elts(r->headers_in);
@@ -950,129 +836,229 @@ private:
 		for (i = 0; i < hdrs_arr->nelts; ++i) {
 			if (hdrs[i].key == NULL) {
 				continue;
-			}
-			size_t keylen = strlen(hdrs[i].key);
-			// We only pass the Transfer-Encoding header if PassengerBufferUpload is disabled,
-			// so that the HelperAgent and the app knows that there is a request body despite
-			// there not being a Content-Length header.
-			if (!headerIsTransferEncoding(hdrs[i].key, keylen) || config->bufferUpload == DirConfig::DISABLED) {
-				addHeader(output, httpToEnv(r->pool, hdrs[i].key, keylen), hdrs[i].val);
+			} else if (connectionHeader == NULL
+				&& strcasecmp(hdrs[i].key, "Connection") == 0)
+			{
+				connectionHeader = &hdrs[i];
+			} else if (transferEncodingHeader == NULL
+				&& strcasecmp(hdrs[i].key, "Transfer-Encoding") == 0)
+			{
+				transferEncodingHeader = &hdrs[i];
+			} else {
+				result.append(hdrs[i].key);
+				result.append(": ", 2);
+				if (hdrs[i].val != NULL) {
+					result.append(hdrs[i].val);
+				}
+				result.append("\r\n", 2);
 			}
 		}
 
-		// Add other environment variables.
-		const apr_array_header_t *env_arr;
-		apr_table_entry_t *env;
+		if (connectionHeader == NULL || strcasecmp(connectionHeader->val, "keep-alive") == 0) {
+			result.append("Connection: close\r\n", sizeof("Connection: close\r\n") - 1);
+		} else {
+			result.append("Connection: ", sizeof("Connection: ") - 1);
+			result.append(connectionHeader->val);
+			result.append("\r\n", 2);
+		}
 
-		env_arr = apr_table_elts(r->subprocess_env);
-		env = (apr_table_entry_t*) env_arr->elts;
-		for (i = 0; i < env_arr->nelts; ++i) {
-			addHeader(output, env[i].key, env[i].val);
+		if (transferEncodingHeader != NULL) {
+			result.append("Transfer-Encoding: ", sizeof("Transfer-Encoding: ") - 1);
+			result.append(transferEncodingHeader->val);
+			result.append("\r\n", 2);
+			bodyIsChunked = strcasecmp(transferEncodingHeader->val, "chunked") == 0;
+		}
+
+		// Add secure headers.
+
+		result.append("!~: ", sizeof("!~: ") - 1);
+		result.append(getServerPassword().data(), getServerPassword().size());
+		result.append("\r\n!~DOCUMENT_ROOT: ", sizeof("\r\n!~DOCUMENT_ROOT: ") - 1);
+		result.append(ap_document_root(r));
+		result.append("\r\n", 2);
+
+		if (baseURI != NULL) {
+			result.append("!~SCRIPT_NAME: ", sizeof("!~SCRIPT_NAME: ") - 1);
+			result.append(baseURI);
+			result.append("\r\n", 2);
+		}
+
+		#if HTTP_VERSION(AP_SERVER_MAJORVERSION_NUMBER, AP_SERVER_MINORVERSION_NUMBER) >= 2004
+			addHeader(result, P_STATIC_STRING("!~REMOTE_ADDR"),
+				r->connection->client_ip);
+			addHeader(r, result, P_STATIC_STRING("!~REMOTE_PORT"),
+				r->connection->client_addr->port);
+		#else
+			addHeader(result, P_STATIC_STRING("!~REMOTE_ADDR"),
+				r->connection->remote_ip);
+			addHeader(r, result, P_STATIC_STRING("!~REMOTE_PORT"),
+				r->connection->remote_addr->port);
+		#endif
+		addHeader(result, P_STATIC_STRING("!~REMOTE_USER"), r->user);
+
+		// App group name.
+		if (config->appGroupName == NULL) {
+			result.append("!~PASSENGER_APP_GROUP_NAME: ",
+				sizeof("!~PASSENGER_APP_GROUP_NAME: ") - 1);
+			result.append(mapper.getAppRoot());
+			if (config->appEnv != NULL) {
+				result.append(" (", 2);
+				result.append(config->appEnv);
+				result.append(")", 1);
+			}
+			result.append("\r\n", 2);
 		}
 
 		// Phusion Passenger options.
-		addHeader(output, "PASSENGER_STATUS_LINE", "false");
-		addHeader(output, "PASSENGER_APP_ROOT", mapper.getAppRoot());
-		addHeader(output, "PASSENGER_APP_GROUP_NAME", config->getAppGroupName(mapper.getAppRoot()));
-		#include "SetHeaders.cpp"
-		addHeader(output, "PASSENGER_SPAWN_METHOD", config->getSpawnMethodString());
-		addHeader(r, output, "PASSENGER_MAX_REQUEST_QUEUE_SIZE", config->maxRequestQueueSize);
-		addHeader(output, "PASSENGER_APP_TYPE", mapper.getApplicationTypeName());
-		addHeader(output, "PASSENGER_MAX_PRELOADER_IDLE_TIME",
-			apr_psprintf(r->pool, "%ld", config->maxPreloaderIdleTime));
-		addHeader(output, "PASSENGER_DEBUGGER", "false");
-		addHeader(output, "PASSENGER_SHOW_VERSION_IN_HEADER", "true");
-		addHeader(output, "PASSENGER_STAT_THROTTLE_RATE",
-			apr_psprintf(r->pool, "%ld", config->getStatThrottleRate()));
-		addHeader(output, "PASSENGER_RESTART_DIR", config->getRestartDir());
-		addHeader(output, "PASSENGER_FRIENDLY_ERROR_PAGES",
-			config->showFriendlyErrorPages() ? "true" : "false");
-		addHeader(output, "PASSENGER_CONCURRENCY_MODEL", config->getConcurrencyModel());
-		addHeader(output, "PASSENGER_THREAD_COUNT",
-			apr_psprintf(r->pool, "%u", config->getThreadCount()));
+		addHeader(result, P_STATIC_STRING("!~PASSENGER_APP_ROOT"), mapper.getAppRoot());
+		addHeader(result, P_STATIC_STRING("!~PASSENGER_APP_TYPE"), mapper.getApplicationTypeName());
 		if (config->useUnionStation() && !config->unionStationKey.empty()) {
-			addHeader(output, "UNION_STATION_SUPPORT", "true");
-			addHeader(output, "UNION_STATION_KEY", config->unionStationKey);
+			addHeader(result, P_STATIC_STRING("!~UNION_STATION_SUPPORT"), P_STATIC_STRING("t"));
+			addHeader(result, P_STATIC_STRING("!~UNION_STATION_KEY"), config->unionStationKey);
 			if (!config->unionStationFilters.empty()) {
-				addHeader(output, "UNION_STATION_FILTERS",
+				addHeader(result, P_STATIC_STRING("!~UNION_STATION_FILTERS"),
 					config->getUnionStationFilterString());
 			}
 		}
+		#include "SetHeaders.cpp"
 
 		/*********************/
+		addHeader(result, P_STATIC_STRING("!~PASSENGER_CONCURRENCY_MODEL"),
+			config->getConcurrencyModel());
+		addHeader(r, result,  P_STATIC_STRING("!~PASSENGER_THREAD_COUNT"),
+			config->getThreadCount());
+
 		if (config->getMaxRequestTime() > 0) {
-			addHeader(output, "PASSENGER_MAX_REQUEST_TIME",
-				apr_psprintf(r->pool, "%lu", config->getMaxRequestTime())
-			);
+			addHeader(r, result, P_STATIC_STRING("!~PASSENGER_MAX_REQUEST_TIME"),
+				config->getMaxRequestTime());
 		}
-		addHeader(output, "PASSENGER_MEMORY_LIMIT",
-			apr_psprintf(r->pool, "%lu", config->getMemoryLimit()));
-		addHeader(output, "PASSENGER_ROLLING_RESTARTS", config->useRollingRestarts() ? "true" : "false");
+		addHeader(r, result, P_STATIC_STRING("!~PASSENGER_MEMORY_LIMIT"),
+			config->getMemoryLimit());
+		addHeader(result, P_STATIC_STRING("!~PASSENGER_ROLLING_RESTARTS"),
+			config->useRollingRestarts()
+			? P_STATIC_STRING("t")
+			: P_STATIC_STRING("f"));
 		if (config->maxInstancesSpecified) {
-			addHeader(output, "PASSENGER_MAX_PROCESSES",
-				apr_psprintf(r->pool, "%ld", config->getMaxInstances()));
+			addHeader(r, result, P_STATIC_STRING("!~PASSENGER_MAX_PROCESSES"),
+				config->getMaxInstances());
 		}
-		addHeader(output, "PASSENGER_DEBUGGER",
-			config->useDebugger() ? "true" : "false");
-		addHeader(output, "PASSENGER_RESIST_DEPLOYMENT_ERRORS",
-			config->shouldResistDeploymentErrors() ? "true" : "false");
+		addHeader(result, P_STATIC_STRING("!~PASSENGER_DEBUGGER"),
+			config->useDebugger()
+			? P_STATIC_STRING("t")
+			: P_STATIC_STRING("f"));
+		addHeader(result, P_STATIC_STRING("!~PASSENGER_RESIST_DEPLOYMENT_ERRORS"),
+			config->shouldResistDeploymentErrors()
+			? P_STATIC_STRING("t")
+			: P_STATIC_STRING("f"));
 		/*********************/
 
-		requestData.push_back(output);
-		return output.size();
+		// Add environment variables.
+
+		if (config->envvarsCache == NULL) {
+			const apr_array_header_t *env_arr;
+			env_arr = apr_table_elts(r->subprocess_env);
+
+			if (env_arr->nelts > 0) {
+				apr_table_entry_t *env;
+				string envvarsData;
+				size_t len;
+
+				env = (apr_table_entry_t*) env_arr->elts;
+
+				for (i = 0; i < env_arr->nelts; ++i) {
+					envvarsData.append(env[i].key);
+					envvarsData.append("\0", 1);
+					if (env[i].val != NULL) {
+						envvarsData.append(env[i].val);
+					}
+					envvarsData.append("\0", 1);
+				}
+
+				config->envvarsCache = (char *) malloc(modp_b64_encode_len(
+					envvarsData.size()));
+				if (config->envvarsCache == NULL) {
+					throw RuntimeException("Unable to allocate memory for base64 "
+						"encoding of environment variables");
+				}
+				len = modp_b64_encode(config->envvarsCache,
+					envvarsData.data(), envvarsData.size());
+				if (len == (size_t) -1) {
+					free(config->envvarsCache);
+					config->envvarsCache = NULL;
+					throw RuntimeException("Unable to base64 encode environment variables");
+				}
+				config->envvarsCacheSize = len;
+			}
+		}
+
+		if (config->envvarsCache != NULL) {
+			result.append("!~PASSENGER_ENV_VARS: ", sizeof("!~PASSENGER_ENV_VARS: ") - 1);
+			result.append(config->envvarsCache, config->envvarsCacheSize);
+			result.append("\r\n", 2);
+		}
+
+		// Add flags.
+		// C = Strip 100 Continue header
+		// B = Buffer request body
+		// S = SSL
+
+		result.append("!~FLAGS: C", sizeof("!~FLAGS: C") - 1);
+		if (config->bufferUpload != DirConfig::DISABLED) {
+			result.append("B", 1);
+		}
+		if (lookupEnv(r, "HTTPS") != NULL) {
+			result.append("S", 1);
+		}
+		result.append("\r\n\r\n", 4);
+
+		return result;
 	}
 
-	void throwUploadBufferingException(request_rec *r, int code) {
-		DirConfig *config = getDirConfig(r);
-		string message("An error occured while "
-			"buffering HTTP upload data to "
-			"a temporary file in ");
-		message.append(getUploadBufferDir(config));
+	static int getsfunc_BRIGADE(char *buf, int len, void *arg) {
+		apr_bucket_brigade *bb = (apr_bucket_brigade *)arg;
+		const char *dst_end = buf + len - 1; /* leave room for terminating null */
+		char *dst = buf;
+		apr_bucket *e = APR_BRIGADE_FIRST(bb);
+		apr_status_t rv;
+		int done = 0;
 
-		switch (code) {
-		case ENOSPC:
-			message.append(". Disk directory doesn't have enough disk space, "
-				"so please make sure that it has "
-				"enough disk space for buffering file uploads, "
-				"or set the 'PassengerUploadBufferDir' directive "
-				"to a directory that has enough disk space.");
-			throw RuntimeException(message);
-			break;
-		case EDQUOT:
-			message.append(". The current Apache worker process (which is "
-				"running as ");
-			message.append(getProcessUsername());
-			message.append(") cannot write to this directory because of "
-				"disk quota limits. Please make sure that the volume "
-				"that this directory resides on has enough disk space "
-				"quota for the Apache worker process, or set the "
-				"'PassengerUploadBufferDir' directive to a different "
-				"directory that has enough disk space quota.");
-			throw RuntimeException(message);
-			break;
-		case ENOENT:
-			message.append(". This directory doesn't exist, so please make "
-				"sure that this directory exists, or set the "
-				"'PassengerUploadBufferDir' directive to a "
-				"directory that exists and can be written to.");
-			throw RuntimeException(message);
-			break;
-		case EACCES:
-			message.append(". The current Apache worker process (which is "
-				"running as ");
-			message.append(getProcessUsername());
-			message.append(") doesn't have permissions to write to this "
-				"directory. Please change the permissions for this "
-				"directory (as well as all parent directories) so that "
-				"it is writable by the Apache worker process, or set "
-				"the 'PassengerUploadBufferDir' directive to a directory "
-				"that Apache can write to.");
-			throw RuntimeException(message);
-			break;
-		default:
-			throw SystemException(message, code);
-			break;
+		while ((dst < dst_end) && !done && e != APR_BRIGADE_SENTINEL(bb)
+			&& !APR_BUCKET_IS_EOS(e))
+		{
+			const char *bucket_data;
+			apr_size_t bucket_data_len;
+			const char *src;
+			const char *src_end;
+			apr_bucket * next;
+
+			rv = apr_bucket_read(e, &bucket_data, &bucket_data_len,
+			                 APR_BLOCK_READ);
+			if (rv != APR_SUCCESS || (bucket_data_len == 0)) {
+				*dst = '\0';
+				return APR_STATUS_IS_TIMEUP(rv) ? -1 : 0;
+			}
+			src = bucket_data;
+			src_end = bucket_data + bucket_data_len;
+			while ((src < src_end) && (dst < dst_end) && !done) {
+				if (*src == '\n') {
+		    		done = 1;
+				}
+				else if (*src != '\r') {
+		    		*dst++ = *src;
+				}
+				src++;
+			}
+
+			if (src < src_end) {
+				apr_bucket_split(e, src - bucket_data);
+			}
+			next = APR_BUCKET_NEXT(e);
+			APR_BUCKET_REMOVE(e);
+			apr_bucket_destroy(e);
+			e = next;
 		}
+		*dst = 0;
+		return done;
 	}
 
 	/**
@@ -1185,110 +1171,30 @@ private:
 		return bufsiz;
 	}
 
-	string getUploadBufferDir(DirConfig *config) {
-		if (serverConfig.flyWith != NULL) {
-			ServerInstanceDir::GenerationPtr generation = agentsStarter.getGeneration();
-			return config->getUploadBufferDir(generation.get());
-		} else {
-			return config->getUploadBufferDir(NULL);
-		}
-	}
-
-	/**
-	 * Receive the HTTP upload data and buffer it into a BufferedUpload temp file.
-	 *
-	 * @param r The request.
-	 * @throws RuntimeException
-	 * @throws SystemException
-	 * @throws IOException
-	 */
-	boost::shared_ptr<BufferedUpload> receiveRequestBody(request_rec *r) {
-		TRACE_POINT();
-		DirConfig *config = getDirConfig(r);
-		boost::shared_ptr<BufferedUpload> tempFile;
-		try {
-			tempFile.reset(new BufferedUpload(getUploadBufferDir(config)));
-		} catch (const SystemException &e) {
-			throwUploadBufferingException(r, e.code());
-		}
-
-		char buf[1024 * 32];
-		apr_off_t len;
-		size_t total_written = 0;
-
-		while ((len = readRequestBodyFromApache(r, buf, sizeof(buf))) > 0) {
-			size_t written = 0;
-			do {
-				size_t ret = fwrite(buf, 1, len - written, tempFile->handle);
-				if (ret <= 0 || fflush(tempFile->handle) == EOF) {
-					throwUploadBufferingException(r, errno);
-				}
-				written += ret;
-			} while (written < (size_t) len);
-			total_written += written;
-		}
-		return tempFile;
-	}
-
-	/**
-	 * Receive the HTTP upload data and buffer it into a string.
-	 *
-	 * @param r The request.
-	 * @param contentLength The value of the HTTP Content-Length header. This is used
-	 *                      to check whether the HTTP client has sent complete upload
-	 *                      data. NULL indicates that there is no Content-Length header,
-	 *                      i.e. that the HTTP client used chunked transfer encoding.
-	 * @param string The string to buffer into.
-	 * @throws RuntimeException
-	 * @throws IOException
-	 */
-	void receiveRequestBody(request_rec *r, const char *contentLength, string &buffer) {
-		TRACE_POINT();
-		unsigned long l_contentLength = 0;
-		char buf[1024 * 32];
-		apr_off_t len;
-
-		buffer.clear();
-		if (contentLength != NULL) {
-			l_contentLength = atol(contentLength);
-			buffer.reserve(l_contentLength);
-		}
-
-		while ((len = readRequestBodyFromApache(r, buf, sizeof(buf))) > 0) {
-			buffer.append(buf, len);
-		}
-	}
-
-	void sendRequestBody(const FileDescriptor &fd, boost::shared_ptr<BufferedUpload> &uploadData) {
-		TRACE_POINT();
-		rewind(uploadData->handle);
-		while (!feof(uploadData->handle)) {
-			char buf[1024 * 32];
-			size_t size;
-
-			size = fread(buf, 1, sizeof(buf), uploadData->handle);
-			try {
-				writeExact(fd, buf, size);
-			} catch (const SystemException &e) {
-				if (e.code() == EPIPE || e.code() == ECONNRESET) {
-					// The HelperAgent stopped reading the body, probably
-					// because the application already sent EOF.
-					return;
-				} else {
-					throw e;
-				}
-			}
-		}
-	}
-
-	void sendRequestBody(const FileDescriptor &fd, request_rec *r) {
+	void sendRequestBody(const FileDescriptor &fd, request_rec *r, bool chunk) {
 		TRACE_POINT();
 		char buf[1024 * 32];
 		apr_off_t len;
 
 		try {
 			while ((len = readRequestBodyFromApache(r, buf, sizeof(buf))) > 0) {
+				if (chunk) {
+					const apr_off_t BUFSIZE = 2 * sizeof(apr_off_t) + 3;
+					char buf[BUFSIZE];
+					char *pos;
+					const char *end = buf + BUFSIZE;
+
+					pos = buf + integerToHex<apr_off_t>(len, buf);
+					pos = appendData(pos, end, P_STATIC_STRING("\r\n"));
+					writeExact(fd, buf, pos - buf);
+				}
 				writeExact(fd, buf, len);
+				if (chunk) {
+					writeExact(fd, "\r\n");
+				}
+			}
+			if (chunk) {
+				writeExact(fd, "0\r\n\r\n");
 			}
 		} catch (const SystemException &e) {
 			if (e.code() == EPIPE || e.code() == ECONNRESET) {
@@ -1317,7 +1223,7 @@ public:
 		m_hasModXsendfile = UNKNOWN;
 
 		P_DEBUG("Initializing Phusion Passenger...");
-		ap_add_version_component(pconf, "Phusion_Passenger/" PASSENGER_VERSION);
+		ap_add_version_component(pconf, SERVER_TOKEN_NAME "/" PASSENGER_VERSION);
 
 		if (serverConfig.flyWith != NULL) {
 			return;
@@ -1330,20 +1236,27 @@ public:
 				"'passenger-install-apache2-module'.");
 		}
 
+		#ifdef AP_GET_SERVER_VERSION_DEPRECATED
+			const char *webServerDesc = ap_get_server_description();
+		#else
+			const char *webServerDesc = ap_get_server_version();
+		#endif
+
 		VariantMap params;
 		params
 			.setPid ("web_server_pid", getpid())
-			.setUid ("web_server_worker_uid", unixd_config.user_id)
-			.setGid ("web_server_worker_gid", unixd_config.group_id)
-			.setInt ("log_level", serverConfig.logLevel)
+			.set    ("server_software", webServerDesc)
+			.setBool("multi_app", true)
 			.set    ("debug_log_file", (serverConfig.debugLogFile == NULL) ? "" : serverConfig.debugLogFile)
-			.set    ("temp_dir", serverConfig.tempDir)
+			.set    ("data_buffer_dir", serverConfig.dataBufferDir)
+			.set    ("instance_registry_dir", serverConfig.instanceRegistryDir)
 			.setBool("user_switching", serverConfig.userSwitching)
 			.set    ("default_user", serverConfig.defaultUser)
 			.set    ("default_group", serverConfig.defaultGroup)
 			.set    ("default_ruby", serverConfig.defaultRuby)
 			.setInt ("max_pool_size", serverConfig.maxPoolSize)
 			.setInt ("pool_idle_time", serverConfig.poolIdleTime)
+			.setInt ("stat_throttle_rate", serverConfig.statThrottleRate)
 			.set    ("analytics_log_user", serverConfig.analyticsLogUser)
 			.set    ("analytics_log_group", serverConfig.analyticsLogGroup)
 			.set    ("union_station_gateway_address", serverConfig.unionStationGatewayAddress)
@@ -1357,17 +1270,9 @@ public:
 		agentsStarter.start(serverConfig.root, params);
 
 		// Store some relevant information in the generation directory.
-		string generationPath = agentsStarter.getGeneration()->getPath();
+		string instanceDir = agentsStarter.getInstanceDir();
 		server_rec *server;
 		string configFiles;
-
-		#ifdef AP_GET_SERVER_VERSION_DEPRECATED
-			createFile(generationPath + "/web_server.txt",
-				ap_get_server_description());
-		#else
-			createFile(generationPath + "/web_server.txt",
-				ap_get_server_version());
-		#endif
 
 		for (server = s; server != NULL; server = server->next) {
 			if (server->defn_name != NULL) {
@@ -1375,7 +1280,7 @@ public:
 				configFiles.append(1, '\n');
 			}
 		}
-		createFile(generationPath + "/config_files.txt", configFiles);
+		createFile(instanceDir + "/config_files.txt", configFiles);
 	}
 
 	void childInit(apr_pool_t *pchild, server_rec *s) {

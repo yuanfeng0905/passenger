@@ -1,5 +1,5 @@
 #  Phusion Passenger - https://www.phusionpassenger.com/
-#  Copyright (c) 2010-2013 Phusion
+#  Copyright (c) 2010-2014 Phusion
 #
 #  "Phusion Passenger" is a trademark of Hongli Lai & Ninh Bui.
 #
@@ -7,7 +7,7 @@
 
 ### Ruby components tests ###
 
-dependencies = [NATIVE_SUPPORT_TARGET, AGENT_OUTPUT_DIR + 'PassengerLoggingAgent', 'test/support/allocate_memory'].compact
+dependencies = [NATIVE_SUPPORT_TARGET, AGENT_OUTPUT_DIR + 'PassengerAgent', 'test/support/allocate_memory'].compact
 desc "Run unit tests for the Ruby libraries"
 task 'test:ruby' => dependencies do
 	if PlatformInfo.rspec.nil?

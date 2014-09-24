@@ -1,6 +1,6 @@
 /*
  *  Phusion Passenger - https://www.phusionpassenger.com/
- *  Copyright (c) 2011-2013 Phusion
+ *  Copyright (c) 2011-2014 Phusion
  *
  *  "Phusion Passenger" is a trademark of Hongli Lai & Ninh Bui.
  *
@@ -11,14 +11,17 @@
 
 #include <boost/thread.hpp>
 #include <boost/shared_ptr.hpp>
+#include <boost/intrusive_ptr.hpp>
 #include <boost/function.hpp>
 #include <oxt/tracable_exception.hpp>
 #include <ResourceLocator.h>
 #include <RandomGenerator.h>
+#include <StaticString.h>
+#include <MemoryKit/palloc.h>
+#include <DataStructures/StringKeyTable.h>
 #include <UnionStation/Core.h>
 #include <UnionStation/Transaction.h>
 #include <ApplicationPool2/Options.h>
-#include <Utils/StringMap.h>
 #include <Utils/VariantMap.h>
 
 namespace tut {
@@ -36,6 +39,7 @@ class Pool;
 class SuperGroup;
 class Group;
 class Process;
+class Socket;
 class Session;
 
 /**
@@ -144,12 +148,24 @@ typedef boost::shared_ptr<Pool> PoolPtr;
 typedef boost::shared_ptr<SuperGroup> SuperGroupPtr;
 typedef boost::shared_ptr<Group> GroupPtr;
 typedef boost::shared_ptr<Process> ProcessPtr;
-typedef boost::shared_ptr<Session> SessionPtr;
+typedef boost::intrusive_ptr<Session> SessionPtr;
 typedef boost::shared_ptr<tracable_exception> ExceptionPtr;
-typedef StringMap<SuperGroupPtr> SuperGroupMap;
-typedef boost::function<void (const SessionPtr &session, const ExceptionPtr &e)> GetCallback;
+typedef StringKeyTable<SuperGroupPtr> SuperGroupMap;
 typedef boost::function<void (const ProcessPtr &process, DisableResult result)> DisableCallback;
 typedef boost::function<void ()> Callback;
+
+struct GetCallback {
+	void (*func)(const SessionPtr &session, const ExceptionPtr &e, void *userData);
+	mutable void *userData;
+
+	void operator()(const SessionPtr &session, const ExceptionPtr &e) const {
+		func(session, e, userData);
+	}
+
+	static void call(GetCallback cb, const SessionPtr &session, const ExceptionPtr &e) {
+		cb(session, e);
+	}
+};
 
 struct GetWaiter {
 	Options options;
@@ -172,36 +188,36 @@ struct Ticket {
 
 struct SpawnerConfig {
 	// Used by error pages and hooks.
-	ResourceLocator resourceLocator;
+	ResourceLocator *resourceLocator;
 	const VariantMap *agentsOptions;
 
 	// Used for Union Station logging.
 	UnionStation::CorePtr unionStationCore;
 
 	// Used by SmartSpawner and DirectSpawner.
-	/** A random generator to use. */
 	RandomGeneratorPtr randomGenerator;
+	string instanceDir;
 
 	// Used by DummySpawner and SpawnerFactory.
 	unsigned int concurrency;
 	unsigned int spawnerCreationSleepTime;
 	unsigned int spawnTime;
 
-	SpawnerConfig(const ResourceLocator &_resourceLocator,
-		const UnionStation::CorePtr &_unionStationCore = UnionStation::CorePtr(),
-		const RandomGeneratorPtr &randomGenerator = RandomGeneratorPtr(),
-		const VariantMap *_agentsOptions = NULL)
-		: resourceLocator(_resourceLocator),
-		  agentsOptions(_agentsOptions),
-		  unionStationCore(_unionStationCore),
+	SpawnerConfig()
+		: resourceLocator(NULL),
+		  agentsOptions(NULL),
 		  concurrency(1),
 		  spawnerCreationSleepTime(0),
 		  spawnTime(0)
-	{
-		if (randomGenerator != NULL) {
-			this->randomGenerator = randomGenerator;
-		} else {
-			this->randomGenerator = boost::make_shared<RandomGenerator>();
+		{ }
+
+	void finalize() {
+		TRACE_POINT();
+		if (resourceLocator == NULL) {
+			throw RuntimeException("ResourceLocator not initialized");
+		}
+		if (randomGenerator == NULL) {
+			randomGenerator = boost::make_shared<RandomGenerator>();
 		}
 	}
 };
@@ -212,6 +228,7 @@ ExceptionPtr copyException(const tracable_exception &e);
 void rethrowException(const ExceptionPtr &e);
 void processAndLogNewSpawnException(SpawnException &e, const Options &options,
 	const SpawnerConfigPtr &config);
+void recreateString(psg_pool_t *pool, StaticString &str);
 
 } // namespace ApplicationPool2
 } // namespace Passenger

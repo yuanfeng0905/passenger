@@ -1,6 +1,6 @@
 /*
  *  Phusion Passenger - https://www.phusionpassenger.com/
- *  Copyright (c) 2010-2013 Phusion
+ *  Copyright (c) 2010-2014 Phusion
  *
  *  "Phusion Passenger" is a trademark of Hongli Lai & Ninh Bui.
  *
@@ -11,6 +11,7 @@
 
 #include <boost/shared_ptr.hpp>
 #include <boost/function.hpp>
+#include <boost/thread.hpp>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <string>
@@ -81,6 +82,8 @@ ptr(T *pointer) {
  *
  * @param filename The filename to check.
  * @param cstat A CachedFileStat object, if you want to use cached statting.
+ * @param cstatMutex A mutex for locking cstat while this function uses it.
+ *                   Makes this function thread-safe. May be NULL.
  * @param throttleRate A throttle rate for cstat. Only applicable if cstat is not NULL.
  * @return Whether the file exists.
  * @throws FileSystemException Unable to check because of a filesystem error.
@@ -89,13 +92,15 @@ ptr(T *pointer) {
  * @ingroup Support
  */
 bool fileExists(const StaticString &filename, CachedFileStat *cstat = 0,
-                unsigned int throttleRate = 0);
+                boost::mutex *cstatMutex = NULL, unsigned int throttleRate = 0);
 
 /**
  * Check whether 'filename' exists and what kind of file it is.
  *
  * @param filename The filename to check. It MUST be NULL-terminated.
- * @param mstat A CachedFileStat object, if you want to use cached statting.
+ * @param cstat A CachedFileStat object, if you want to use cached statting.
+ * @param cstatMutex A mutex for locking cstat while this function uses it.
+ *                   Makes this function thread-safe. May be NULL.
  * @param throttleRate A throttle rate for cstat. Only applicable if cstat is not NULL.
  * @return The file type.
  * @throws FileSystemException Unable to check because of a filesystem error.
@@ -104,7 +109,7 @@ bool fileExists(const StaticString &filename, CachedFileStat *cstat = 0,
  * @ingroup Support
  */
 FileType getFileType(const StaticString &filename, CachedFileStat *cstat = 0,
-                     unsigned int throttleRate = 0);
+                     boost::mutex *cstatMutex = NULL, unsigned int throttleRate = 0);
 
 /**
  * Create the given file with the given contents, permissions and ownership.
@@ -256,56 +261,6 @@ string absolutizePath(const StaticString &path, const StaticString &workingDir =
  */
 const char *getSystemTempDir();
 
-/* Create a temporary directory for storing Phusion Passenger instance-specific
- * temp files, such as temporarily buffered uploads, sockets for backend
- * processes, etc.
- * The directory that will be created is the one returned by
- * <tt>getPassengerTempDir(false, parentDir)</tt>. This call stores the path to
- * this temp directory in an internal variable, so that subsequent calls to
- * getPassengerTempDir() will return the same path.
- *
- * The created temp directory will have several subdirectories:
- * - webserver_private - for storing the web server's buffered uploads.
- * - info - for storing files that allow external tools to query information
- *          about a running Phusion Passenger instance.
- * - backends - for storing Unix sockets created by backend processes.
- * - master - for storing files such as the Passenger HelperServer socket.
- *
- * If a (sub)directory already exists, then it will not result in an error.
- *
- * The <em>userSwitching</em> and <em>lowestUser</em> arguments passed to
- * this method are used for determining the optimal permissions for the
- * (sub)directories. The permissions will be set as tightly as possible based
- * on the values. The <em>workerUid</em> and <em>workerGid</em> arguments
- * will be used for determining the owner of certain subdirectories.
- *
- * @note You should only call this method inside the web server's master
- *       process. In case of Apache, this is the Apache control process,
- *       the one that tends to run as root. This is because this function
- *       will set directory permissions and owners/groups, which may require
- *       root privileges.
- *
- * @param parentDir The directory under which the Phusion Passenger-specific
- *                  temp directory should be created. This argument may be the
- *                  empty string, in which case getSystemTempDir() will be used
- *                  as the parent directory.
- * @param userSwitching Whether user switching is turned on.
- * @param lowestUser The user that the spawn manager and the pool server will
- *                   run as, if user switching is turned off.
- * @param workerUid The UID that the web server's worker processes are running
- *                  as. On Apache, this is the UID that's associated with the
- *                  'User' directive.
- * @param workerGid The GID that the web server's worker processes are running
- *                  as. On Apache, this is the GID that's associated with the
- *                  'Group' directive.
- * @throws IOException Something went wrong.
- * @throws SystemException Something went wrong.
- * @throws FileSystemException Something went wrong.
- */
-/* void createPassengerTempDir(const string &parentDir, bool userSwitching,
-                            const string &lowestUser,
-                            uid_t workerUid, gid_t workerGid); */
-
 /**
  * Create the directory at the given path, creating intermediate directories
  * if necessary. The created directories' permissions are exactly as specified
@@ -422,55 +377,6 @@ void closeAllFileDescriptors(int lastToKeepOpen, bool asyncSignalSafe = false);
  * A no-op, but usually set as a breakpoint in gdb. See CONTRIBUTING.md.
  */
 void breakpoint();
-
-
-/**
- * Represents a buffered upload file.
- *
- * @ingroup Support
- */
-class BufferedUpload {
-public:
-	/** The file handle. */
-	FILE *handle;
-
-	/**
-	 * Create an empty upload bufer file, and open it for reading and writing.
-	 *
-	 * @throws SystemException Something went wrong.
-	 */
-	BufferedUpload(const string &dir, const char *identifier = "temp") {
-		char templ[PATH_MAX];
-		int fd;
-
-		snprintf(templ, sizeof(templ), "%s/%s.XXXXXX", dir.c_str(), identifier);
-		templ[sizeof(templ) - 1] = '\0';
-		fd = lfs_mkstemp(templ);
-		if (fd == -1) {
-			char message[1024];
-			int e = errno;
-
-			snprintf(message, sizeof(message), "Cannot create a temporary file '%s'", templ);
-			message[sizeof(message) - 1] = '\0';
-			throw SystemException(message, e);
-		}
-
-		/* We use a POSIX trick here: the file's permissions are set to "u=,g=,o="
-		 * and the file is deleted immediately from the filesystem, while we
-		 * keep its file handle open. The result is that no other processes
-		 * will be able to access this file's contents anymore, except us.
-		 * We now have an anonymous disk-backed buffer.
-		 */
-		fchmod(fd, 0000);
-		unlink(templ);
-
-		handle = fdopen(fd, "w+");
-	}
-
-	~BufferedUpload() {
-		fclose(handle);
-	}
-};
 
 } // namespace Passenger
 

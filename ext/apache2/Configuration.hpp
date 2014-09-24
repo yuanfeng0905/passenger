@@ -1,6 +1,6 @@
 /*
  *  Phusion Passenger - https://www.phusionpassenger.com/
- *  Copyright (c) 2010-2013 Phusion
+ *  Copyright (c) 2010-2014 Phusion
  *
  *  "Phusion Passenger" is a trademark of Hongli Lai & Ninh Bui.
  *
@@ -10,7 +10,6 @@
 #define _PASSENGER_CONFIGURATION_HPP_
 
 #include <Logging.h>
-#include <ServerInstanceDir.h>
 #include <Constants.h>
 #include <Utils.h>
 #include <Utils/VariantMap.h>
@@ -48,7 +47,6 @@ using namespace std;
  */
 struct DirConfig {
 	enum Threeway { ENABLED, DISABLED, UNSET };
-	enum SpawnMethod { SM_UNSET, SM_SMART, SM_DIRECT };
 
 	#include "ConfigurationFields.hpp"
 
@@ -60,19 +58,6 @@ struct DirConfig {
 	 * autodetected path will be used.
 	 */
 	const char *appRoot;
-
-	string appGroupName;
-
-	/** The spawn method to use. */
-	SpawnMethod spawnMethod;
-
-	/**
-	 * The idle timeout, in seconds, of preloader processes.
-	 * May also be 0 (which indicates that the application spawner should
-	 * never idle timeout) or -1 (which means that the value is not specified,
-	 * and the default value should be used).
-	 */
-	long maxPreloaderIdleTime;
 
 	/** Whether symlinks in the document root path should be resolved.
 	 * The implication of this is documented in the users guide, section
@@ -87,36 +72,12 @@ struct DirConfig {
 	 */
 	Threeway allowEncodedSlashes;
 
-	/**
-	 * Throttle the number of stat() calls on files like
-	 * restart.txt to the once per given number of seconds.
-	 */
-	unsigned long statThrottleRate;
-
-	/** Indicates whether the statThrottleRate option was
-	 * explicitly specified in the directory configuration. */
-	bool statThrottleRateSpecified;
-
-	/** The directory in which Passenger should look for
-	 * restart.txt. NULL means that the default directory
-	 * should be used.
-	 */
-	const char *restartDir;
-
-	/**
-	 * The directory in which Passenger should place upload buffer
-	 * files. NULL means that the default directory should be used.
-	 */
-	const char *uploadBufferDir;
-
 	string unionStationKey;
 
 	vector<string> unionStationFilters;
 
-	/**
-	 * Whether Phusion Passenger should show friendly error pages.
-	 */
-	Threeway friendlyErrorPages;
+	char *envvarsCache;
+	unsigned int envvarsCacheSize;
 
 	/**
 	 * Whether analytics logging should be enabled.
@@ -175,27 +136,17 @@ struct DirConfig {
 
 	/*************************************/
 
+	DirConfig() {
+		envvarsCache = NULL;
+		envvarsCacheSize = 0;
+	}
+
+	~DirConfig() {
+		free(envvarsCache);
+	}
+
 	bool isEnabled() const {
 		return enabled != DISABLED;
-	}
-
-	StaticString getAppGroupName(const StaticString &appRoot) const {
-		if (appGroupName.empty()) {
-			return appRoot;
-		} else {
-			return appGroupName;
-		}
-	}
-
-	StaticString getSpawnMethodString() const {
-		switch (spawnMethod) {
-		case SM_SMART:
-			return "smart";
-		case SM_DIRECT:
-			return "direct";
-		default:
-			return "smart";
-		}
 	}
 
 	bool highPerformanceMode() const {
@@ -204,36 +155,6 @@ struct DirConfig {
 
 	bool allowsEncodedSlashes() const {
 		return allowEncodedSlashes == ENABLED;
-	}
-
-	unsigned long getStatThrottleRate() const {
-		if (statThrottleRateSpecified) {
-			return statThrottleRate;
-		} else {
-			return 0;
-		}
-	}
-
-	StaticString getRestartDir() const {
-		if (restartDir != NULL) {
-			return restartDir;
-		} else {
-			return "";
-		}
-	}
-
-	string getUploadBufferDir(const ServerInstanceDir::Generation *generation) const {
-		if (uploadBufferDir != NULL) {
-			return uploadBufferDir;
-		} else if (generation != NULL) {
-			return generation->getPath() + "/buffered_uploads";
-		} else {
-			return getSystemTempDir();
-		}
-	}
-
-	bool showFriendlyErrorPages() const {
-		return friendlyErrorPages != DISABLED;
 	}
 
 	bool useUnionStation() const {
@@ -348,6 +269,8 @@ struct ServerConfig {
 	 * idle before it gets terminated. */
 	unsigned int poolIdleTime;
 
+	unsigned int statThrottleRate;
+
 	/** Whether user switching support is enabled. */
 	bool userSwitching;
 
@@ -356,8 +279,8 @@ struct ServerConfig {
 	/** See PoolOptions for more info. */
 	string defaultGroup;
 
-	/** The temp directory that Passenger should use. */
-	string tempDir;
+	string dataBufferDir;
+	string instanceRegistryDir;
 
 	string unionStationGatewayAddress;
 	int unionStationGatewayPort;
@@ -378,9 +301,9 @@ struct ServerConfig {
 		debugLogFile       = NULL;
 		maxPoolSize        = DEFAULT_MAX_POOL_SIZE;
 		poolIdleTime       = DEFAULT_POOL_IDLE_TIME;
+		statThrottleRate   = DEFAULT_STAT_THROTTLE_RATE;
 		userSwitching      = true;
 		defaultUser        = DEFAULT_WEB_APP_USER;
-		tempDir            = getSystemTempDir();
 		unionStationGatewayAddress = DEFAULT_UNION_STATION_GATEWAY_ADDRESS;
 		unionStationGatewayPort    = DEFAULT_UNION_STATION_GATEWAY_PORT;
 		unionStationGatewayCert    = string();

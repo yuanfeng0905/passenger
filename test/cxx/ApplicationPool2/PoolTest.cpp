@@ -16,8 +16,6 @@ using namespace Passenger::ApplicationPool2;
 
 namespace tut {
 	struct ApplicationPool2_PoolTest {
-		ServerInstanceDirPtr serverInstanceDir;
-		ServerInstanceDir::GenerationPtr generation;
 		SpawnerConfigPtr spawnerConfig;
 		SpawnerFactoryPtr spawnerFactory;
 		PoolPtr pool;
@@ -32,14 +30,15 @@ namespace tut {
 		bool retainSessions;
 
 		ApplicationPool2_PoolTest() {
-			createServerInstanceDirAndGeneration(serverInstanceDir, generation);
 			retainSessions = false;
-			spawnerConfig = boost::make_shared<SpawnerConfig>(*resourceLocator);
-			spawnerFactory = boost::make_shared<SpawnerFactory>(generation,
-				spawnerConfig);
+			spawnerConfig = boost::make_shared<SpawnerConfig>();
+			spawnerConfig->resourceLocator = resourceLocator;
+			spawnerConfig->finalize();
+			spawnerFactory = boost::make_shared<SpawnerFactory>(spawnerConfig);
 			pool = boost::make_shared<Pool>(spawnerFactory);
 			pool->initialize();
-			callback = boost::bind(&ApplicationPool2_PoolTest::_callback, this, _1, _2);
+			callback.func = _callback;
+			callback.userData = this;
 			setLogLevel(LVL_ERROR); // TODO: change to LVL_WARN
 			setPrintAppOutputAsDebuggingMessages(true);
 		}
@@ -91,16 +90,19 @@ namespace tut {
 			return options;
 		}
 
-		void _callback(const SessionPtr &session, const ExceptionPtr &e) {
+		static void _callback(const SessionPtr &session, const ExceptionPtr &e,
+			void *userData)
+		{
+			ApplicationPool2_PoolTest *self = (ApplicationPool2_PoolTest *) userData;
 			SessionPtr oldSession;
 			{
-				LockGuard l(syncher);
-				oldSession = currentSession;
-				currentSession = session;
-				currentException = e;
-				number++;
-				if (retainSessions && session != NULL) {
-					sessions.push_back(session);
+				LockGuard l(self->syncher);
+				oldSession = self->currentSession;
+				self->currentSession = session;
+				self->currentException = e;
+				self->number++;
+				if (self->retainSessions && session != NULL) {
+					self->sessions.push_back(session);
 				}
 			}
 			// destroy old session object outside the lock.
@@ -158,7 +160,7 @@ namespace tut {
 				NULL);
 			shutdown(currentSession->fd(), SHUT_WR);
 			string body = stripHeaders(readAll(currentSession->fd()));
-			ProcessPtr process = currentSession->getProcess();
+			ProcessPtr process = currentSession->getProcess()->shared_from_this();
 			currentSession.reset();
 			EVENTUALLY(5,
 				result = process->busyness() == 0;
@@ -230,7 +232,7 @@ namespace tut {
 		);
 
 		// Close the session so that the process is now idle.
-		ProcessPtr process = currentSession->getProcess();
+		ProcessPtr process = currentSession->getProcess()->shared_from_this();
 		currentSession.reset();
 		ensure_equals(process->busyness(), 0);
 		ensure(!process->isTotallyBusy());
@@ -258,7 +260,7 @@ namespace tut {
 			result = number == 1;
 		);
 		SessionPtr session1 = currentSession;
-		ProcessPtr process = session1->getProcess();
+		ProcessPtr process = session1->getProcess()->shared_from_this();
 		currentSession.reset();
 		ensure_equals(process->sessions, 1);
 		ensure(process->isTotallyBusy());
@@ -267,13 +269,13 @@ namespace tut {
 		pool->asyncGet(options, callback);
 		ensure_equals("callback is not yet called", number, 1);
 		ensure_equals("the get action has been put on the wait list",
-			pool->superGroups.get("test")->defaultGroup->getWaitlist.size(), 1u);
+			pool->superGroups.lookupCopy("test")->defaultGroup->getWaitlist.size(), 1u);
 
 		session1.reset();
 		ensure_equals("callback is called after the process becomes idle",
 			number, 2);
 		ensure_equals("the get wait list has been processed",
-			pool->superGroups.get("test")->defaultGroup->getWaitlist.size(), 0u);
+			pool->superGroups.lookupCopy("test")->defaultGroup->getWaitlist.size(), 0u);
 		ensure_equals(process->sessions, 1);
 	}
 
@@ -293,7 +295,7 @@ namespace tut {
 		Options options = createOptions();
 		debug->messages->send("Proceed with spawn loop iteration 1");
 		SessionPtr session1 = pool->get(options, &ticket);
-		ProcessPtr process1 = session1->getProcess();
+		ProcessPtr process1 = session1->getProcess()->shared_from_this();
 
 		// Now spawn a process that never finishes.
 		pool->asyncGet(options, callback);
@@ -305,7 +307,7 @@ namespace tut {
 			result = number == 1;
 		);
 		ensure_equals("The first process handled the second asyncGet() request",
-			currentSession->getProcess(), process1);
+			currentSession->getProcess(), process1.get());
 
 		debug->messages->send("Proceed with spawn loop iteration 2");
 		EVENTUALLY(5,
@@ -324,7 +326,7 @@ namespace tut {
 			result = number == 1;
 		);
 		SessionPtr session1 = currentSession;
-		ProcessPtr process1 = currentSession->getProcess();
+		ProcessPtr process1 = currentSession->getProcess()->shared_from_this();
 		currentSession.reset();
 
 		// As long as we don't release process1 the following get
@@ -334,7 +336,7 @@ namespace tut {
 			result = pool->getProcessCount() == 2;
 		);
 		ensure_equals(number, 2);
-		ensure(currentSession->getProcess() != process1);
+		ensure(currentSession->getProcess() != process1.get());
 	}
 
 	TEST_METHOD(7) {
@@ -352,7 +354,7 @@ namespace tut {
 			result = pool->getProcessCount() == 3;
 		);
 		SessionPtr session1 = currentSession;
-		ProcessPtr process1 = currentSession->getProcess();
+		ProcessPtr process1 = currentSession->getProcess()->shared_from_this();
 		currentSession.reset();
 
 		// Now open another session. It should complete immediately
@@ -361,7 +363,7 @@ namespace tut {
 		pool->asyncGet(options, callback, false);
 		ensure_equals("asyncGet() completed immediately", number, 2);
 		SessionPtr session2 = currentSession;
-		ProcessPtr process2 = currentSession->getProcess();
+		ProcessPtr process2 = currentSession->getProcess()->shared_from_this();
 		l.unlock();
 		currentSession.reset();
 		ensure(process2 != process1);
@@ -372,7 +374,7 @@ namespace tut {
 		pool->asyncGet(options, callback, false);
 		ensure_equals("asyncGet() completed immediately", number, 3);
 		SessionPtr session3 = currentSession;
-		ProcessPtr process3 = currentSession->getProcess();
+		ProcessPtr process3 = currentSession->getProcess()->shared_from_this();
 		l.unlock();
 		currentSession.reset();
 		ensure(process3 != process1);
@@ -401,7 +403,7 @@ namespace tut {
 		pool->asyncGet(options, callback);
 		ensure_equals(number, 1);
 		SessionPtr session1 = currentSession;
-		ProcessPtr process1 = currentSession->getProcess();
+		ProcessPtr process1 = currentSession->getProcess()->shared_from_this();
 		currentSession.reset();
 
 		// The first process now has 1 session, so next asyncGet() should
@@ -409,7 +411,7 @@ namespace tut {
 		pool->asyncGet(options, callback);
 		ensure_equals(number, 2);
 		SessionPtr session2 = currentSession;
-		ProcessPtr process2 = currentSession->getProcess();
+		ProcessPtr process2 = currentSession->getProcess()->shared_from_this();
 		currentSession.reset();
 		ensure("(1)", process1 != process2);
 
@@ -418,7 +420,7 @@ namespace tut {
 		pool->asyncGet(options, callback);
 		ensure_equals(number, 3);
 		SessionPtr session3 = currentSession;
-		ProcessPtr process3 = currentSession->getProcess();
+		ProcessPtr process3 = currentSession->getProcess()->shared_from_this();
 		currentSession.reset();
 
 		// One process now has the lowest number of sessions. Next
@@ -426,7 +428,7 @@ namespace tut {
 		pool->asyncGet(options, callback);
 		ensure_equals(number, 4);
 		SessionPtr session4 = currentSession;
-		ProcessPtr process4 = currentSession->getProcess();
+		ProcessPtr process4 = currentSession->getProcess()->shared_from_this();
 		currentSession.reset();
 		ensure(process3 != process4);
 	}
@@ -459,20 +461,20 @@ namespace tut {
 			result = pool->getProcessCount() == 2;
 		);
 
-		SuperGroupPtr superGroup = pool->superGroups.get("test");
+		SuperGroupPtr superGroup = pool->superGroups.lookupCopy("test");
 		ensure_equals(superGroup->groups[0]->getWaitlist.size(), 0u);
 		ensure(pool->atFullCapacity());
 
 		// Now try to open another session.
 		pool->asyncGet(options, callback);
 		ensure_equals("The get request has been put on the wait list",
-			pool->superGroups.get("test")->groups[0]->getWaitlist.size(), 1u);
+			pool->superGroups.lookupCopy("test")->groups[0]->getWaitlist.size(), 1u);
 
 		// Close an existing session so that one process is no
 		// longer at full utilization.
 		sessions[0].reset();
 		ensure_equals("The get request has been removed from the wait list",
-			pool->superGroups.get("test")->groups[0]->getWaitlist.size(), 0u);
+			pool->superGroups.lookupCopy("test")->groups[0]->getWaitlist.size(), 0u);
 		ensure(pool->atFullCapacity());
 	}
 
@@ -517,10 +519,10 @@ namespace tut {
 		l.unlock();
 
 		// Close one of the sessions. Now it will process the action.
-		ProcessPtr process = sessions[0]->getProcess();
+		ProcessPtr process = sessions[0]->getProcess()->shared_from_this();
 		sessions[0].reset();
 		ensure_equals(number, 5);
-		ensure_equals(currentSession->getProcess(), process);
+		ensure_equals(currentSession->getProcess(), process.get());
 		ensure_equals(group->getWaitlist.size(), 0u);
 		ensure_equals(pool->getProcessCount(), 2u);
 	}
@@ -643,8 +645,11 @@ namespace tut {
 		initPoolDebugging();
 		debug->spawning = false;
 
+		SystemTime::forceAll(1000000);
+		pool->get(options, &ticket);
+		SystemTime::forceAll(20000000);
 		touchFile("tmp.wsgi/tmp/restart.txt", 1);
-		pool->asyncGet(options, callback, false);
+		pool->asyncGet(options, callback);
 		debug->debugger->recv("About to end restarting");
 		debug->messages->send("Finish restarting");
 		EVENTUALLY(5,
@@ -669,9 +674,9 @@ namespace tut {
 		EVENTUALLY(5,
 			result = number == 1;
 		);
-		ProcessPtr process1 = currentSession->getProcess();
-		GroupPtr group1 = process1->getGroup();
-		SuperGroupPtr superGroup1 = group1->getSuperGroup();
+		ProcessPtr process1 = currentSession->getProcess()->shared_from_this();
+		GroupPtr group1 = process1->getGroup()->shared_from_this();
+		SuperGroupPtr superGroup1 = group1->getSuperGroup()->shared_from_this();
 		currentSession.reset();
 
 		// Get from /bar and keep its session open.
@@ -707,9 +712,9 @@ namespace tut {
 		EVENTUALLY(5,
 			result = number == 1;
 		);
-		ProcessPtr process1 = currentSession->getProcess();
-		GroupPtr group1 = process1->getGroup();
-		SuperGroupPtr superGroup1 = group1->getSuperGroup();
+		ProcessPtr process1 = currentSession->getProcess()->shared_from_this();
+		GroupPtr group1 = process1->getGroup()->shared_from_this();
+		SuperGroupPtr superGroup1 = group1->getSuperGroup()->shared_from_this();
 
 		// Get from /bar and keep its session open.
 		options.appRoot = "/bar";
@@ -835,7 +840,7 @@ namespace tut {
 		options2.appRoot = "bar";
 		options2.noop = true;
 		SystemTime::force(2);
-		GroupPtr barGroup = pool->get(options2, &ticket)->getGroup();
+		GroupPtr barGroup = pool->get(options2, &ticket)->getGroup()->shared_from_this();
 		{
 			LockGuard l(pool->syncher);
 			ensure_equals("(1)", barGroup->spawn(), SR_OK);
@@ -863,7 +868,7 @@ namespace tut {
 			LockGuard l(pool->syncher);
 			vector<ProcessPtr> processes = pool->getProcesses(false);
 			if (processes.size() == 1) {
-				GroupPtr group = processes[0]->getGroup();
+				GroupPtr group = processes[0]->getGroup()->shared_from_this();
 				result = group->name == "foo#default";
 			} else {
 				result = false;
@@ -925,7 +930,7 @@ namespace tut {
 			LockGuard l(pool->syncher);
 			vector<ProcessPtr> processes = pool->getProcesses(false);
 			if (processes.size() == 1) {
-				GroupPtr group = processes[0]->getGroup();
+				GroupPtr group = processes[0]->getGroup()->shared_from_this();
 				result = group->name == "foo#default";
 			} else {
 				result = false;
@@ -954,8 +959,8 @@ namespace tut {
 			result = number == 1;
 		);
 
-		ProcessPtr process = currentSession->getProcess();
-		pool->detachProcess(currentSession->getProcess());
+		ProcessPtr process = currentSession->getProcess()->shared_from_this();
+		pool->detachProcess(process);
 		{
 			LockGuard l(pool->syncher);
 			ensure(process->enabled == Process::DETACHED);
@@ -989,15 +994,15 @@ namespace tut {
 
 		{
 			LockGuard l(pool->syncher);
-			ensure_equals(pool->superGroups.get("test")->defaultGroup->getWaitlist.size(), 1u);
+			ensure_equals(pool->superGroups.lookupCopy("test")->defaultGroup->getWaitlist.size(), 1u);
 		}
 
-		pool->detachProcess(session1->getProcess());
+		pool->detachProcess(session1->getProcess()->shared_from_this());
 		{
 			LockGuard l(pool->syncher);
-			ensure(pool->superGroups.get("test")->defaultGroup->spawning());
-			ensure_equals(pool->superGroups.get("test")->defaultGroup->enabledCount, 0);
-			ensure_equals(pool->superGroups.get("test")->defaultGroup->getWaitlist.size(), 1u);
+			ensure(pool->superGroups.lookupCopy("test")->defaultGroup->spawning());
+			ensure_equals(pool->superGroups.lookupCopy("test")->defaultGroup->enabledCount, 0);
+			ensure_equals(pool->superGroups.lookupCopy("test")->defaultGroup->getWaitlist.size(), 1u);
 		}
 
 		EVENTUALLY(5,
@@ -1037,10 +1042,10 @@ namespace tut {
 		);
 		SessionPtr session1 = currentSession;
 		currentSession.reset();
-		pool->detachProcess(session1->getProcess());
+		pool->detachProcess(session1->getProcess()->shared_from_this());
 		{
 			LockGuard l(pool->syncher);
-			ensure(pool->superGroups.get("test2") != NULL);
+			ensure(pool->superGroups.lookupCopy("test2") != NULL);
 			ensure_equals(pool->getWaitlist.size(), 0u);
 		}
 		EVENTUALLY(5,
@@ -1056,9 +1061,9 @@ namespace tut {
 		EVENTUALLY(5,
 			result = number == 1;
 		);
-		ProcessPtr process = currentSession->getProcess();
+		ProcessPtr process = currentSession->getProcess()->shared_from_this();
 		currentSession.reset();
-		SuperGroupPtr superGroup = process->getSuperGroup();
+		SuperGroupPtr superGroup = process->getSuperGroup()->shared_from_this();
 		pool->detachProcess(process);
 		LockGuard l(pool->syncher);
 		ensure_equals(pool->superGroups.size(), 1u);
@@ -1073,7 +1078,7 @@ namespace tut {
 		options.spawnMethod = "direct";
 		options.minProcesses = 0;
 		SessionPtr session = pool->get(options, &ticket);
-		ProcessPtr process = session->getProcess();
+		ProcessPtr process = session->getProcess()->shared_from_this();
 
 		ensure(pool->detachProcess(process));
 		{
@@ -1101,7 +1106,7 @@ namespace tut {
 		Options options = createOptions();
 		options.spawnMethod = "direct";
 		options.minProcesses = 0;
-		ProcessPtr process = pool->get(options, &ticket)->getProcess();
+		ProcessPtr process = pool->get(options, &ticket)->getProcess()->shared_from_this();
 
 		ScopeGuard g(boost::bind(::kill, process->pid, SIGCONT));
 		kill(process->pid, SIGSTOP);
@@ -1151,15 +1156,15 @@ namespace tut {
 			result = number == 1;
 		);
 
-		ProcessPtr process = currentSession->getProcess();
-		pool->detachProcess(currentSession->getProcess());
+		ProcessPtr process = currentSession->getProcess()->shared_from_this();
+		pool->detachProcess(process);
 		debug->debugger->recv("About to start detached processes checker");
 		{
 			LockGuard l(pool->syncher);
 			ensure(process->enabled == Process::DETACHED);
 		}
 
-		pool->detachProcess(currentSession->getProcess());
+		pool->detachProcess(process);
 		debug->messages->send("Proceed with starting detached processes checker");
 		debug->messages->send("Proceed with starting detached processes checker");
 
@@ -1206,7 +1211,7 @@ namespace tut {
 		spawnerConfig->spawnTime = 60000;
 		AtomicInt code = -1;
 		TempThread thr(boost::bind(&ApplicationPool2_PoolTest::disableProcess,
-			this, session->getProcess(), &code));
+			this, session->getProcess()->shared_from_this(), &code));
 		EVENTUALLY2(100, 1,
 			result = pool->isSpawning();
 		);
@@ -1245,13 +1250,13 @@ namespace tut {
 		SessionPtr session1 = pool->get(options, &ticket);
 		SessionPtr session2 = pool->get(options, &ticket);
 		ensure_equals(pool->getProcessCount(), 2u);
-		GroupPtr group = session1->getGroup();
+		GroupPtr group = session1->getGroup()->shared_from_this();
 
 		AtomicInt code1 = -1, code2 = -1;
 		TempThread thr(boost::bind(&ApplicationPool2_PoolTest::disableProcess,
-			this, session1->getProcess(), &code1));
+			this, session1->getProcess()->shared_from_this(), &code1));
 		TempThread thr2(boost::bind(&ApplicationPool2_PoolTest::disableProcess,
-			this, session2->getProcess(), &code2));
+			this, session2->getProcess()->shared_from_this(), &code2));
 		EVENTUALLY(2,
 			LockGuard l(pool->syncher);
 			result = group->enabledCount == 0
@@ -1295,11 +1300,11 @@ namespace tut {
 
 		AtomicInt code1 = -1, code2 = -1;
 		TempThread thr(boost::bind(&ApplicationPool2_PoolTest::disableProcess,
-			this, session1->getProcess(), &code1));
+			this, session1->getProcess()->shared_from_this(), &code1));
 		TempThread thr2(boost::bind(&ApplicationPool2_PoolTest::disableProcess,
-			this, session2->getProcess(), &code2));
+			this, session2->getProcess()->shared_from_this(), &code2));
 		EVENTUALLY(2,
-			GroupPtr group = session1->getGroup();
+			GroupPtr group = session1->getGroup()->shared_from_this();
 			LockGuard l(pool->syncher);
 			result = group->enabledCount == 0
 				&& group->disablingCount == 2
@@ -1309,7 +1314,7 @@ namespace tut {
 			result = code1 != -1 || code2 != -1;
 		);
 
-		setLogLevel(-2);
+		setLogLevel(LVL_CRIT);
 		debug->messages->send("Fail spawn loop iteration 3");
 		EVENTUALLY(5,
 			result = code1 == DR_ERROR;
@@ -1318,7 +1323,7 @@ namespace tut {
 			result = code2 == DR_ERROR;
 		);
 		{
-			GroupPtr group = session1->getGroup();
+			GroupPtr group = session1->getGroup()->shared_from_this();
 			LockGuard l(pool->syncher);
 			ensure_equals(group->enabledCount, 2);
 			ensure_equals(group->disablingCount, 0);
@@ -1349,7 +1354,7 @@ namespace tut {
 
 		AtomicInt code = -1;
 		TempThread thr(boost::bind(&ApplicationPool2_PoolTest::disableProcess,
-			this, session->getProcess(), &code));
+			this, session->getProcess()->shared_from_this(), &code));
 		SHOULD_NEVER_HAPPEN(100,
 			result = code != -1;
 		);
@@ -1378,7 +1383,7 @@ namespace tut {
 
 		{
 			ScopedLock l(pool->syncher);
-			GroupPtr group = processes[0]->getGroup();
+			GroupPtr group = processes[0]->getGroup()->shared_from_this();
 			ensure_equals(group->enabledCount, 1);
 			ensure_equals(group->disablingCount, 0);
 			ensure_equals(group->disabledCount, 1);
@@ -1444,9 +1449,11 @@ namespace tut {
 		EVENTUALLY(5,
 			result = number == 1;
 		);
-		string gupid = currentSession->getProcess()->gupid;
+		string gupid(currentSession->getProcess()->gupid,
+			currentSession->getProcess()->gupidSize);
 		ensure(!gupid.empty());
-		ensure_equals(currentSession->getProcess(), pool->findProcessByGupid(gupid));
+		ensure_equals(currentSession->getProcess(),
+			pool->findProcessByGupid(gupid).get());
 	}
 
 	TEST_METHOD(63) {
@@ -1515,6 +1522,7 @@ namespace tut {
 		options.appType = "wsgi";
 		options.startupFile = "passenger_wsgi.py";
 		options.spawnMethod = "direct";
+		options.statThrottleRate = 0;
 		pool->setMax(1);
 
 		// Send normal request.
@@ -1557,7 +1565,7 @@ namespace tut {
 			"sys.stderr.write('Something went wrong!')\n"
 			"exit(1)\n");
 
-		setLogLevel(-2);
+		setLogLevel(LVL_CRIT);
 		pool->asyncGet(options, callback);
 		EVENTUALLY(5,
 			result = number == 1;
@@ -1596,7 +1604,7 @@ namespace tut {
 			"	sys.stderr.write('Something went wrong!')\n"
 			"	exit(1)\n");
 
-		setLogLevel(-2);
+		setLogLevel(LVL_CRIT);
 		pool->asyncGet(options, callback);
 		EVENTUALLY(5,
 			result = number == 1;
@@ -1665,8 +1673,8 @@ namespace tut {
 			result = number == 3;
 		);
 		ensure_equals(pool->getProcessCount(), 2u);
-		SuperGroupPtr superGroup1 = pool->superGroups.get("stub/rack");
-		SuperGroupPtr superGroup2 = pool->superGroups.get("stub/rack");
+		SuperGroupPtr superGroup1 = pool->superGroups.lookupCopy("stub/rack");
+		SuperGroupPtr superGroup2 = pool->superGroups.lookupCopy("stub/rack");
 		ensure_equals(superGroup1->defaultGroup->enabledCount, 1);
 		ensure_equals(superGroup2->defaultGroup->enabledCount, 1);
 	}
@@ -1706,6 +1714,7 @@ namespace tut {
 		Options options = createOptions();
 		options.appRoot = "tmp.wsgi";
 		options.minProcesses = 3;
+		options.statThrottleRate = 0;
 
 		// Trigger spawn loop and freeze it at the point where it's spawning
 		// the second process.
@@ -1750,6 +1759,7 @@ namespace tut {
 		Options options = createOptions();
 		options.appRoot = "tmp.wsgi";
 		options.minProcesses = 2;
+		options.statThrottleRate = 0;
 		pool->asyncGet(options, callback);
 		EVENTUALLY(2,
 			result = pool->getProcessCount() == 2;
@@ -1803,7 +1813,7 @@ namespace tut {
 			"exit(1)\n");
 
 		retainSessions = true;
-		setLogLevel(-2);
+		setLogLevel(LVL_CRIT);
 		pool->asyncGet(options, callback);
 		pool->asyncGet(options, callback);
 		pool->asyncGet(options, callback);
@@ -1849,7 +1859,7 @@ namespace tut {
 			"sys.stderr.write('Something went wrong!')\n"
 			"exit(1)\n");
 		try {
-			setLogLevel(-2);
+			setLogLevel(LVL_CRIT);
 			currentSession = pool->get(options, &ticket);
 			fail("SpawnException expected");
 		} catch (const SpawnException &) {
@@ -2026,6 +2036,7 @@ namespace tut {
 		options.appType = "wsgi";
 		options.startupFile = "passenger_wsgi.py";
 		options.spawnMethod = "direct";
+		options.statThrottleRate = 0;
 
 		SessionPtr session = pool->get(options, &ticket);
 		string gupid = session->getProcess()->gupid;
@@ -2047,6 +2058,7 @@ namespace tut {
 		options.startupFile = "passenger_wsgi.py";
 		options.spawnMethod = "direct";
 		options.rollingRestart = true;
+		options.statThrottleRate = 0;
 
 		// Spawn a process.
 		pool->setMax(1);
@@ -2116,6 +2128,7 @@ namespace tut {
 		options.spawnMethod = "direct";
 		options.minProcesses = 2;
 		options.rollingRestart = true;
+		options.statThrottleRate = 0;
 
 		// Initiate spawning of 2 processes, then freeze it
 		// at a point where the second one is being spawned.
@@ -2187,6 +2200,7 @@ namespace tut {
 		options.startupFile = "passenger_wsgi.py";
 		options.spawnMethod = "direct";
 		options.rollingRestart = true;
+		options.statThrottleRate = 0;
 		pool->get(options, &ticket)->getProcess();
 
 		touchFile("tmp.wsgi/tmp/restart.txt");
@@ -2215,6 +2229,7 @@ namespace tut {
 		options.startupFile = "passenger_wsgi.py";
 		options.spawnMethod = "direct";
 		options.ignoreSpawnErrors = true;
+		options.statThrottleRate = 0;
 
 		debug->messages->send("Proceed with spawn loop iteration 1");
 		debug->messages->send("Proceed with spawn loop iteration 2");
@@ -2304,6 +2319,7 @@ namespace tut {
 		options.spawnMethod = "direct";
 		options.rollingRestart = true;
 		options.ignoreSpawnErrors = true;
+		options.statThrottleRate = 0;
 
 		debug->messages->send("Proceed with spawn loop iteration 1");
 		debug->messages->send("Proceed with spawn loop iteration 2");
@@ -2378,6 +2394,7 @@ namespace tut {
 		options.startupFile = "passenger_wsgi.py";
 		options.spawnMethod = "direct";
 		options.rollingRestart = true;
+		options.statThrottleRate = 0;
 
 		debug->messages->send("Proceed with spawn loop iteration 1");
 		debug->messages->send("Proceed with spawn loop iteration 2");
@@ -2494,7 +2511,7 @@ namespace tut {
 		SystemTime::forceAll(1);
 		pool->get(options, &ticket);
 		vector<ProcessPtr> processes = pool->getProcesses();
-		GroupPtr group = processes[0]->getGroup();
+		GroupPtr group = processes[0]->getGroup()->shared_from_this();
 		pid_t origPid = processes[0]->pid;
 
 		SystemTime::forceAll(2);
@@ -2511,83 +2528,4 @@ namespace tut {
 
 		debug->messages->send("Proceed with starting detached processes checker");
 	}
-
-	#if 0
-	TEST_METHOD(44) {
-		// Test sticky sessions.
-		TempDirCopy c1("stub/rack", "rackapp1.tmp");
-		writeFile("rackapp1.tmp/config.ru",
-			"sticky_session_id = File.read('sticky_session_id.txt')\n"
-			"app = lambda do |env|\n"
-			"  [200,\n"
-			"   { 'Content-Type' => 'text/plain', 'X-Stickiness' => sticky_session_id },\n"
-			"   ['hello']"
-			"  ]\n"
-			"end\n"
-			"run app\n");
-
-		PoolOptions options;
-		options.appRoot = "rackapp1.tmp";
-		options.appType = "rack";
-		options.spawnMethod = "conservative";
-
-		// Setup 2 app process, one with sticky session ID 1234
-		// and another with 5678.
-
-		writeFile("rackapp1.tmp/sticky_session_id.txt", "1234");
-		SessionPtr session1 = pool->get(options);
-		pid_t app1_pid = session1->getPid();
-		session1->setStickySessionId("1234");
-
-		writeFile("rackapp1.tmp/sticky_session_id.txt", "5678");
-		SessionPtr session2 = pool2->get(options);
-		session2.reset();
-		EVENTUALLY(5,
-			result = pool2->getCount() == 2u;
-		);
-		session2 = pool2->get(options);
-		pid_t app2_pid = session2->getPid();
-		session2->setStickySessionId("5678");
-
-		session1.reset();
-		session2.reset();
-		EVENTUALLY(5,
-			result = pool->getActive() == 0u;
-		);
-
-		// Test that a request always goes to the process with
-		// the given sticky session ID.
-
-		options.stickySessionId = "1234";
-		session1 = pool->get(options);
-		ensure_equals(session1->getPid(), app1_pid);
-		session2 = pool2->get(options);
-		ensure_equals(session2->getPid(), app1_pid);
-
-		session1.reset();
-		session2.reset();
-		EVENTUALLY(5,
-			result = pool->getActive() == 0u;
-		);
-
-		options.stickySessionId = "5678";
-		session1 = pool->get(options);
-		ensure_equals(session1->getPid(), app2_pid);
-		session2 = pool2->get(options);
-		ensure_equals(session2->getPid(), app2_pid);
-
-		session1.reset();
-		session2.reset();
-		EVENTUALLY(5,
-			result = pool->getActive() == 0u;
-		);
-
-		// If there's no process with the given sticky session ID
-		// then the normal process selection algorithm is used.
-		options.stickySessionId = "???";
-		session1 = pool->get(options);
-		session2 = pool2->get(options);
-		ensure(session1->getPid() != session2->getPid());
-	}
-	#endif
 }

@@ -1,5 +1,5 @@
 #  Phusion Passenger - https://www.phusionpassenger.com/
-#  Copyright (c) 2010-2013 Phusion
+#  Copyright (c) 2010-2014 Phusion
 #
 #  "Phusion Passenger" is a trademark of Hongli Lai & Ninh Bui.
 #
@@ -69,6 +69,50 @@ TEST_CXX_OBJECTS = {
 		ext/common/ApplicationPool2/SmartSpawner.h
 		ext/common/ApplicationPool2/DirectSpawner.h
 		ext/common/ApplicationPool2/DummySpawner.h),
+	'test/cxx/MemoryKit/MbufTest.o' => %w(
+		test/cxx/MemoryKit/MbufTest.cpp
+		ext/common/MemoryKit/mbuf.h),
+	'test/cxx/ServerKit/ChannelTest.o' => %w(
+		test/cxx/ServerKit/ChannelTest.cpp
+		ext/common/ServerKit/Channel.h
+		ext/common/ServerKit/Context.h),
+	'test/cxx/ServerKit/FileBufferedChannelTest.o' => %w(
+		test/cxx/ServerKit/FileBufferedChannelTest.cpp
+		ext/common/ServerKit/FileBufferedChannel.h
+		ext/common/ServerKit/Context.h),
+	'test/cxx/ServerKit/HeaderTableTest.o' => %w(
+		test/cxx/ServerKit/HeaderTableTest.cpp
+		ext/common/ServerKit/HeaderTable.h
+		ext/common/DataStructures/LString.h),
+	'test/cxx/ServerKit/ServerTest.o' => %w(
+		test/cxx/ServerKit/ServerTest.cpp
+		ext/common/ServerKit/Server.h
+		ext/common/ServerKit/Client.h
+		ext/common/ServerKit/Channel.h
+		ext/common/ServerKit/FdSourceChannel.h
+		ext/common/ServerKit/FileBufferedChannel.h
+		ext/common/ServerKit/FileBufferedFdSinkChannel.h
+		ext/common/ServerKit/Context.h),
+	'test/cxx/ServerKit/HttpServerTest.o' => %w(
+		test/cxx/ServerKit/HttpServerTest.cpp
+		ext/common/ServerKit/Server.h
+		ext/common/ServerKit/Client.h
+		ext/common/ServerKit/Channel.h
+		ext/common/ServerKit/FdSourceChannel.h
+		ext/common/ServerKit/FileBufferedChannel.h
+		ext/common/ServerKit/FileBufferedFdSinkChannel.h
+		ext/common/ServerKit/Context.h
+		ext/common/ServerKit/HttpServer.h
+		ext/common/ServerKit/HttpClient.h
+		ext/common/ServerKit/HttpRequest.h
+		ext/common/ServerKit/HttpHeaderParser.h
+		ext/common/ServerKit/HttpChunkedBodyParser.h),
+	'test/cxx/DataStructures/LStringTest.o' => %w(
+		test/cxx/DataStructures/LStringTest.cpp
+		ext/common/DataStructures/LString.h),
+	'test/cxx/DataStructures/StringKeyTableTest.o' => %w(
+		test/cxx/DataStructures/StringKeyTableTest.cpp
+		ext/common/DataStructures/StringKeyTable.h),
 	'test/cxx/MessageReadersWritersTest.o' => %w(
 		test/cxx/MessageReadersWritersTest.cpp
 		ext/common/MessageReadersWriters.h
@@ -82,17 +126,9 @@ TEST_CXX_OBJECTS = {
 		test/cxx/Base64Test.cpp
 		ext/common/Utils/Base64.h
 		ext/common/Utils/Base64.cpp),
-	'test/cxx/ScgiRequestParserTest.o' => %w(
-		test/cxx/ScgiRequestParserTest.cpp
-		ext/common/agents/HelperAgent/ScgiRequestParser.h
-		ext/common/StaticString.h),
 	'test/cxx/DechunkerTest.o' => %w(
 		test/cxx/DechunkerTest.cpp
 		ext/common/Utils/Dechunker.h),
-	'test/cxx/HttpHeaderBuffererTest.o' => %w(
-		test/cxx/HttpHeaderBuffererTest.cpp
-		ext/common/Utils/HttpHeaderBufferer.h
-		ext/common/Utils/StreamBoyerMooreHorspool.h),
 	'test/cxx/UnionStationTest.o' => %w(
 		test/cxx/UnionStationTest.cpp
 		ext/common/agents/LoggingAgent/LoggingServer.h
@@ -120,33 +156,26 @@ TEST_CXX_OBJECTS = {
 		ext/common/Account.h
 		ext/common/AccountsDatabase.h
 		ext/common/MessageServer.h),
-	'test/cxx/ServerInstanceDir.o' => %w(
-		test/cxx/ServerInstanceDirTest.cpp
-		ext/common/ServerInstanceDir.h
-		ext/common/Utils.h),
-	'test/cxx/RequestHandlerTest.o' => %w(
-		test/cxx/RequestHandlerTest.cpp
-		ext/common/agents/HelperAgent/RequestHandler.h
-		ext/common/agents/HelperAgent/FileBackedPipe.h
-		ext/common/agents/HelperAgent/ScgiRequestParser.h
-		ext/common/agents/HelperAgent/AgentOptions.h
-		ext/common/UnionStation/Connection.h
-		ext/common/UnionStation/Core.h
-		ext/common/UnionStation/Transaction.h
-		ext/common/UnionStation/ScopeLog.h
-		ext/common/ApplicationPool2/Pool.h
-		ext/common/ApplicationPool2/SuperGroup.h
-		ext/common/ApplicationPool2/Group.h
-		ext/common/ApplicationPool2/Process.h
-		ext/common/ApplicationPool2/Options.h
-		ext/common/ApplicationPool2/Spawner.h
-		ext/common/ApplicationPool2/SpawnerFactory.h
-		ext/common/ApplicationPool2/SmartSpawner.h
-		ext/common/ApplicationPool2/DirectSpawner.h
-		ext/common/ApplicationPool2/DummySpawner.h),
-	'test/cxx/FileBackedPipeTest.o' => %w(
-		test/cxx/FileBackedPipeTest.cpp
-		ext/common/agents/HelperAgent/FileBackedPipe.h),
+	# 'test/cxx/RequestHandlerTest.o' => %w(
+	# 	test/cxx/RequestHandlerTest.cpp
+	# 	ext/common/agents/HelperAgent/RequestHandler.h
+	# 	ext/common/agents/HelperAgent/FileBackedPipe.h
+	# 	ext/common/agents/HelperAgent/ScgiRequestParser.h
+	# 	ext/common/agents/HelperAgent/AgentOptions.h
+	# 	ext/common/UnionStation/Connection.h
+	# 	ext/common/UnionStation/Core.h
+	# 	ext/common/UnionStation/Transaction.h
+	# 	ext/common/UnionStation/ScopeLog.h
+	# 	ext/common/ApplicationPool2/Pool.h
+	# 	ext/common/ApplicationPool2/SuperGroup.h
+	# 	ext/common/ApplicationPool2/Group.h
+	# 	ext/common/ApplicationPool2/Process.h
+	# 	ext/common/ApplicationPool2/Options.h
+	# 	ext/common/ApplicationPool2/Spawner.h
+	# 	ext/common/ApplicationPool2/SpawnerFactory.h
+	# 	ext/common/ApplicationPool2/SmartSpawner.h
+	# 	ext/common/ApplicationPool2/DirectSpawner.h
+	# 	ext/common/ApplicationPool2/DummySpawner.h),
 	'test/cxx/FileChangeCheckerTest.o' => %w(
 		test/cxx/FileChangeCheckerTest.cpp
 		ext/common/Utils/FileChangeChecker.h
@@ -242,8 +271,7 @@ dependencies = [
 	LIBEIO_TARGET,
 	TEST_BOOST_OXT_LIBRARY,
 	TEST_COMMON_LIBRARY.link_objects,
-	'ext/common/Constants.h',
-	'ext/common/MultiLibeio.cpp'
+	'ext/common/Constants.h'
 ].flatten.compact
 file 'test/cxx/CxxTestMain' => dependencies.flatten do
 	objects = TEST_CXX_OBJECTS.keys.join(' ')
@@ -256,8 +284,8 @@ deps = [
 	'ext/oxt/thread.hpp',
 	'ext/oxt/tracable_exception.hpp',
 	'ext/common/Constants.h',
-	'ext/common/ServerInstanceDir.h',
 	'ext/common/Exceptions.h',
+	'ext/common/InstanceDirectory.h',
 	'ext/common/Utils.h',
 	'ext/common/Utils/SystemTime.h'
 ]

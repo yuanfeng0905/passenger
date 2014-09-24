@@ -1,6 +1,6 @@
 /*
  *  Phusion Passenger - https://www.phusionpassenger.com/
- *  Copyright (c) 2011-2013 Phusion
+ *  Copyright (c) 2011-2014 Phusion
  *
  *  "Phusion Passenger" is a trademark of Hongli Lai & Ninh Bui.
  *
@@ -95,10 +95,10 @@ private:
 		shared_array<const char *> &args) const
 	{
 		vector<string> startCommandArgs;
-		string agentsDir = config->resourceLocator.getAgentsDir();
+		string agentsDir = config->resourceLocator->getAgentsDir();
 		vector<string> command;
 
-		split(options.getStartCommand(config->resourceLocator), '\t', startCommandArgs);
+		split(options.getStartCommand(*config->resourceLocator), '\t', startCommandArgs);
 		if (startCommandArgs.empty()) {
 			throw RuntimeException("No startCommand given");
 		}
@@ -128,14 +128,11 @@ private:
 	}
 
 public:
-	DirectSpawner(const ServerInstanceDir::GenerationPtr &_generation,
-		const SpawnerConfigPtr &_config)
+	DirectSpawner(const SpawnerConfigPtr &_config)
 		: Spawner(_config)
-	{
-		generation = _generation;
-	}
+		{ }
 
-	virtual ProcessPtr spawn(const Options &options) {
+	virtual SpawnObject spawn(const Options &options) {
 		TRACE_POINT();
 		this_thread::disable_interruption di;
 		this_thread::disable_syscall_interruption dsi;
@@ -206,17 +203,17 @@ public:
 			details.options = &options;
 			details.debugDir = debugDir;
 
-			ProcessPtr process;
+			SpawnObject object;
 			{
 				this_thread::restore_interruption ri(di);
 				this_thread::restore_syscall_interruption rsi(dsi);
-				process = negotiateSpawn(details);
+				object = negotiateSpawn(details);
 			}
-			detachProcess(process->pid);
+			detachProcess(object.process->pid);
 			guard.clear();
 			P_DEBUG("Process spawning done: appRoot=" << options.appRoot <<
-				", pid=" << process->pid);
-			return process;
+				", pid=" << object.process->pid);
+			return object;
 		}
 	}
 };

@@ -1,5 +1,5 @@
 #  Phusion Passenger - https://www.phusionpassenger.com/
-#  Copyright (c) 2012 Phusion
+#  Copyright (c) 2012-2014 Phusion
 #
 #  "Phusion Passenger" is a trademark of Hongli Lai & Ninh Bui.
 #
@@ -110,11 +110,26 @@ private
 			object_file = "#{@output_dir}/#{object_name}"
 
 			file(object_file => dependencies_for(options)) do
+				case options[:optimize]
+				when :light
+					optimize = "-O1"
+				when true, :heavy
+					optimize = "-O2"
+				when :very_heavy
+					optimize = "-O3"
+				when nil
+					optimize = nil
+				else
+					raise "Unknown optimization level #{options[:optimize]}"
+				end
+				if options[:strict_aliasing] == false
+					optimize = "#{optimize} -fno-strict-aliasing"
+				end
 				ensure_directory_exists(File.dirname(object_file))
 				if source_file =~ /\.c$/
-					compile_c(source_file, "#{cflags} -o #{object_file}")
+					compile_c(source_file, "#{optimize} #{cflags} -o #{object_file}".strip)
 				else
-					compile_cxx(source_file, "#{cxxflags} -o #{object_file}")
+					compile_cxx(source_file, "#{optimize} #{cxxflags} -o #{object_file}".strip)
 				end
 			end
 		end
@@ -155,7 +170,7 @@ private
 			# packaging the runtime ('passenger package-runtime') so we
 			# never generate static libraries.
 			library = "#{@output_dir}/#{category}.a"
-			
+
 			file(library => object_filenames) do
 				create_static_library(library, object_filenames.join(' '))
 			end
@@ -300,6 +315,7 @@ COMMON_LIBRARY = CommonLibraryBuilder.new do
 	define_component 'Logging.o',
 		:source   => 'Logging.cpp',
 		:category => :base,
+		:optimize => :light,
 		:deps     => %w(
 			Logging.cpp
 			Logging.h
@@ -319,11 +335,21 @@ COMMON_LIBRARY = CommonLibraryBuilder.new do
 	define_component 'Utils/StrIntUtils.o',
 		:source   => 'Utils/StrIntUtils.cpp',
 		:category => :base,
+		:optimize => :very_heavy,
+		:deps     => %w(
+			Utils/StrIntUtils.h
+		)
+	define_component 'Utils/StrIntUtilsNoStrictAliasing.o',
+		:source   => 'Utils/StrIntUtilsNoStrictAliasing.cpp',
+		:category => :base,
+		:optimize => :very_heavy,
+		:strict_aliasing => false,
 		:deps     => %w(
 			Utils/StrIntUtils.h
 		)
 	define_component 'Utils/IOUtils.o',
 		:source   => 'Utils/IOUtils.cpp',
+		:optimize => :light,
 		:category => :base,
 		:deps     => %w(
 			Utils/IOUtils.h
@@ -341,8 +367,17 @@ COMMON_LIBRARY = CommonLibraryBuilder.new do
 	define_component 'Utils/Base64.o',
 		:source   => 'Utils/Base64.cpp',
 		:category => :other,
+		:optimize => true,
 		:deps     => %w(
 			Utils/Base64.h
+		)
+	define_component 'Utils/modp_b64.o',
+		:source   => 'Utils/modp_b64.cpp',
+		:category => :other,
+		:optimize => true,
+		:deps     => %w(
+			Utils/modp_b64.h
+			Utils/modp_b64_data.h
 		)
 	define_component 'Utils/CachedFileStat.o',
 		:source   => 'Utils/CachedFileStat.cpp',
@@ -393,7 +428,6 @@ COMMON_LIBRARY = CommonLibraryBuilder.new do
 			AgentsStarter.h
 			ResourceLocator.h
 			MessageClient.h
-			ServerInstanceDir.h
 			Utils/IniFile.h
 			Utils/VariantMap.h
 		)
@@ -410,22 +444,56 @@ COMMON_LIBRARY = CommonLibraryBuilder.new do
 		:deps     => %w(
 			agents/LoggingAgent/FilterSupport.h
 		)
+	define_component 'MemoryKit/mbuf.o',
+		:source   => 'MemoryKit/mbuf.cpp',
+		:category => :other,
+		:optimize => true,
+		:deps     => %w(
+			MemoryKit/palloc.h
+		)
+	define_component 'MemoryKit/palloc.o',
+		:source   => 'MemoryKit/palloc.cpp',
+		:category => :other,
+		:optimize => true,
+		:deps     => %w(
+			MemoryKit/palloc.h
+		)
+	define_component 'MemoryKit/palloc.o',
+		:source   => 'MemoryKit/palloc.cpp',
+		:category => :other,
+		:optimize => true,
+		:deps     => %w(
+			MemoryKit/palloc.h
+		)
+	define_component 'ServerKit/http_parser.o',
+		:source   => 'ServerKit/http_parser.cpp',
+		:category => :other,
+		:optimize => :very_heavy,
+		:deps     => %w(
+			ServerKit/http_parser.h
+		)
+	define_component 'ServerKit/Implementation.o',
+		:source   => 'ServerKit/Implementation.cpp',
+		:category => :other,
+		:optimize => true
 	define_component 'Utils/MD5.o',
 		:source   => 'Utils/MD5.cpp',
 		:category => :other,
+		:optimize => true,
 		:deps     => %w(
 			Utils/MD5.h
 		)
-	define_component 'Utils/fib.o',
-		:source   => 'Utils/fib.c',
+	define_component 'Utils/Hasher.o',
+		:source   => 'Utils/Hasher.cpp',
 		:category => :other,
+		:optimize => :very_heavy,
 		:deps     => %w(
-			Utils/fib.h
-			Utils/fibpriv.h
+			Utils/Hasher.h
 		)
 	define_component 'Utils/jsoncpp.o',
 		:source   => 'Utils/jsoncpp.cpp',
 		:category => :other,
+		:optimize => true,
 		:deps     => %w(
 			Utils/json.h
 			Utils/json-forwards.h

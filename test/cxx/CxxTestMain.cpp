@@ -1,6 +1,5 @@
 #include <TestSupport.h>
 #include "../tut/tut_reporter.h"
-#include "../support/valgrind.h"
 #include <oxt/initialize.hpp>
 #include <oxt/system_calls.hpp>
 #include <string>
@@ -12,7 +11,6 @@
 #include <cstring>
 #include <unistd.h>
 
-#include <MultiLibeio.cpp>
 #include <Utils.h>
 #include <Utils/IOUtils.h>
 #include <Utils/StrIntUtils.h>
@@ -124,11 +122,6 @@ parseOptions(int argc, char *argv[]) {
 	}
 }
 
-static int
-doNothing(eio_req *req) {
-	return 0;
-}
-
 static void
 loadConfigFile() {
 	Json::Reader reader;
@@ -170,33 +163,23 @@ main(int argc, char *argv[]) {
 	setenv("RAILS_ENV", "production", 1);
 	setenv("TESTING_PASSENGER", "1", 1);
 	setenv("PYTHONDONTWRITEBYTECODE", "1", 1);
-	unsetenv("PASSENGER_TMPDIR");
-	unsetenv("PASSENGER_TEMP_DIR");
+	unsetenv("TMPDIR");
 	Passenger::passenger_enterprise_license_check();
 	oxt::initialize();
 	oxt::setup_syscall_interruption_support();
-    
+
 	tut::reporter reporter;
 	tut::runner.get().set_callback(&reporter);
 	allGroups = tut::runner.get().list_groups();
 	parseOptions(argc, argv);
-	
+
 	char path[PATH_MAX + 1];
 	getcwd(path, PATH_MAX);
 	resourceLocator = new ResourceLocator(extractDirName(path));
 
-	Passenger::MultiLibeio::init();
-	eio_set_idle_timeout(9999); // Never timeout.
-	eio_set_min_parallel(1);
-	eio_set_max_parallel(1);
-	if (RUNNING_ON_VALGRIND) {
-		// Start an EIO thread to warm up Valgrind.
-		eio_nop(0, doNothing, NULL);
-	}
-
 	loadConfigFile();
 	installAbortHandler();
-	
+
 	bool all_ok = true;
 	if (runMode == RUN_ALL_GROUPS) {
 		tut::runner.get().run_tests();
@@ -204,7 +187,6 @@ main(int argc, char *argv[]) {
 		tut::runner.get().run_tests(groupsToRun);
 	}
 	all_ok = reporter.all_ok();
-	Passenger::MultiLibeio::shutdown();
 	if (all_ok) {
 		return 0;
 	} else {

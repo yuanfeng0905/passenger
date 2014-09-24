@@ -13,6 +13,7 @@
 #include <boost/bind.hpp>
 #include <boost/shared_ptr.hpp>
 #include <boost/make_shared.hpp>
+#include <boost/container/vector.hpp>
 #include <oxt/thread.hpp>
 #include <vector>
 #include <utility>
@@ -21,6 +22,7 @@
 #include <ApplicationPool2/ComponentInfo.h>
 #include <ApplicationPool2/Group.h>
 #include <ApplicationPool2/Options.h>
+#include <Utils/SmallVector.h>
 
 namespace Passenger {
 namespace ApplicationPool2 {
@@ -153,28 +155,19 @@ public:
 	};
 
 	typedef boost::function<void (ShutdownResult result)> ShutdownCallback;
+	typedef SmallVector<GroupPtr, 1> GroupList;
 
 private:
 	friend class Pool;
 	friend class Group;
 
 	Options options;
-	/** A number for concurrency control, incremented every time the state changes.
-	 * Every background thread that SuperGroup spawns knows the generation number
-	 * from when the thread was spawned. A thread generally does some work outside
-	 * the lock, then grabs the lock and updates the information in this SuperGroup
-	 * with the results of the work. But before updating happens it first checks
-	 * whether the generation number is as expected, so increasing this generation
-	 * number will prevent old threads from updating the information with possibly
-	 * now-stale information. It is a good way to prevent A-B-A concurrency
-	 * problems.
-	 */
-	unsigned int generation;
 
 
 	// Thread-safe.
-	static boost::mutex &getPoolSyncher(const PoolPtr &pool);
-	static void runAllActions(const vector<Callback> &actions);
+	static boost::mutex &getPoolSyncher(Pool *pool);
+	static void runAllActions(const boost::container::vector<Callback> &actions);
+	const PoolPtr getPoolPtr();
 	string generateSecret() const;
 	void runInitializationHooks() const;
 	void runDestructionHooks() const;
@@ -209,8 +202,8 @@ private:
 		return infos;
 	}
 
-	Group *findDefaultGroup(const vector<GroupPtr> &groups) const {
-		vector<GroupPtr>::const_iterator it;
+	Group *findDefaultGroup(const SuperGroup::GroupList &groups) const {
+		SuperGroup::GroupList::const_iterator it;
 
 		for (it = groups.begin(); it != groups.end(); it++) {
 			const GroupPtr &group = *it;
@@ -222,7 +215,7 @@ private:
 	}
 
 	pair<GroupPtr, unsigned int> findGroupCorrespondingToComponent(
-		const vector<GroupPtr> &groups, const ComponentInfo &info) const
+		const SuperGroup::GroupList &groups, const ComponentInfo &info) const
 	{
 		unsigned int i;
 		for (i = 0; i < groups.size(); i++) {
@@ -237,7 +230,7 @@ private:
 	static void oneGroupHasBeenShutDown(SuperGroupPtr self, GroupPtr group) {
 		// This function is either called from the pool event loop or directly from
 		// the detachAllGroups post lock actions. In both cases getPool() is never NULL.
-		PoolPtr pool = self->getPool();
+		Pool *pool = self->getPool();
 		boost::lock_guard<boost::mutex> lock(self->getPoolSyncher(pool));
 
 		vector<GroupPtr>::iterator it, end = self->detachedGroups.end();
@@ -252,7 +245,9 @@ private:
 	/** One of the post lock actions can potentially perform a long-running
 	 * operation, so running them in a thread is advised.
 	 */
-	void detachAllGroups(vector<GroupPtr> &groups, vector<Callback> &postLockActions) {
+	void detachAllGroups(GroupList &groups,
+		boost::container::vector<Callback> &postLockActions)
+	{
 		foreach (const GroupPtr &group, groups) {
 			// doRestart() may temporarily nullify elements in 'groups'.
 			if (group == NULL) {
@@ -275,7 +270,7 @@ private:
 		groups.clear();
 	}
 
-	void assignGetWaitlistToGroups(vector<Callback> &postLockActions) {
+	void assignGetWaitlistToGroups(boost::container::vector<Callback> &postLockActions) {
 		while (!getWaitlist.empty()) {
 			GetWaiter &waiter = getWaitlist.front();
 			Group *group = route(waiter.options);
@@ -284,7 +279,7 @@ private:
 			SessionPtr session = group->get(adjustedOptions, waiter.callback,
 				postLockActions);
 			if (session != NULL) {
-				postLockActions.push_back(boost::bind(
+				postLockActions.push_back(boost::bind(GetCallback::call,
 					waiter.callback, session, ExceptionPtr()));
 			}
 			getWaitlist.pop_front();
@@ -313,7 +308,7 @@ private:
 
 		// Wait until 'detachedGroups' is empty.
 		UPDATE_TRACE_POINT();
-		PoolPtr pool = getPool();
+		Pool *pool = getPool();
 		boost::unique_lock<boost::mutex> lock(getPoolSyncher(pool));
 		verifyInvariants();
 		while (true) {
@@ -352,21 +347,38 @@ private:
 
 public:
 	mutable boost::mutex backrefSyncher;
-	const boost::weak_ptr<Pool> pool;
+	// Public, read-only
+	Pool *pool;
 
+	/** A number for concurrency control, incremented every time the state changes.
+	 * Every background thread that SuperGroup spawns knows the generation number
+	 * from when the thread was spawned. A thread generally does some work outside
+	 * the lock, then grabs the lock and updates the information in this SuperGroup
+	 * with the results of the work. But before updating happens it first checks
+	 * whether the generation number is as expected, so increasing this generation
+	 * number will prevent old threads from updating the information with possibly
+	 * now-stale information. It is a good way to prevent A-B-A concurrency
+	 * problems.
+	 *
+	 * Private.
+	 */
+	unsigned int generation;
+	// Private
 	State state;
+
+	// Public, read-only
 	string name;
 	string secret;
-
-	/** Invariant:
-	 * groups.empty() == (state == INITIALIZING || state == DESTROYING || state == DESTROYED)
-	 */
-	vector<GroupPtr> groups;
 
 	/** Invariant:
 	 * (defaultGroup == NULL) == (state == INITIALIZING || state == DESTROYING || state == DESTROYED)
 	 */
 	Group *defaultGroup;
+
+	/** Invariant:
+	 * groups.empty() == (state == INITIALIZING || state == DESTROYING || state == DESTROYED)
+	 */
+	GroupList groups;
 
 	/**
 	 * get() requests for this super group that cannot be immediately satisfied
@@ -401,7 +413,7 @@ public:
 	/** One MUST call initialize() after construction because shared_from_this()
 	 * is not available in the constructor.
 	 */
-	SuperGroup(const PoolPtr &_pool, const Options &options)
+	SuperGroup(Pool *_pool, const Options &options)
 		: pool(_pool)
 	{
 		this->options = options.copyAndPersist().detachFromUnionStationTransaction();
@@ -439,8 +451,8 @@ public:
 	 * because Pool::destroy() joins all threads, so Pool can never
 	 * be destroyed before all thread callbacks have finished.
 	 */
-	PoolPtr getPool() const {
-		return pool.lock();
+	Pool *getPool() const {
+		return pool;
 	}
 
 	bool isAlive() const {
@@ -476,7 +488,8 @@ public:
 	 * One of the post lock actions can potentially perform a long-running
 	 * operation, so running them in a thread is advised.
 	 */
-	void destroy(bool allowReinitialization, vector<Callback> &postLockActions,
+	void destroy(bool allowReinitialization,
+		boost::container::vector<Callback> &postLockActions,
 		const ShutdownCallback &callback)
 	{
 		verifyInvariants();
@@ -559,7 +572,7 @@ public:
 	}
 
 	SessionPtr get(const Options &newOptions, const GetCallback &callback,
-		vector<Callback> &postLockActions)
+		boost::container::vector<Callback> &postLockActions)
 	{
 		switch (state) {
 		case INITIALIZING:
@@ -606,11 +619,15 @@ public:
 	}
 
 	unsigned int capacityUsed() const {
-		vector<GroupPtr>::const_iterator it, end = groups.end();
 		unsigned int result = 0;
 
-		for (it = groups.begin(); it != end; it++) {
-			result += (*it)->capacityUsed();
+		if (groups.size() == 1) {
+			result += defaultGroup->capacityUsed();
+		} else {
+			GroupList::const_iterator it, end = groups.end();
+			for (it = groups.begin(); it != end; it++) {
+				result += (*it)->capacityUsed();
+			}
 		}
 		if (state == INITIALIZING || state == RESTARTING) {
 			result++;
@@ -619,13 +636,17 @@ public:
 	}
 
 	unsigned int getProcessCount() const {
-		unsigned int result = 0;
-		vector<GroupPtr>::const_iterator g_it, g_end = groups.end();
-		for (g_it = groups.begin(); g_it != g_end; g_it++) {
-			const GroupPtr &group = *g_it;
-			result += group->getProcessCount();
+		if (groups.size() == 1) {
+			return defaultGroup->getProcessCount();
+		} else {
+			unsigned int result = 0;
+			GroupList::const_iterator g_it, g_end = groups.end();
+			for (g_it = groups.begin(); g_it != g_end; g_it++) {
+				const GroupPtr &group = *g_it;
+				result += group->getProcessCount();
+			}
+			return result;
 		}
-		return result;
 	}
 
 	bool needsRestart() const {

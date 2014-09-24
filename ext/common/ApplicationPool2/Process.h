@@ -10,15 +10,19 @@
 #define _PASSENGER_APPLICATION_POOL_PROCESS_H_
 
 #include <string>
-#include <list>
+#include <vector>
+#include <algorithm>
 #include <boost/shared_ptr.hpp>
 #include <boost/make_shared.hpp>
+#include <boost/container/vector.hpp>
 #include <oxt/system_calls.hpp>
+#include <oxt/spin_lock.hpp>
 #include <oxt/macros.hpp>
 #include <sys/types.h>
 #include <cstdio>
 #include <climits>
 #include <cassert>
+#include <cstring>
 #include <ApplicationPool2/Common.h>
 #include <ApplicationPool2/Socket.h>
 #include <ApplicationPool2/Session.h>
@@ -26,7 +30,6 @@
 #include <Constants.h>
 #include <FileDescriptor.h>
 #include <Logging.h>
-#include <Utils/PriorityQueue.h>
 #include <Utils/SystemTime.h>
 #include <Utils/StrIntUtils.h>
 #include <Utils/ProcessMetricsCollector.h>
@@ -38,36 +41,7 @@ using namespace std;
 using namespace boost;
 
 
-class ProcessList: public list<ProcessPtr> {
-public:
-	ProcessPtr &get(unsigned int index) {
-		iterator it = begin(), end = this->end();
-		unsigned int i = 0;
-		while (i != index && it != end) {
-			i++;
-			it++;
-		}
-		if (it == end) {
-			throw RuntimeException("Index out of bounds");
-		} else {
-			return *it;
-		}
-	}
-
-	ProcessPtr &operator[](unsigned int index) {
-		return get(index);
-	}
-
-	iterator last_iterator() {
-		if (empty()) {
-			return end();
-		} else {
-			iterator last = end();
-			last--;
-			return last;
-		}
-	}
-};
+typedef boost::container::vector<ProcessPtr> ProcessList;
 
 /**
  * Represents an application process, as spawned by a Spawner. Every Process has
@@ -109,27 +83,29 @@ public:
  * its Sessions, and a Process also outlives the OS process.
  */
 class Process: public boost::enable_shared_from_this<Process> {
+public:
+	static const unsigned int MAX_SESSION_SOCKETS = 3;
+	static const unsigned int GUPID_MAX_SIZE = 20;
+
 // Actually private, but marked public so that unit tests can access the fields.
 public:
 	friend class Group;
 
 	/** A mutex to protect access to `lifeStatus`. */
-	mutable boost::mutex lifetimeSyncher;
+	mutable oxt::spin_lock lifetimeSyncher;
+
+	/** The index inside the associated Group's process list. */
+	unsigned int index;
 
 	/** Group inside the Pool that this Process belongs to.
 	 * Should never be NULL because a Group should outlive all of its Processes.
 	 * Read-only; only set once during initialization.
 	 */
-	boost::weak_ptr<Group> group;
+	Group *group;
 
 	/** A subset of 'sockets': all sockets that speak the
-	 * "session" protocol, sorted by socket.busyness(). */
-	PriorityQueue<Socket> sessionSockets;
-
-	/** The iterator inside the associated Group's process list. */
-	ProcessList::iterator it;
-	/** The handle inside the associated Group's process priority queue. */
-	PriorityQueue<Process>::Handle pqHandle;
+	 * "session" or "http_session" protocol. */
+	Socket *sessionSockets[MAX_SESSION_SOCKETS];
 
 	void sendAbortLongRunningConnectionsMessage(const string &address);
 	static void realSendAbortLongRunningConnectionsMessage(string address);
@@ -164,11 +140,20 @@ public:
 
 	void indexSessionSockets() {
 		SocketList::iterator it;
+
 		concurrency = 0;
-		for (it = sockets->begin(); it != sockets->end(); it++) {
+		memset(sessionSockets, 0, sizeof(sessionSockets));
+
+		for (it = sockets.begin(); it != sockets.end(); it++) {
 			Socket *socket = &(*it);
 			if (socket->protocol == "session" || socket->protocol == "http_session") {
-				socket->pqHandle = sessionSockets.push(socket, socket->busyness());
+				if (sessionSocketCount == MAX_SESSION_SOCKETS) {
+					throw RuntimeException("The process has many session sockets. "
+						"A maximum of " + toString(MAX_SESSION_SOCKETS) + " is allowed");
+				}
+				sessionSockets[sessionSocketCount] = socket;
+				sessionSocketCount++;
+
 				if (concurrency != -1) {
 					if (socket->concurrency == 0) {
 						// If one of the sockets has a concurrency of
@@ -181,6 +166,7 @@ public:
 				}
 			}
 		}
+
 		if (concurrency == -1) {
 			concurrency = 0;
 		}
@@ -199,17 +185,17 @@ public:
 	unsigned int stickySessionId;
 	/** UUID for this process, randomly generated and extremely unlikely to ever
 	 * appear again in this universe. */
-	string gupid;
-	string connectPassword;
+	char gupid[GUPID_MAX_SIZE];
+	unsigned int gupidSize;
 	/** Admin socket, see class description. */
 	FileDescriptor adminSocket;
 	/** The sockets that this Process listens on for connections. */
-	SocketListPtr sockets;
+	SocketList sockets;
 	/** The code revision of the application, inferred through various means.
 	 * See Spawner::prepareSpawn() to learn how this is determined.
 	 * May be an empty string.
 	 */
-	string codeRevision;
+	StaticString codeRevision;
 	/** Time at which the Spawner that created this process was created.
 	 * Microseconds resolution. */
 	unsigned long long spawnerCreationTime;
@@ -263,7 +249,7 @@ public:
 		 * this object is no longer usable.
 		 */
 		DEAD
-	} lifeStatus;
+	} lifeStatus: 2;
 	enum EnabledStatus {
 		/** Up and operational. */
 		ENABLED,
@@ -284,7 +270,7 @@ public:
 		 * eligible for new requests.
 		 */
 		DETACHED
-	} enabled;
+	} enabled: 2;
 	enum OobwStatus {
 		/** Process is not using out-of-band work. */
 		OOBW_NOT_ACTIVE,
@@ -295,32 +281,34 @@ public:
 		 * sessions have ended and the process has been disabled before the
 		 * out-of-band work can be performed. */
 		OOBW_IN_PROGRESS,
-	} oobwStatus;
+	} oobwStatus: 2;
 	/** Caches whether or not the OS process still exists. */
-	mutable bool m_osProcessExists;
-	bool longRunningConnectionsAborted;
+	mutable bool m_osProcessExists: 1;
+	bool longRunningConnectionsAborted: 1;
+	/** Number of items in `sessionSockets`. Private field, but put here
+	 * for alignment optimization.
+	 */
+	unsigned int sessionSocketCount: 8;
 	/** Time at which shutdown began. */
 	time_t shutdownStartTime;
 	/** Collected by Pool::collectAnalytics(). */
 	ProcessMetrics metrics;
 
 	Process(pid_t _pid,
-		const string &_gupid,
-		const string &_connectPassword,
+		const StaticString &_gupid,
 		const FileDescriptor &_adminSocket,
 		/** Pipe on which this process outputs errors. Mapped to the process's STDERR.
 		 * Only Processes spawned by DirectSpawner have this set.
 		 * SmartSpawner-spawned Processes use the same STDERR as their parent preloader processes.
 		 */
 		const FileDescriptor &_errorPipe,
-		const SocketListPtr &_sockets,
+		const SocketList &_sockets,
 		unsigned long long _spawnerCreationTime,
 		unsigned long long _spawnStartTime)
-		: pqHandle(NULL),
+		: index(-1),
+		  group(NULL),
 		  pid(_pid),
 		  stickySessionId(0),
-		  gupid(_gupid),
-		  connectPassword(_connectPassword),
 		  adminSocket(_adminSocket),
 		  sockets(_sockets),
 		  spawnerCreationTime(_spawnerCreationTime),
@@ -335,8 +323,11 @@ public:
 		  oobwStatus(OOBW_NOT_ACTIVE),
 		  m_osProcessExists(true),
 		  longRunningConnectionsAborted(false),
+		  sessionSocketCount(0),
 		  shutdownStartTime(0)
 	{
+		assert(_gupid.size() <= GUPID_MAX_SIZE);
+
 		if (_adminSocket != -1) {
 			PipeWatcherPtr watcher = boost::make_shared<PipeWatcher>(_adminSocket,
 				"stdout", pid);
@@ -350,12 +341,12 @@ public:
 			watcher->start();
 		}
 
-		if (OXT_LIKELY(sockets != NULL)) {
-			indexSessionSockets();
-		}
+		indexSessionSockets();
 
 		lastUsed      = SystemTime::getUsec();
 		spawnEndTime  = lastUsed;
+		gupidSize     = _gupid.size();
+		memcpy(gupid, _gupid.data(), _gupid.size());
 	}
 
 	~Process() {
@@ -380,13 +371,13 @@ public:
 	 * @pre getLifeState() != SHUT_DOWN
 	 * @post result != NULL
 	 */
-	const GroupPtr getGroup() const {
+	Group *getGroup() const {
 		assert(!isDead());
-		return group.lock();
+		return group;
 	}
 
-	void setGroup(const GroupPtr &group) {
-		assert(this->group.lock() == NULL || this->group.lock() == group);
+	void setGroup(Group *group) {
+		assert(this->group == NULL || this->group == group);
 		this->group = group;
 	}
 
@@ -395,44 +386,65 @@ public:
 	 * @pre getLifeState() != DEAD
 	 * @post result != NULL
 	 */
-	PoolPtr getPool() const;
+	Pool *getPool() const;
 
 	/**
 	 * Thread-safe.
 	 * @pre getLifeState() != DEAD
 	 * @post result != NULL
 	 */
-	SuperGroupPtr getSuperGroup() const;
+	SuperGroup *getSuperGroup() const;
 
 	// Thread-safe.
 	bool isAlive() const {
-		boost::lock_guard<boost::mutex> lock(lifetimeSyncher);
+		oxt::spin_lock::scoped_lock lock(lifetimeSyncher);
 		return lifeStatus == ALIVE;
 	}
 
 	// Thread-safe.
 	bool hasTriggeredShutdown() const {
-		boost::lock_guard<boost::mutex> lock(lifetimeSyncher);
+		oxt::spin_lock::scoped_lock lock(lifetimeSyncher);
 		return lifeStatus == SHUTDOWN_TRIGGERED;
 	}
 
 	// Thread-safe.
 	bool isDead() const {
-		boost::lock_guard<boost::mutex> lock(lifetimeSyncher);
+		oxt::spin_lock::scoped_lock lock(lifetimeSyncher);
 		return lifeStatus == DEAD;
 	}
 
 	// Thread-safe.
 	LifeStatus getLifeStatus() const {
-		boost::lock_guard<boost::mutex> lock(lifetimeSyncher);
+		oxt::spin_lock::scoped_lock lock(lifetimeSyncher);
 		return lifeStatus;
+	}
+
+	// Thread-safe.
+	StaticString getGroupSecret() const;
+
+	Socket *findSessionSocketWithLowestBusyness() const {
+		if (OXT_UNLIKELY(sessionSocketCount == 0)) {
+			return NULL;
+		}
+
+		int leastBusySessionSocketIndex = 0;
+		int lowestBusyness = sessionSockets[0]->busyness();
+
+		for (unsigned i = 1; i < sessionSocketCount; i++) {
+			if (sessionSockets[i]->busyness() < lowestBusyness) {
+				leastBusySessionSocketIndex = i;
+				lowestBusyness = sessionSockets[i]->busyness();
+			}
+		}
+
+		return sessionSockets[leastBusySessionSocketIndex];
 	}
 
 	bool abortLongRunningConnections() {
 		bool sent = false;
 		if (!longRunningConnectionsAborted) {
-			SocketList::iterator it, end = sockets->end();
-			for (it = sockets->begin(); it != end; it++) {
+			SocketList::iterator it, end = sockets.end();
+			for (it = sockets.begin(); it != end; it++) {
 				Socket *socket = &(*it);
 				if (socket->name == "control") {
 					sendAbortLongRunningConnectionsMessage(socket->address);
@@ -451,10 +463,11 @@ public:
 	void triggerShutdown() {
 		assert(canTriggerShutdown());
 		{
-			boost::lock_guard<boost::mutex> lock(lifetimeSyncher);
+			time_t now = SystemTime::get();
+			oxt::spin_lock::scoped_lock lock(lifetimeSyncher);
 			assert(lifeStatus == ALIVE);
 			lifeStatus = SHUTDOWN_TRIGGERED;
-			shutdownStartTime = SystemTime::get();
+			shutdownStartTime = now;
 		}
 		if (!dummy) {
 			syscalls::shutdown(adminSocket, SHUT_WR);
@@ -474,18 +487,16 @@ public:
 
 		P_TRACE(2, "Cleaning up process " << inspect());
 		if (!dummy) {
-			if (OXT_LIKELY(sockets != NULL)) {
-				SocketList::const_iterator it, end = sockets->end();
-				for (it = sockets->begin(); it != end; it++) {
-					if (getSocketAddressType(it->address) == SAT_UNIX) {
-						string filename = parseUnixSocketAddress(it->address);
-						syscalls::unlink(filename.c_str());
-					}
+			SocketList::const_iterator it, end = sockets.end();
+			for (it = sockets.begin(); it != end; it++) {
+				if (getSocketAddressType(it->address) == SAT_UNIX) {
+					string filename = parseUnixSocketAddress(it->address);
+					syscalls::unlink(filename.c_str());
 				}
 			}
 		}
 
-		boost::lock_guard<boost::mutex> lock(lifetimeSyncher);
+		oxt::spin_lock::scoped_lock lock(lifetimeSyncher);
 		lifeStatus = DEAD;
 	}
 
@@ -564,22 +575,30 @@ public:
 	 * of the session sockets or reuse an existing connection. See Session for
 	 * more information about sessions.
 	 *
-	 * One SHOULD call sessionClosed() when one's done with the session.
+	 * If you know the current time (in microseconds), pass it to `now`, which
+	 * prevents this function from having to query the time.
+	 *
+	 * You SHOULD call sessionClosed() when one's done with the session.
 	 * Failure to do so will mess up internal statistics but will otherwise
 	 * not result in any harmful behavior.
 	 */
-	SessionPtr newSession() {
-		Socket *socket = sessionSockets.pop();
+	SessionPtr newSession(unsigned long long now = 0) {
+		Socket *socket = findSessionSocketWithLowestBusyness();
 		if (socket->isTotallyBusy()) {
 			return SessionPtr();
 		} else {
 			socket->sessions++;
 			this->sessions++;
-			socket->pqHandle = sessionSockets.push(socket, socket->busyness());
-			lastUsed = SystemTime::getUsec();
-			return boost::make_shared<Session>(shared_from_this(), socket);
+			if (now != 0) {
+				lastUsed = now;
+			} else {
+				lastUsed = SystemTime::getUsec();
+			}
+			return createSessionObject(socket);
 		}
 	}
+
+	SessionPtr createSessionObject(Socket *socket);
 
 	void sessionClosed(Session *session) {
 		Socket *socket = session->getSocket();
@@ -590,7 +609,6 @@ public:
 		socket->sessions--;
 		this->sessions--;
 		processed++;
-		sessionSockets.decrease(socket->pqHandle, socket->busyness());
 		assert(!isTotallyBusy());
 	}
 
@@ -604,12 +622,21 @@ public:
 	bool isBeingRollingRestarted() const;
 	string inspect() const;
 
+	void recreateStrings(psg_pool_t *pool) {
+		SocketList::iterator it;
+
+		recreateString(pool, codeRevision);
+
+		for (it = sockets.begin(); it != sockets.end(); it++) {
+			it->recreateStrings(pool);
+		}
+	}
+
 	template<typename Stream>
 	void inspectXml(Stream &stream, bool includeSockets = true) const {
 		stream << "<pid>" << pid << "</pid>";
 		stream << "<sticky_session_id>" << stickySessionId << "</sticky_session_id>";
-		stream << "<gupid>" << gupid << "</gupid>";
-		stream << "<connect_password>" << connectPassword << "</connect_password>";
+		stream << "<gupid>" << StaticString(gupid, gupidSize) << "</gupid>";
 		stream << "<concurrency>" << concurrency << "</concurrency>";
 		stream << "<sessions>" << sessions << "</sessions>";
 		stream << "<busyness>" << busyness() << "</busyness>";
@@ -671,7 +698,7 @@ public:
 			SocketList::const_iterator it;
 
 			stream << "<sockets>";
-			for (it = sockets->begin(); it != sockets->end(); it++) {
+			for (it = sockets.begin(); it != sockets.end(); it++) {
 				const Socket &socket = *it;
 				stream << "<socket>";
 				stream << "<name>" << escapeForXml(socket.name) << "</name>";

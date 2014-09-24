@@ -8,15 +8,12 @@ using namespace Passenger::ApplicationPool2;
 
 namespace tut {
 	struct ApplicationPool2_DirectSpawnerTest {
-		ServerInstanceDirPtr serverInstanceDir;
-		ServerInstanceDir::GenerationPtr generation;
-		ProcessPtr process;
+		SpawnObject object;
 		PipeWatcher::DataCallback gatherOutput;
 		string gatheredOutput;
 		boost::mutex gatheredOutputSyncher;
 
 		ApplicationPool2_DirectSpawnerTest() {
-			createServerInstanceDirAndGeneration(serverInstanceDir, generation);
 			PipeWatcher::onData = PipeWatcher::DataCallback();
 			gatherOutput = boost::bind(&ApplicationPool2_DirectSpawnerTest::_gatherOutput, this, _1, _2);
 			setLogLevel(LVL_ERROR); // TODO: change to LVL_WARN
@@ -31,8 +28,14 @@ namespace tut {
 		}
 
 		boost::shared_ptr<DirectSpawner> createSpawner(const Options &options) {
-			return boost::make_shared<DirectSpawner>(
-				generation, make_shared<SpawnerConfig>(*resourceLocator));
+			return boost::make_shared<DirectSpawner>(createSpawnerConfig());
+		}
+
+		SpawnerConfigPtr createSpawnerConfig() {
+			SpawnerConfigPtr config = make_shared<SpawnerConfig>();
+			config->resourceLocator = resourceLocator;
+			config->finalize();
+			return config;
 		}
 
 		Options createOptions() {
@@ -62,12 +65,12 @@ namespace tut {
 		options.startupFile  = ".";
 		options.startTimeout = 300;
 
-		DirectSpawner spawner(generation, make_shared<SpawnerConfig>(*resourceLocator));
+		DirectSpawner spawner(createSpawnerConfig());
 		setLogLevel(LVL_CRIT);
 
 		try {
-			process = spawner.spawn(options);
-			process->requiresShutdown = false;
+			object = spawner.spawn(options);
+			object.process->requiresShutdown = false;
 			fail("Timeout expected");
 		} catch (const SpawnException &e) {
 			ensure_equals(e.getErrorKind(),
@@ -85,12 +88,12 @@ namespace tut {
 		options.startCommand = "perl\t" "-e\t" "print STDERR \"hello world\\n\"";
 		options.startupFile  = ".";
 
-		DirectSpawner spawner(generation, make_shared<SpawnerConfig>(*resourceLocator));
+		DirectSpawner spawner(createSpawnerConfig());
 		setLogLevel(LVL_CRIT);
 
 		try {
-			process = spawner.spawn(options);
-			process->requiresShutdown = false;
+			object = spawner.spawn(options);
+			object.process->requiresShutdown = false;
 			fail("SpawnException expected");
 		} catch (const SpawnException &e) {
 			ensure_equals(e.getErrorKind(),
@@ -108,12 +111,12 @@ namespace tut {
 		options.startCommand = "ruby\t" "start.rb\t" "--execself";
 		options.startupFile  = "start.rb";
 		SpawnerPtr spawner = createSpawner(options);
-		process = spawner->spawn(options);
-		process->requiresShutdown = false;
-		ensure_equals(process->sockets->size(), 1u);
+		object = spawner->spawn(options);
+		object.process->requiresShutdown = false;
+		ensure_equals(object.process->sockets.size(), 1u);
 
-		Connection conn = process->sockets->front().checkoutConnection();
-		ScopeGuard guard(boost::bind(checkin, process, &conn));
+		Connection conn = object.process->sockets.front().checkoutConnection();
+		ScopeGuard guard(boost::bind(checkin, object.process, &conn));
 		writeExact(conn.fd, "ping\n");
 		ensure_equals(readAll(conn.fd), "pong\n");
 		);

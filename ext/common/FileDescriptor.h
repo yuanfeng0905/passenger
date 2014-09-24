@@ -271,6 +271,10 @@ public:
 	int fd() const {
 		return reader;
 	}
+
+	int writerFd() const {
+		return writer;
+	}
 };
 
 } // namespace Passenger

@@ -49,6 +49,8 @@
 #include <oxt/system_calls.hpp>
 #include <oxt/backtrace.hpp>
 #include <sys/types.h>
+#include <sys/socket.h>
+#include <sys/un.h>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -61,18 +63,18 @@
 #include <ApplicationPool2/Common.h>
 #include <ApplicationPool2/Process.h>
 #include <ApplicationPool2/Options.h>
+#include <ApplicationPool2/SpawnObject.h>
 #include <ApplicationPool2/PipeWatcher.h>
 #include <FileDescriptor.h>
 #include <Exceptions.h>
 #include <StaticString.h>
-#include <ServerInstanceDir.h>
 #include <Utils.h>
 #include <Utils/BufferedIO.h>
 #include <Utils/ScopeGuard.h>
 #include <Utils/Timer.h>
 #include <Utils/IOUtils.h>
 #include <Utils/StrIntUtils.h>
-#include <Utils/Base64.h>
+#include <Utils/modp_b64.h>
 #include <Utils/ProcessMetricsCollector.h>
 
 namespace tut {
@@ -334,7 +336,6 @@ protected:
 		/****** Working state ******/
 		BufferedIO io;
 		string gupid;
-		string connectPassword;
 		unsigned long long spawnStartTime;
 		unsigned long long timeout;
 
@@ -355,10 +356,6 @@ private:
 	static void appendNullTerminatedKeyValue(string &output, const StaticString &key,
 		const StaticString &value)
 	{
-		unsigned int minCapacity = key.size() + value.size() + 2;
-		if (output.capacity() < minCapacity) {
-			output.reserve(minCapacity + 1024);
-		}
 		output.append(key.data(), key.size());
 		output.append(1, '\0');
 		output.append(value.data(), value.size());
@@ -368,17 +365,23 @@ private:
 	void sendSpawnRequest(NegotiationDetails &details) {
 		TRACE_POINT();
 		try {
+			const size_t UNIX_PATH_MAX = sizeof(((struct sockaddr_un *) 0)->sun_path);
 			string data = "You have control 1.0\n"
-				"passenger_root: " + config->resourceLocator.getRoot() + "\n"
+				"passenger_root: " + config->resourceLocator->getRoot() + "\n"
 				"passenger_version: " PASSENGER_VERSION "\n"
-				"ruby_libdir: " + config->resourceLocator.getRubyLibDir() + "\n"
-				"generation_dir: " + generation->getPath() + "\n"
+				"ruby_libdir: " + config->resourceLocator->getRubyLibDir() + "\n"
 				"gupid: " + details.gupid + "\n"
-				"connect_password: " + details.connectPassword + "\n";
+				"UNIX_PATH_MAX: " + toString(UNIX_PATH_MAX) + "\n";
+			if (!details.options->groupSecret.empty()) {
+				"connect_password: " + details.options->groupSecret + "\n";
+			}
+			if (!config->instanceDir.empty()) {
+				data.append("socket_dir: " + config->instanceDir + "/apps.s\n");
+			}
 
 			vector<string> args;
 			vector<string>::const_iterator it, end;
-			details.options->toVector(args, config->resourceLocator, Options::SPAWN_OPTIONS);
+			details.options->toVector(args, *config->resourceLocator, Options::SPAWN_OPTIONS);
 			for (it = args.begin(); it != args.end(); it++) {
 				const string &key = *it;
 				it++;
@@ -405,9 +408,11 @@ private:
 		}
 	}
 
-	ProcessPtr handleSpawnResponse(NegotiationDetails &details) {
+	SpawnObject handleSpawnResponse(NegotiationDetails &details) {
 		TRACE_POINT();
-		SocketListPtr sockets = boost::make_shared<SocketList>();
+		SocketList sockets;
+		SpawnObject result;
+
 		while (true) {
 			string line;
 
@@ -468,10 +473,13 @@ private:
 							SpawnException::APP_STARTUP_PROTOCOL_ERROR,
 							details);
 					}
-					sockets->add(args[0],
-						fixupSocketAddress(*details.options, args[1]),
-						args[2],
-						atoi(args[3]));
+
+					StaticString name = psg_pstrdup(result.pool, args[0]);
+					StaticString address = psg_pstrdup(result.pool,
+						fixupSocketAddress(*details.options, args[1]));
+					StaticString protocol = psg_pstrdup(result.pool, args[2]);
+
+					sockets.add(name, address, protocol, atoi(args[3]));
 				} else {
 					throwAppSpawnException("An error occurred while starting the "
 						"web application. It reported a wrongly formatted 'socket'"
@@ -486,8 +494,8 @@ private:
 				vector<pid_t> pids;
 
 				pids.push_back(pid);
-				ProcessMetricMap result = collector.collect(pids);
-				if (result[pid].uid != details.preparation->uid) {
+				ProcessMetricMap metrics = collector.collect(pids);
+				if (metrics[pid].uid != details.preparation->uid) {
 					throwAppSpawnException("An error occurred while starting the "
 						"web application. The PID that the loader has returned does "
 						"not have the same UID as the loader itself.",
@@ -504,24 +512,24 @@ private:
 			}
 		}
 
-		if (sockets->hasSessionSockets() == 0) {
+		if (!sockets.hasSessionSockets()) {
 			throwAppSpawnException("An error occured while starting the web "
 				"application. It did not advertise any session sockets.",
 				SpawnException::APP_STARTUP_PROTOCOL_ERROR,
 				details);
 		}
 
-		ProcessPtr process = boost::make_shared<Process>(
+		result.process = boost::make_shared<Process>(
 			details.pid,
-			details.gupid, details.connectPassword,
+			details.gupid,
 			details.adminSocket, details.errorPipe,
 			sockets, creationTime, details.spawnStartTime);
-		process->codeRevision = details.preparation->codeRevision;
-		return process;
+		result.process->codeRevision = psg_pstrdup(result.pool,
+			details.preparation->codeRevision);
+		return result;
 	}
 
 protected:
-	ServerInstanceDir::GenerationPtr generation;
 	SpawnerConfigPtr config;
 
 	static void nonInterruptableKillAndWaitpid(pid_t pid) {
@@ -1093,7 +1101,7 @@ protected:
 
 		appendNullTerminatedKeyValue(result, "IN_PASSENGER", "1");
 		appendNullTerminatedKeyValue(result, "PYTHONUNBUFFERED", "1");
-		appendNullTerminatedKeyValue(result, "NODE_PATH", config->resourceLocator.getNodeLibDir());
+		appendNullTerminatedKeyValue(result, "NODE_PATH", config->resourceLocator->getNodeLibDir());
 		appendNullTerminatedKeyValue(result, "RAILS_ENV", options.environment);
 		appendNullTerminatedKeyValue(result, "RACK_ENV", options.environment);
 		appendNullTerminatedKeyValue(result, "WSGI_ENV", options.environment);
@@ -1111,14 +1119,27 @@ protected:
 				options.baseURI);
 		}
 
-		it  = options.environmentVariables.begin();
-		end = options.environmentVariables.end();
-		while (it != end) {
-			appendNullTerminatedKeyValue(result, it->first, it->second);
-			it++;
+		string envvarsData;
+		try {
+			envvarsData = modp::b64_decode(options.environmentVariables.data(),
+				options.environmentVariables.size());
+		} catch (const std::runtime_error &) {
+			P_WARN("Unable to decode base64-encoded environment variables: " <<
+				options.environmentVariables);
+			envvarsData.clear();
 		}
 
-		return Base64::encode(result);
+		if (!envvarsData.empty()) {
+			// The envvars data is in the same format as `result`,
+			// so we can just append it.
+			result.append(envvarsData);
+		}
+
+		try {
+			return modp::b64_encode(result);
+		} catch (const std::runtime_error &) {
+			throw RuntimeException("Unable to encode data into a base64 string");
+		}
 	}
 
 	void switchUser(const SpawnPreparationInfo &info) {
@@ -1269,12 +1290,11 @@ protected:
 	/**
 	 * Execute the process spawning negotiation protocol.
 	 */
-	ProcessPtr negotiateSpawn(NegotiationDetails &details) {
+	SpawnObject negotiateSpawn(NegotiationDetails &details) {
 		TRACE_POINT();
 		details.spawnStartTime = SystemTime::getUsec();
 		details.gupid = integerToHex(SystemTime::get() / 60) + "-" +
-			config->randomGenerator->generateAsciiString(11);
-		details.connectPassword = config->randomGenerator->generateAsciiString(43);
+			config->randomGenerator->generateAsciiString(10);
 		details.timeout = details.options->startTimeout * 1000;
 
 		string result;
@@ -1328,7 +1348,7 @@ protected:
 				handleInvalidSpawnResponseType(result, details);
 			}
 		}
-		return ProcessPtr(); // Never reached.
+		return SpawnObject(); // Never reached.
 	}
 
 	void handleSpawnErrorResponse(NegotiationDetails &details) {
@@ -1419,7 +1439,7 @@ public:
 		{ }
 
 	virtual ~Spawner() { }
-	virtual ProcessPtr spawn(const Options &options) = 0;
+	virtual SpawnObject spawn(const Options &options) = 0;
 
 	/** Does not depend on the event loop. */
 	virtual bool cleanable() const {

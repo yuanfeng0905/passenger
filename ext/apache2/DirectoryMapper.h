@@ -1,6 +1,6 @@
 /*
  *  Phusion Passenger - https://www.phusionpassenger.com/
- *  Copyright (c) 2010-2013 Phusion
+ *  Copyright (c) 2010-2014 Phusion
  *
  *  "Phusion Passenger" is a trademark of Hongli Lai & Ninh Bui.
  *
@@ -14,6 +14,7 @@
 #include <cstring>
 
 #include <oxt/backtrace.hpp>
+#include <boost/thread.hpp>
 
 #include "Configuration.hpp"
 #include <ApplicationPool2/AppTypes.h>
@@ -56,6 +57,7 @@ private:
 	DirConfig *config;
 	request_rec *r;
 	CachedFileStat *cstat;
+	boost::mutex *cstatMutex;
 	const char *baseURI;
 	string publicDir;
 	string appRoot;
@@ -126,7 +128,7 @@ private:
 		}
 
 		UPDATE_TRACE_POINT();
-		AppTypeDetector detector(cstat, throttleRate);
+		AppTypeDetector detector(cstat, cstatMutex, throttleRate);
 		PassengerAppType appType;
 		string appRoot;
 		if (config->appType == NULL) {
@@ -158,15 +160,18 @@ public:
 	 * Create a new DirectoryMapper object.
 	 *
 	 * @param cstat A CachedFileStat object used for statting files.
+	 * @param cstatMutex A mutex for locking CachedFileStat, making its
+	 *                   usage thread-safe.
 	 * @param throttleRate A throttling rate for cstat.
 	 * @warning Do not use this object after the destruction of <tt>r</tt>,
 	 *          <tt>config</tt> or <tt>cstat</tt>.
 	 */
-	DirectoryMapper(request_rec *r, DirConfig *config,
-	                CachedFileStat *cstat, unsigned int throttleRate) {
+	DirectoryMapper(request_rec *r, DirConfig *config, CachedFileStat *cstat,
+	                boost::mutex *cstatMutex, unsigned int throttleRate) {
 		this->r = r;
 		this->config = config;
 		this->cstat = cstat;
+		this->cstatMutex = cstatMutex;
 		this->throttleRate = throttleRate;
 		appType = PAT_NONE;
 		baseURI = NULL;
@@ -200,7 +205,7 @@ public:
 	 * @throws TimeRetrievalException
 	 * @throws boost::thread_interrupted
 	 */
-	string getPublicDirectory() {
+	const string &getPublicDirectory() {
 		autoDetect();
 		return publicDir;
 	}
@@ -214,7 +219,7 @@ public:
 	 * @throws TimeRetrievalException
 	 * @throws boost::thread_interrupted
 	 */
-	string getAppRoot() {
+	const string &getAppRoot() {
 		autoDetect();
 		return appRoot;
 	}

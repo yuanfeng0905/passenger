@@ -1,5 +1,8 @@
 require File.expand_path(File.dirname(__FILE__) + "/spec_helper")
 require 'support/nginx_controller'
+
+WEB_SERVER_DECHUNKS_REQUESTS = true
+
 require 'integration_tests/shared/example_webapp_tests'
 
 describe "Phusion Passenger for Nginx" do
@@ -231,10 +234,11 @@ describe "Phusion Passenger for Nginx" do
 			create_nginx_controller
 			@server = "http://1.passenger.test:#{@nginx.port}"
 			@stub = RackStub.new('rack')
-			@nginx.set(:passenger_load_shell_envvars => 'off')
+			@nginx.set(:stat_throttle_rate => 0)
 			@nginx.add_server do |server|
 				server[:server_name] = "1.passenger.test"
 				server[:root]        = "#{@stub.full_app_root}/public"
+				server[:passenger_load_shell_envvars] = "off"
 				server[:passenger_friendly_error_pages] = "on"
 				server << %q{
 					location /crash_without_friendly_error_page {
@@ -247,12 +251,13 @@ describe "Phusion Passenger for Nginx" do
 				server[:server_name] = "2.passenger.test"
 				server[:root]        = "#{@stub.full_app_root}/public"
 				server[:passenger_app_group_name] = "secondary"
-				server[:passenger_show_version_in_header] = "off"
+				server[:passenger_load_shell_envvars] = "off"
 			end
 			@nginx.add_server do |server|
 				server[:server_name] = "3.passenger.test"
 				server[:passenger_app_group_name] = "tertiary"
 				server[:root]        = "#{@stub.full_app_root}/public"
+				server[:passenger_load_shell_envvars] = "off"
 				server[:passenger_max_requests] = 3
 			end
 			@nginx.start
@@ -304,13 +309,6 @@ describe "Phusion Passenger for Nginx" do
 			response["X-Powered-By"].should include(PhusionPassenger::VERSION_STRING)
 		end
 
-		it "omits the version number in X-Powered-By when passenger_show_version_in_header is off" do
-			@server = "http://2.passenger.test:#{@nginx.port}/"
-			response = get_response('/')
-			response["X-Powered-By"].should include("Phusion Passenger")
-			response["X-Powered-By"].should_not include(PhusionPassenger::VERSION_STRING)
-		end
-
 		it "respawns the app after handling max_requests requests" do
 			@server = "http://3.passenger.test:#{@nginx.port}/"
 			pid = get("/pid")
@@ -348,7 +346,7 @@ describe "Phusion Passenger for Nginx" do
 				end
 				app = lambda do |env|
 					if env['PATH_INFO'] == '/oobw'
-						[200, { "Content-Type" => "text/html", "X-Passenger-Request-OOB-Work" => 'true' }, [$$]]
+						[200, { "Content-Type" => "text/html", "!~Request-OOB-Work" => 'true' }, [$$]]
 					else
 						[200, { "Content-Type" => "text/html" }, [$$]]
 					end

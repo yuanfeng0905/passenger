@@ -18,9 +18,11 @@
 #include <boost/foreach.hpp>
 #include <boost/shared_ptr.hpp>
 #include <boost/make_shared.hpp>
+#include <boost/container/vector.hpp>
 #include <oxt/macros.hpp>
 #include <oxt/thread.hpp>
 #include <oxt/dynamic_thread_group.hpp>
+#include <sys/stat.h>
 #include <cstdlib>
 #include <cassert>
 #include <ApplicationPool2/Common.h>
@@ -28,10 +30,9 @@
 #include <ApplicationPool2/SpawnerFactory.h>
 #include <ApplicationPool2/Process.h>
 #include <ApplicationPool2/Options.h>
+#include <MemoryKit/palloc.h>
 #include <Hooks.h>
 #include <Utils.h>
-#include <Utils/CachedFileStat.hpp>
-#include <Utils/FileChangeChecker.h>
 #include <Utils/SmallVector.h>
 
 namespace Passenger {
@@ -92,6 +93,7 @@ public:
 	 *       enabledCount == 0
 	 *       disablingCount == 0
 	 *       disabledCount == 0
+	 *       nEnabledProcessesTotallyBusy == 0
 	 */
 	enum LifeStatus {
 		/** Up and operational. */
@@ -116,11 +118,11 @@ public:
 	 * Groups.
 	 * Read-only; only set during initialization.
 	 */
-	boost::weak_ptr<SuperGroup> superGroup;
-	CachedFileStat cstat;
-	FileChangeChecker fileChangeChecker;
+	SuperGroup *superGroup;
 	string restartFile;
 	string alwaysRestartFile;
+	time_t lastRestartFileMtime;
+	time_t lastRestartFileCheckTime;
 
 	/** Number of times a restart has been initiated so far. This is incremented immediately
 	 * in Group::restart(), and is used to abort the restarter thread that was active at the
@@ -154,10 +156,13 @@ public:
 	 *    if m_restarting: processesBeingSpawned == 0
 	 */
 	bool m_restarting;
+	bool alwaysRestartFileExists;
 	bool hasSpawnError;
 
 	/** Contains the spawn loop thread and the restarter thread. */
 	dynamic_thread_group interruptableThreads;
+
+	ProcessPtr nullProcess;
 
 	/** This timer scans `detachedProcesses` periodically to see
 	 * whether any of the Processes can be shut down.
@@ -169,27 +174,27 @@ public:
 
 
 	static void _onSessionInitiateFailure(Session *session) {
-		ProcessPtr process = session->getProcess();
+		Process *process = session->getProcess();
 		assert(process != NULL);
 		process->getGroup()->onSessionInitiateFailure(process, session);
 	}
 
 	static void _onSessionClose(Session *session) {
-		ProcessPtr process = session->getProcess();
+		Process *process = session->getProcess();
 		assert(process != NULL);
 		process->getGroup()->onSessionClose(process, session);
 	}
 
-	static string generateSecret(const SuperGroupPtr &superGroup);
-	static string generateUuid(const SuperGroupPtr &superGroup);
-	void onSessionInitiateFailure(const ProcessPtr &process, Session *session);
-	void onSessionClose(const ProcessPtr &process, Session *session);
+	static void generateSecret(const SuperGroup *superGroup, char *secret);
+	static string generateUuid(const SuperGroup *superGroup);
+	void onSessionInitiateFailure(Process *process, Session *session);
+	void onSessionClose(Process *process, Session *session);
 
 	/** Returns whether it is allowed to perform a new OOBW in this group. */
 	bool oobwAllowed() const;
 	/** Returns whether a new OOBW should be initiated for this process. */
-	bool shouldInitiateOobw(const ProcessPtr &process) const;
-	void maybeInitiateOobw(const ProcessPtr &process);
+	bool shouldInitiateOobw(Process *process) const;
+	void maybeInitiateOobw(Process *process);
 	void lockAndMaybeInitiateOobw(const ProcessPtr &process, DisableResult result, GroupPtr self);
 	void initiateOobw(const ProcessPtr &process);
 	void spawnThreadOOBWRequest(GroupPtr self, ProcessPtr process);
@@ -201,15 +206,16 @@ public:
 		unsigned int restartsInitiated);
 	void finalizeRestart(GroupPtr self, Options options, RestartMethod method,
 		SpawnerFactoryPtr spawnerFactory, unsigned int restartsInitiated,
-		vector<Callback> postLockActions);
+		boost::container::vector<Callback> postLockActions);
 	void startCheckingDetachedProcesses(bool immediately);
 	void detachedProcessesCheckerMain(GroupPtr self);
 	void wakeUpGarbageCollector();
 	bool poolAtFullCapacity() const;
 	bool anotherGroupIsWaitingForCapacity() const;
-	boost::shared_ptr<Group> findOtherGroupWaitingForCapacity() const;
-	ProcessPtr poolForceFreeCapacity(const Group *exclude, vector<Callback> &postLockActions);
+	Group *findOtherGroupWaitingForCapacity() const;
+	ProcessPtr poolForceFreeCapacity(const Group *exclude, boost::container::vector<Callback> &postLockActions);
 	bool testOverflowRequestQueue() const;
+	psg_pool_t *getPallocPool() const;
 	const ResourceLocator &getResourceLocator() const;
 	void runAttachHooks(const ProcessPtr process) const;
 	void runDetachHooks(const ProcessPtr process) const;
@@ -217,11 +223,13 @@ public:
 
 	void verifyInvariants() const {
 		// !a || b: logical equivalent of a IMPLIES b.
+		#ifndef NDEBUG
+		LifeStatus lifeStatus = getLifeStatus();
 
 		assert(enabledCount >= 0);
 		assert(disablingCount >= 0);
 		assert(disabledCount >= 0);
-		assert(enabledProcesses.empty() == (pqueue.top() == NULL));
+		assert(nEnabledProcessesTotallyBusy >= 0);
 		assert(!( enabledCount == 0 && disablingCount > 0 ) || ( processesBeingSpawned > 0) );
 		assert(!( !m_spawning ) || ( enabledCount > 0 || disablingCount == 0 ));
 
@@ -240,19 +248,24 @@ public:
 		assert(!( m_restarting ) || ( processesBeingSpawned == 0 ));
 
 		// Verify lifeStatus.
-		LifeStatus lifeStatus = getLifeStatus();
-		assert(!( lifeStatus != ALIVE ) || ( enabledCount == 0 ));
-		assert(!( lifeStatus != ALIVE ) || ( disablingCount == 0 ));
-		assert(!( lifeStatus != ALIVE ) || ( disabledCount == 0 ));
+		if (lifeStatus != ALIVE) {
+			assert(enabledCount == 0);
+			assert(disablingCount == 0);
+			assert(disabledCount == 0);
+			assert(nEnabledProcessesTotallyBusy == 0);
+		}
+
+		// Verify list sizes.
+		assert((int) enabledProcesses.size() == enabledCount);
+		assert((int) disablingProcesses.size() == disablingCount);
+		assert((int) disabledProcesses.size() == disabledCount);
+		assert(nEnabledProcessesTotallyBusy <= enabledCount);
+		#endif
 	}
 
 	void verifyExpensiveInvariants() const {
 		#ifndef NDEBUG
 		// !a || b: logical equivalent of a IMPLIES b.
-
-		assert((int) enabledProcesses.size() == enabledCount);
-		assert((int) disablingProcesses.size() == disablingCount);
-		assert((int) disabledProcesses.size() == disabledCount);
 
 		ProcessList::const_iterator it, end;
 
@@ -260,7 +273,6 @@ public:
 		for (it = enabledProcesses.begin(); it != end; it++) {
 			const ProcessPtr &process = *it;
 			assert(process->enabled == Process::ENABLED);
-			assert(process->pqHandle != NULL);
 			assert(process->isAlive());
 			assert(process->oobwStatus == Process::OOBW_NOT_ACTIVE
 				|| process->oobwStatus == Process::OOBW_REQUESTED);
@@ -270,7 +282,6 @@ public:
 		for (it = disablingProcesses.begin(); it != end; it++) {
 			const ProcessPtr &process = *it;
 			assert(process->enabled == Process::DISABLING);
-			assert(process->pqHandle == NULL);
 			assert(process->isAlive());
 			assert(process->oobwStatus == Process::OOBW_NOT_ACTIVE
 				|| process->oobwStatus == Process::OOBW_IN_PROGRESS);
@@ -280,7 +291,6 @@ public:
 		for (it = disabledProcesses.begin(); it != end; it++) {
 			const ProcessPtr &process = *it;
 			assert(process->enabled == Process::DISABLED);
-			assert(process->pqHandle == NULL);
 			assert(process->isAlive());
 			assert(process->oobwStatus == Process::OOBW_NOT_ACTIVE
 				|| process->oobwStatus == Process::OOBW_IN_PROGRESS);
@@ -288,7 +298,6 @@ public:
 
 		foreach (const ProcessPtr &process, detachedProcesses) {
 			assert(process->enabled == Process::DETACHED);
-			assert(process->pqHandle == NULL);
 		}
 		#endif
 	}
@@ -313,7 +322,7 @@ public:
 		options = newOptions;
 		options.persist(newOptions);
 		options.clearPerRequestFields();
-		options.groupSecret = secret;
+		options.groupSecret = StaticString(secret, SECRET_SIZE);
 		options.groupUuid   = uuid;
 	}
 
@@ -328,8 +337,8 @@ public:
 		options.maxProcesses     = other.maxProcesses;
 	}
 
-	static void runAllActions(const vector<Callback> &actions) {
-		vector<Callback>::const_iterator it, end = actions.end();
+	static void runAllActions(const boost::container::vector<Callback> &actions) {
+		boost::container::vector<Callback>::const_iterator it, end = actions.end();
 		for (it = actions.begin(); it != end; it++) {
 			(*it)();
 		}
@@ -364,21 +373,21 @@ public:
 	RouteResult route(const Options &options) const {
 		if (OXT_LIKELY(enabledCount > 0)) {
 			if (options.stickySessionId == 0) {
-				if (pqueue.top()->canBeRoutedTo()) {
-					return RouteResult(pqueue.top());
+				Process *process = findProcessWithLowestBusyness(enabledProcesses);
+				if (process->canBeRoutedTo()) {
+					return RouteResult(process);
 				} else {
 					return RouteResult(NULL, true);
 				}
 			} else {
-				Process *process = findProcessWithStickySessionId(options.stickySessionId);
+				Process *process = findProcessWithStickySessionIdOrLowestBusyness(
+					options.stickySessionId);
 				if (process != NULL) {
 					if (process->canBeRoutedTo()) {
 						return RouteResult(process);
 					} else {
 						return RouteResult(NULL, false);
 					}
-				} else if (pqueue.top()->canBeRoutedTo()) {
-					return RouteResult(pqueue.top());
 				} else {
 					return RouteResult(NULL, true);
 				}
@@ -393,22 +402,23 @@ public:
 		}
 	}
 
-	SessionPtr newSession(Process *process) {
-		SessionPtr session = process->newSession();
+	SessionPtr newSession(Process *process, unsigned long long now = 0) {
+		bool wasTotallyBusy = process->isTotallyBusy();
+		SessionPtr session = process->newSession(now);
 		session->onInitiateFailure = _onSessionInitiateFailure;
 		session->onClose   = _onSessionClose;
 		if (process->enabled == Process::ENABLED) {
-			if (process == pqueue.top()) {
-				pqueue.pop();
-			} else {
-				pqueue.erase(process->pqHandle);
+			enabledProcessBusynessLevels[process->index] = process->busyness();
+			if (!wasTotallyBusy && process->isTotallyBusy()) {
+				nEnabledProcessesTotallyBusy++;
 			}
-			process->pqHandle = pqueue.push(process, process->busyness());
 		}
 		return session;
 	}
 
-	bool pushGetWaiter(const Options &newOptions, const GetCallback &callback) {
+	bool pushGetWaiter(const Options &newOptions, const GetCallback &callback,
+		boost::container::vector<Callback> &postLockActions)
+	{
 		if (OXT_LIKELY(!testOverflowRequestQueue()
 			&& (newOptions.maxRequestQueueSize == 0
 			    || getWaitlist.size() < newOptions.maxRequestQueueSize)))
@@ -419,7 +429,8 @@ public:
 			return true;
 		} else {
 			P_WARN("Request queue is full. Returning an error");
-			callback(SessionPtr(), boost::make_shared<RequestQueueFullException>());
+			postLockActions.push_back(boost::bind(GetCallback::call,
+				callback, SessionPtr(), boost::make_shared<RequestQueueFullException>()));
 			return false;
 		}
 	}
@@ -435,16 +446,46 @@ public:
 		return NULL;
 	}
 
-	Process *findProcessWithLowestBusyness(const ProcessList &processes) const {
-		Process *result = NULL;
-		ProcessList::const_iterator it, end = processes.end();
-		for (it = processes.begin(); it != end; it++) {
-			Process *process = it->get();
-			if (result == NULL || process->busyness() < result->busyness()) {
-				result = process;
+	Process *findProcessWithStickySessionIdOrLowestBusyness(unsigned int id) const {
+		int leastBusyProcessIndex = -1;
+		int lowestBusyness = 0;
+		unsigned int i, size = enabledProcessBusynessLevels.size();
+		const int *enabledProcessBusynessLevels = &this->enabledProcessBusynessLevels[0];
+
+		for (i = 0; i < size; i++) {
+			Process *process = enabledProcesses[i].get();
+			if (process->stickySessionId == id) {
+				return process;
+			} else if (leastBusyProcessIndex == -1 || enabledProcessBusynessLevels[i] < lowestBusyness) {
+				leastBusyProcessIndex = i;
+				lowestBusyness = enabledProcessBusynessLevels[i];
 			}
 		}
-		return result;
+
+		if (leastBusyProcessIndex == -1) {
+			return NULL;
+		} else {
+			return enabledProcesses[leastBusyProcessIndex].get();
+		}
+	}
+
+	Process *findProcessWithLowestBusyness(const ProcessList &processes) const {
+		if (processes.empty()) {
+			return NULL;
+		}
+
+		int leastBusyProcessIndex = -1;
+		int lowestBusyness = 0;
+		unsigned int i, size = enabledProcessBusynessLevels.size();
+		const int *enabledProcessBusynessLevels = &this->enabledProcessBusynessLevels[0];
+
+		for (i = 0; i < size; i++) {
+			if (leastBusyProcessIndex == -1 || enabledProcessBusynessLevels[i] < lowestBusyness) {
+				leastBusyProcessIndex = i;
+				lowestBusyness = enabledProcessBusynessLevels[i];
+			}
+		}
+		return enabledProcesses[leastBusyProcessIndex].get();
 	}
 
 	/**
@@ -453,13 +494,17 @@ public:
 	 */
 	void removeProcessFromList(const ProcessPtr &process, ProcessList &source) {
 		ProcessPtr p = process; // Keep an extra reference count just in case.
-		source.erase(process->it);
+
+		source.erase(source.begin() + process->index);
+		process->index = -1;
+
 		switch (process->enabled) {
 		case Process::ENABLED:
 			assert(&source == &enabledProcesses);
 			enabledCount--;
-			pqueue.erase(process->pqHandle);
-			process->pqHandle = NULL;
+			if (process->isTotallyBusy()) {
+				nEnabledProcessesTotallyBusy--;
+			}
 			break;
 		case Process::DISABLING:
 			assert(&source == &disablingProcesses);
@@ -475,6 +520,24 @@ public:
 		default:
 			P_BUG("Unknown 'enabled' state " << (int) process->enabled);
 		}
+
+		// Rebuild indices
+		ProcessList::iterator it, end = source.end();
+		unsigned int i = 0;
+		for (it = source.begin(); it != end; it++, i++) {
+			const ProcessPtr &process = *it;
+			process->index = i;
+		}
+
+		// Rebuild enabledProcessBusynessLevels
+		if (&source == &enabledProcesses) {
+			enabledProcessBusynessLevels.clear();
+			for (it = source.begin(); it != end; it++, i++) {
+				const ProcessPtr &process = *it;
+				enabledProcessBusynessLevels.push_back(process->busyness());
+			}
+			enabledProcessBusynessLevels.shrink_to_fit();
+		}
 	}
 
 	/**
@@ -485,11 +548,14 @@ public:
 	 */
 	void addProcessToList(const ProcessPtr &process, ProcessList &destination) {
 		destination.push_back(process);
-		process->it = destination.last_iterator();
+		process->index = destination.size() - 1;
 		if (&destination == &enabledProcesses) {
 			process->enabled = Process::ENABLED;
-			process->pqHandle = pqueue.push(process.get(), process->busyness());
 			enabledCount++;
+			enabledProcessBusynessLevels.push_back(process->busyness());
+			if (process->isTotallyBusy()) {
+				nEnabledProcessesTotallyBusy++;
+			}
 		} else if (&destination == &disablingProcesses) {
 			process->enabled = Process::DISABLING;
 			disablingCount++;
@@ -514,7 +580,7 @@ public:
 			return;
 		}
 
-		SmallVector<GetAction, 50> actions;
+		SmallVector<GetAction, 8> actions;
 		unsigned int i = 0;
 		bool done = false;
 
@@ -545,7 +611,7 @@ public:
 		}
 	}
 
-	void assignSessionsToGetWaiters(vector<Callback> &postLockActions) {
+	void assignSessionsToGetWaiters(boost::container::vector<Callback> &postLockActions) {
 		unsigned int i = 0;
 		bool done = false;
 
@@ -554,6 +620,7 @@ public:
 			RouteResult result = route(waiter.options);
 			if (result.process != NULL) {
 				postLockActions.push_back(boost::bind(
+					GetCallback::call,
 					waiter.callback,
 					newSession(result.process),
 					ExceptionPtr()));
@@ -567,7 +634,7 @@ public:
 		}
 	}
 
-	void enableAllDisablingProcesses(vector<Callback> &postLockActions) {
+	void enableAllDisablingProcesses(boost::container::vector<Callback> &postLockActions) {
 		P_DEBUG("Enabling all DISABLING processes with result DR_ERROR");
 		deque<DisableWaiter>::iterator it, end = disableWaitlist.end();
 		for (it = disableWaitlist.begin(); it != end; it++) {
@@ -586,7 +653,7 @@ public:
 	}
 
 	void removeFromDisableWaitlist(const ProcessPtr &p, DisableResult result,
-		vector<Callback> &postLockActions)
+		boost::container::vector<Callback> &postLockActions)
 	{
 		deque<DisableWaiter>::const_iterator it, end = disableWaitlist.end();
 		deque<DisableWaiter> newList;
@@ -602,7 +669,9 @@ public:
 		disableWaitlist = newList;
 	}
 
-	void clearDisableWaitlist(DisableResult result, vector<Callback> &postLockActions) {
+	void clearDisableWaitlist(DisableResult result,
+		boost::container::vector<Callback> &postLockActions)
+	{
 		// This function may be called after processes in the disableWaitlist
 		// have been disabled or enabled, so do not assume any value for
 		// waiter.process->enabled in this function.
@@ -629,7 +698,7 @@ public:
 	/** One of the post lock actions can potentially perform a long-running
 	 * operation, so running them in a thread is advised.
 	 */
-	void finishShutdown(vector<Callback> &postLockActions) {
+	void finishShutdown(boost::container::vector<Callback> &postLockActions) {
 		TRACE_POINT();
 		assert(getLifeStatus() == SHUTTING_DOWN);
 		P_DEBUG("Finishing shutdown of group " << name);
@@ -647,13 +716,15 @@ public:
 	}
 
 public:
+	static const unsigned int SECRET_SIZE = 16;
+
 	Options options;
 	/** This name uniquely identifies this Group within its Pool. It can also be used as the display name. */
 	const string name;
 	/** A secret token that may be known among all processes in this Group. Used for securing
 	 * intra-group process communication.
 	 */
-	const string secret;
+	char secret[SECRET_SIZE];
 	/** A UUID that's generated on Group initialization, and changes every time
 	 * the Group receives a restart command. Allows Union Station to track app
 	 * restarts. This information is public.
@@ -680,8 +751,8 @@ public:
 	 * their numbers.
 	 * These lists do not intersect. A process is in exactly 1 list.
 	 *
-	 * 'pqueue' orders all enabled processes according to busyness() values,
-	 * from small to large.
+	 * `nEnabledProcessesTotallyBusy` counts the number of enabled processes for which
+	 * `isTotallyBusy()` is true.
 	 *
 	 * Invariants:
 	 *    enabledCount >= 0
@@ -690,9 +761,8 @@ public:
 	 *    enabledProcesses.size() == enabledCount
 	 *    disablingProcesses.size() == disabingCount
 	 *    disabledProcesses.size() == disabledCount
+	 *    nEnabledProcessesTotallyBusy <= enabledCount
      *
-	 *    enabledProcesses.empty() == (pqueue.top() == NULL)
-	 *
 	 *    if (enabledCount == 0):
 	 *       processesBeingSpawned > 0 || restarting() || poolAtFullCapacity()
 	 *    if (enabledCount == 0) and (disablingCount > 0):
@@ -700,29 +770,23 @@ public:
 	 *    if !m_spawning:
 	 *       (enabledCount > 0) || (disablingCount == 0)
 	 *
-	 *    if pqueue.top().isTotallyBusy():
-	 *       All enabled processes are totally busy.
-	 *
 	 *    for all process in enabledProcesses:
 	 *       process.enabled == Process::ENABLED
-	 *       process.pqHandle != NULL
 	 *       process.isAlive()
 	 *       process.oobwStatus == Process::OOBW_NOT_ACTIVE || process.oobwStatus == Process::OOBW_REQUESTED
 	 *    for all processes in disablingProcesses:
 	 *       process.enabled == Process::DISABLING
-	 *       process.pqHandle == NULL
 	 *       process.isAlive()
 	 *       process.oobwStatus == Process::OOBW_NOT_ACTIVE || process.oobwStatus == Process::OOBW_IN_PROGRESS
 	 *    for all process in disabledProcesses:
 	 *       process.enabled == Process::DISABLED
-	 *       process.pqHandle == NULL
 	 *       process.isAlive()
 	 *       process.oobwStatus == Process::OOBW_NOT_ACTIVE || process.oobwStatus == Process::OOBW_IN_PROGRESS
 	 */
 	int enabledCount;
 	int disablingCount;
 	int disabledCount;
-	PriorityQueue<Process> pqueue;
+	int nEnabledProcessesTotallyBusy;
 	ProcessList enabledProcesses;
 	ProcessList disablingProcesses;
 	ProcessList disabledProcesses;
@@ -733,9 +797,15 @@ public:
 	 *
 	 * for all process in detachedProcesses:
 	 *    process.enabled == Process::DETACHED
-	 *    process.pqHandle == NULL
 	 */
 	ProcessList detachedProcesses;
+
+	/**
+	 * A cache of the processes' busyness. It's in a compact structure
+	 * so that `findProcessWithLowestBusyness()` can work very quickly
+	 * when there are a large number of processes.
+	 */
+	boost::container::vector<int> enabledProcessBusynessLevels;
 
 	/**
 	 * get() requests for this group that cannot be immediately satisfied are
@@ -790,8 +860,9 @@ public:
 	 * Constructors and destructors
 	 ********************************************/
 
-	Group(const SuperGroupPtr &superGroup, const Options &options, const ComponentInfo &info);
+	Group(SuperGroup *superGroup, const Options &options, const ComponentInfo &info);
 	~Group();
+	void initialize();
 
 	/**
 	 * Must be called before destroying a Group. You can optionally provide a
@@ -802,7 +873,9 @@ public:
 	 * One of the post lock actions can potentially perform a long-running
 	 * operation, so running them in a thread is advised.
 	 */
-	void shutdown(const Callback &callback, vector<Callback> &postLockActions) {
+	void shutdown(const Callback &callback,
+		boost::container::vector<Callback> &postLockActions)
+	{
 		assert(isAlive());
 
 		P_DEBUG("Begin shutting down group " << name);
@@ -830,12 +903,12 @@ public:
 	 * @pre getLifeState() != SHUT_DOWN
 	 * @post result != NULL
 	 */
-	SuperGroupPtr getSuperGroup() const {
-		return superGroup.lock();
+	SuperGroup *getSuperGroup() const {
+		return superGroup;
 	}
 
-	void setSuperGroup(const SuperGroupPtr &superGroup) {
-		assert(this->superGroup.lock() == NULL);
+	void setSuperGroup(SuperGroup *superGroup) {
+		assert(this->superGroup == NULL);
 		this->superGroup = superGroup;
 	}
 
@@ -844,7 +917,7 @@ public:
 	 * @pre getLifeState() != SHUT_DOWN
 	 * @post result != NULL
 	 */
-	PoolPtr getPool() const;
+	Pool *getPool() const;
 
 	// Thread-safe.
 	bool isAlive() const {
@@ -864,7 +937,7 @@ public:
 	 ********************************************/
 
 	SessionPtr get(const Options &newOptions, const GetCallback &callback,
-		vector<Callback> &postLockActions)
+		boost::container::vector<Callback> &postLockActions)
 	{
 		assert(isAlive());
 
@@ -895,14 +968,7 @@ public:
 		}
 
 		if (OXT_UNLIKELY(newOptions.noop)) {
-			ProcessPtr process = boost::make_shared<Process>(
-				0, string(), string(),
-				FileDescriptor(), FileDescriptor(),
-				SocketListPtr(), 0, 0);
-			process->dummy = true;
-			process->requiresShutdown = false;
-			process->setGroup(shared_from_this());
-			return boost::make_shared<Session>(process, (Socket *) NULL);
+			return nullProcess->createSessionObject((Socket *) NULL);
 		}
 
 		if (OXT_UNLIKELY(enabledCount == 0)) {
@@ -925,11 +991,11 @@ public:
 					disablingProcesses);
 				assert(process != NULL);
 				if (!process->isTotallyBusy()) {
-					return newSession(process);
+					return newSession(process, newOptions.currentTime);
 				}
 			}
 
-			if (pushGetWaiter(newOptions, callback)) {
+			if (pushGetWaiter(newOptions, callback, postLockActions)) {
 				P_DEBUG("No session checked out yet: group is spawning or restarting");
 			}
 			return SessionPtr();
@@ -940,13 +1006,13 @@ public:
 				 * Wait until a new one has been spawned or until
 				 * resources have become free.
 				 */
-				if (pushGetWaiter(newOptions, callback)) {
+				if (pushGetWaiter(newOptions, callback, postLockActions)) {
 					P_DEBUG("No session checked out yet: all processes are at full capacity");
 				}
 				return SessionPtr();
 			} else {
 				P_DEBUG("Session checked out from process " << result.process->inspect());
-				return newSession(result.process);
+				return newSession(result.process, newOptions.currentTime);
 			}
 		}
 	}
@@ -964,9 +1030,12 @@ public:
 	 * function doesn't touch `getWaitlist` so be sure to fix its invariants
 	 * afterwards if necessary, e.g. by calling `assignSessionsToGetWaiters()`.
 	 */
-	AttachResult attach(const ProcessPtr &process, vector<Callback> &postLockActions) {
+	AttachResult attach(const SpawnObject &spawnObject,
+		boost::container::vector<Callback> &postLockActions)
+	{
 		TRACE_POINT();
-		assert(process->getGroup() == NULL || process->getGroup().get() == this);
+		const ProcessPtr &process = spawnObject.process;
+		assert(process->getGroup() == NULL || process->getGroup() == this);
 		assert(process->isAlive());
 		assert(isAlive());
 
@@ -978,10 +1047,14 @@ public:
 			return AR_ANOTHER_GROUP_IS_WAITING_FOR_CAPACITY;
 		}
 
-		process->setGroup(shared_from_this());
+		process->setGroup(this);
 		process->stickySessionId = generateStickySessionId();
 		P_DEBUG("Attaching process " << process->inspect());
 		addProcessToList(process, enabledProcesses);
+
+		if (spawnObject.pool != getPallocPool()) {
+			process->recreateStrings(getPallocPool());
+		}
 
 		/* Now that there are enough resources, relevant processes in
 		 * 'disableWaitlist' can be disabled.
@@ -1025,9 +1098,9 @@ public:
 	 * `pool->detachProcessUnlocked()` does that so you should usually use
 	 * that method over this one.
 	 */
-	void detach(const ProcessPtr &process, vector<Callback> &postLockActions) {
+	void detach(const ProcessPtr &process, boost::container::vector<Callback> &postLockActions) {
 		TRACE_POINT();
-		assert(process->getGroup().get() == this);
+		assert(process->getGroup() == this);
 		assert(process->isAlive());
 		assert(isAlive());
 
@@ -1063,13 +1136,12 @@ public:
 	 * Detaches all processes from this Group. This function doesn't touch
 	 * getWaitlist so be sure to fix its invariants afterwards if necessary.
 	 */
-	void detachAll(vector<Callback> &postLockActions) {
+	void detachAll(boost::container::vector<Callback> &postLockActions) {
 		assert(isAlive());
 		P_DEBUG("Detaching all processes in group " << name);
 
 		foreach (ProcessPtr process, enabledProcesses) {
 			addProcessToList(process, detachedProcesses);
-			process->pqHandle = NULL;
 		}
 		foreach (ProcessPtr process, disablingProcesses) {
 			addProcessToList(process, detachedProcesses);
@@ -1081,10 +1153,11 @@ public:
 		enabledProcesses.clear();
 		disablingProcesses.clear();
 		disabledProcesses.clear();
-		pqueue.clear();
+		enabledProcessBusynessLevels.clear();
 		enabledCount = 0;
 		disablingCount = 0;
 		disabledCount = 0;
+		nEnabledProcessesTotallyBusy = 0;
 		clearDisableWaitlist(DR_NOOP, postLockActions);
 		startCheckingDetachedProcesses(false);
 	}
@@ -1093,8 +1166,8 @@ public:
 	 * Marks the given process as enabled. This function doesn't touch getWaitlist
 	 * so be sure to fix its invariants afterwards if necessary.
 	 */
-	void enable(const ProcessPtr &process, vector<Callback> &postLockActions) {
-		assert(process->getGroup().get() == this);
+	void enable(const ProcessPtr &process, boost::container::vector<Callback> &postLockActions) {
+		assert(process->getGroup() == this);
 		assert(process->isAlive());
 		assert(isAlive());
 
@@ -1118,7 +1191,7 @@ public:
 	 * called later with the result of this action.
 	 */
 	DisableResult disable(const ProcessPtr &process, const DisableCallback &callback) {
-		assert(process->getGroup().get() == this);
+		assert(process->getGroup() == this);
 		assert(process->isAlive());
 		assert(isAlive());
 
@@ -1198,7 +1271,7 @@ public:
 		}
 	}
 
-	void cleanupSpawner(vector<Callback> &postLockActions) {
+	void cleanupSpawner(boost::container::vector<Callback> &postLockActions) {
 		assert(isAlive());
 		postLockActions.push_back(boost::bind(doCleanupSpawner, spawner));
 	}
@@ -1246,7 +1319,7 @@ public:
 	 * Returns false if there are no enabled processes.
 	 */
 	bool allEnabledProcessesAreTotallyBusy() const {
-		return enabledCount > 0 && pqueue.top()->isTotallyBusy();
+		return nEnabledProcessesTotallyBusy == enabledCount;
 	}
 
 	/**
@@ -1295,9 +1368,78 @@ public:
 		if (m_restarting) {
 			return false;
 		} else {
+			time_t now;
 			struct stat buf;
-			return cstat.stat(alwaysRestartFile, &buf, options.statThrottleRate) == 0 ||
-			       fileChangeChecker.changed(restartFile, options.statThrottleRate);
+
+			if (options.currentTime != 0) {
+				now = options.currentTime / 1000000;
+			} else {
+				now = SystemTime::get();
+			}
+
+			if (lastRestartFileCheckTime == 0) {
+				// First time we call needsRestart() for this group.
+				if (syscalls::stat(restartFile.c_str(), &buf) == 0) {
+					lastRestartFileMtime = buf.st_mtime;
+				} else {
+					lastRestartFileMtime = 0;
+				}
+				lastRestartFileCheckTime = now;
+				return false;
+
+			} else if (lastRestartFileCheckTime <= now - (time_t) options.statThrottleRate) {
+				// Not first time we call needsRestart() for this group.
+				// Stat throttle time has passed.
+				bool restart;
+
+				lastRestartFileCheckTime = now;
+
+				if (lastRestartFileMtime > 0) {
+					// restart.txt existed before
+					if (syscalls::stat(restartFile.c_str(), &buf) == -1) {
+						// restart.txt no longer exists
+						lastRestartFileMtime = buf.st_mtime;
+						restart = false;
+					} else if (buf.st_mtime != lastRestartFileMtime) {
+						// restart.txt's mtime has changed
+						lastRestartFileMtime = buf.st_mtime;
+						restart = true;
+					} else {
+						restart = false;
+					}
+				} else {
+					// restart.txt didn't exist before
+					if (syscalls::stat(restartFile.c_str(), &buf) == 0) {
+						// restart.txt now exists
+						lastRestartFileMtime = buf.st_mtime;
+						restart = true;
+					} else {
+						// restart.txt still doesn't exist
+						lastRestartFileMtime = 0;
+						restart = false;
+					}
+				}
+
+				if (!restart) {
+					alwaysRestartFileExists = restart =
+						syscalls::stat(alwaysRestartFile.c_str(), &buf) == 0;
+				}
+
+				return restart;
+
+			} else {
+				// Not first time we call needsRestart() for this group.
+				// Still within stat throttling window.
+				if (alwaysRestartFileExists) {
+					// always_restart.txt existed before
+					alwaysRestartFileExists = syscalls::stat(
+						alwaysRestartFile.c_str(), &buf) == 0;
+					return alwaysRestartFileExists;
+				} else {
+					// Don't check until stat throttling window is over
+					return false;
+				}
+			}
 		}
 	}
 
@@ -1336,7 +1478,7 @@ public:
 			stream << "<resisting_deployment_error/>";
 		}
 		if (includeSecrets) {
-			stream << "<secret>" << escapeForXml(secret) << "</secret>";
+			stream << "<secret>" << escapeForXml(StaticString(secret, SECRET_SIZE)) << "</secret>";
 		}
 		switch (lifeStatus) {
 		case ALIVE:

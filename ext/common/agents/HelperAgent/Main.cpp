@@ -17,12 +17,14 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <limits.h>
+#include <fcntl.h>
 #include <pwd.h>
 #include <grp.h>
 
 #include <set>
 #include <vector>
 #include <string>
+#include <algorithm>
 #include <iostream>
 #include <sstream>
 
@@ -34,27 +36,25 @@
 
 #include <ev++.h>
 
+#include <agents/HelperAgent/OptionParser.h>
 #include <agents/HelperAgent/RequestHandler.h>
-#include <agents/HelperAgent/RequestHandler.cpp>
-#include <agents/HelperAgent/AgentOptions.h>
-#include <agents/HelperAgent/SystemMetricsTool.cpp>
-
+#include <agents/HelperAgent/AdminServer.h>
 #include <agents/Base.h>
 #include <Constants.h>
+#include <ServerKit/Server.h>
 #include <ApplicationPool2/Pool.h>
 #include <MessageServer.h>
 #include <MessageReadersWriters.h>
 #include <FileDescriptor.h>
 #include <ResourceLocator.h>
 #include <BackgroundEventLoop.cpp>
-#include <ServerInstanceDir.h>
 #include <UnionStation/Core.h>
 #include <Exceptions.h>
 #include <CloudUsageTracker.h>
-#include <MultiLibeio.cpp>
 #include <Utils.h>
 #include <Utils/Timer.h>
 #include <Utils/IOUtils.h>
+#include <Utils/json.h>
 #include <Utils/MessageIO.h>
 #include <Utils/VariantMap.h>
 #include <Utils/License.c>
@@ -64,7 +64,10 @@ using namespace oxt;
 using namespace Passenger;
 using namespace Passenger::ApplicationPool2;
 
+static VariantMap *agentsOptions;
 
+
+#if 0
 class RemoteController: public MessageServer::Handler {
 private:
 	struct SpecificContext: public MessageServer::ClientContext {
@@ -99,65 +102,6 @@ private:
 		commonContext.requireRights(Account::DETACH);
 		// TODO: implement this
 		writeArrayMessage(commonContext.fd, "false", NULL);
-	}
-
-	bool processInspect(CommonClientContext &commonContext, SpecificContext *specificContext,
-		const vector<string> &args)
-	{
-		TRACE_POINT();
-		commonContext.requireRights(Account::INSPECT_BASIC_INFO);
-		if ((args.size() - 1) % 2 != 0) {
-			return false;
-		}
-
-		VariantMap options = argsToOptions(args);
-		writeScalarMessage(commonContext.fd, pool->inspect(Pool::InspectOptions(options)));
-		return true;
-	}
-
-	void processToXml(CommonClientContext &commonContext, SpecificContext *specificContext,
-		const vector<string> &args)
-	{
-		TRACE_POINT();
-		commonContext.requireRights(Account::INSPECT_BASIC_INFO);
-		bool includeSensitiveInfo =
-			commonContext.account->hasRights(Account::INSPECT_SENSITIVE_INFO) &&
-			args[1] == "true";
-		writeScalarMessage(commonContext.fd, pool->toXml(includeSensitiveInfo));
-	}
-
-	void processBacktraces(CommonClientContext &commonContext, SpecificContext *specificContext,
-		const vector<string> &args)
-	{
-		TRACE_POINT();
-		commonContext.requireRights(Account::INSPECT_BACKTRACES);
-		writeScalarMessage(commonContext.fd, oxt::thread::all_backtraces());
-	}
-
-	void processRestartAppGroup(CommonClientContext &commonContext, SpecificContext *specificContext,
-		const vector<string> &args)
-	{
-		TRACE_POINT();
-		commonContext.requireRights(Account::RESTART);
-		VariantMap options = argsToOptions(args, 2);
-		RestartMethod method = RM_DEFAULT;
-		if (options.get("method", false) == "blocking") {
-			method = RM_BLOCKING;
-		} else if (options.get("method", false) == "rolling") {
-			method = RM_ROLLING;
-		}
-		bool result = pool->restartGroupByName(args[1], method);
-		writeArrayMessage(commonContext.fd, result ? "true" : "false", NULL);
-	}
-
-	void processRequests(CommonClientContext &commonContext, SpecificContext *specificContext,
-		const vector<string> &args)
-	{
-		TRACE_POINT();
-		stringstream stream;
-		commonContext.requireRights(Account::INSPECT_REQUESTS);
-		requestHandler->inspect(stream);
-		writeScalarMessage(commonContext.fd, stream.str());
 	}
 
 public:
@@ -201,504 +145,755 @@ public:
 		return true;
 	}
 };
+#endif
 
-class ExitHandler: public MessageServer::Handler {
-private:
-	EventFd &exitEvent;
 
-public:
-	ExitHandler(EventFd &_exitEvent)
-		: exitEvent(_exitEvent)
-	{ }
+/***** Structures, constants, global variables and forward declarations *****/
 
-	virtual bool processMessage(MessageServer::CommonClientContext &commonContext,
-	                            MessageServer::ClientContextPtr &handlerSpecificContext,
-	                            const vector<string> &args)
-	{
-		if (args[0] == "exit") {
-			TRACE_POINT();
-			commonContext.requireRights(Account::EXIT);
-			UPDATE_TRACE_POINT();
-			exitEvent.notify();
-			UPDATE_TRACE_POINT();
-			writeArrayMessage(commonContext.fd, "exit command received", NULL);
-			return true;
-		} else {
-			return false;
-		}
-	}
-};
+// Avoid namespace conflict with Watchdog's WorkingObjects.
+namespace {
+	struct WorkingObjects {
+		int serverFds[SERVER_KIT_MAX_SERVER_ENDPOINTS];
+		int adminServerFds[SERVER_KIT_MAX_SERVER_ENDPOINTS];
+		string password;
+		vector<ServerAgent::AdminServer::Authorization> adminAuthorizations;
 
-/**
- * A representation of the Server responsible for handling Client instances.
- *
- * @see Client
- */
-class Server {
-private:
-	static const int MESSAGE_SERVER_THREAD_STACK_SIZE = 128 * 1024;
-	static const int EVENT_LOOP_THREAD_STACK_SIZE = 256 * 1024;
+		ResourceLocator resourceLocator;
+		RandomGeneratorPtr randomGenerator;
+		UnionStation::CorePtr unionStationCore;
+		SpawnerConfigPtr spawnerConfig;
+		SpawnerFactoryPtr spawnerFactory;
+		BackgroundEventLoop *bgloop;
+		struct ev_signal sigintWatcher;
+		struct ev_signal sigtermWatcher;
+		struct ev_signal sigquitWatcher;
+		PoolPtr appPool;
+		ServerKit::Context *serverKitContext;
+		RequestHandler *requestHandler;
+		ServerAgent::AdminServer *adminServer;
+		EventFd exitEvent;
+		EventFd allClientsDisconnectedEvent;
+		unsigned int terminationCount;
+		unsigned int shutdownCounter;
 
-	FileDescriptor feedbackFd;
-	const AgentOptions &options;
+		CloudUsageTracker *tracker;
 
-	BackgroundEventLoop poolLoop;
-	BackgroundEventLoop requestLoop;
-
-	FileDescriptor requestSocket;
-	ServerInstanceDir serverInstanceDir;
-	ServerInstanceDir::GenerationPtr generation;
-	UnionStation::CorePtr unionStationCore;
-	RandomGeneratorPtr randomGenerator;
-	SpawnerConfigPtr spawnerConfig;
-	SpawnerFactoryPtr spawnerFactory;
-	PoolPtr pool;
-	ev::sig sigquitWatcher;
-	AccountsDatabasePtr accountsDatabase;
-	MessageServerPtr messageServer;
-	ResourceLocator resourceLocator;
-	boost::shared_ptr<RequestHandler> requestHandler;
-	boost::shared_ptr<oxt::thread> prestarterThread;
-	boost::shared_ptr<oxt::thread> messageServerThread;
-	boost::shared_ptr<oxt::thread> eventLoopThread;
-	EventFd exitEvent;
-
-	/**
-	 * Starts listening for client connections on this server's request socket.
-	 *
-	 * @throws SystemException Something went wrong while trying to create and bind to the Unix socket.
-	 * @throws RuntimeException Something went wrong.
-	 */
-	void startListening() {
-		this_thread::disable_syscall_interruption dsi;
-		requestSocket = createUnixServer(getRequestSocketFilename().c_str());
-
-		int ret, e;
-		do {
-			ret = chmod(getRequestSocketFilename().c_str(), S_ISVTX |
-				S_IRUSR | S_IWUSR | S_IXUSR |
-				S_IRGRP | S_IWGRP | S_IXGRP |
-				S_IROTH | S_IWOTH | S_IXOTH);
-		} while (ret == -1 && errno == EINTR);
-
-		setNonBlocking(requestSocket);
-
-		if (!options.requestSocketLink.empty()) {
-			struct stat buf;
-
-			// Delete existing socket file/symlink.
-			// If this is a symlink then we'll want to check the file the symlink
-			// points to, so we use stat() instead of lstat().
-			ret = syscalls::stat(options.requestSocketLink.c_str(), &buf);
-			if (ret == 0 || (ret == -1 && errno == ENOENT)) {
-				if (ret == -1 || buf.st_mode & S_IFSOCK) {
-					if (syscalls::unlink(options.requestSocketLink.c_str()) == -1 && errno != ENOENT) {
-						e = errno;
-						throw FileSystemException("Cannot delete existing socket file '" +
-							options.requestSocketLink + "'", e, options.requestSocketLink);
-					}
-				} else {
-					throw RuntimeException("File '" + options.requestSocketLink +
-						"' already exists and is not a Unix domain socket");
-				}
-			} else if (ret == -1 && errno != ENOENT) {
-				e = errno;
-				throw FileSystemException("Cannot stat() file '" + options.requestSocketLink + "'",
-					e,
-					options.requestSocketLink);
-			}
-
-			// Create symlink.
-			do {
-				ret = symlink(getRequestSocketFilename().c_str(),
-					options.requestSocketLink.c_str());
-			} while (ret == -1 && errno == EINTR);
-			if (ret == -1) {
-				e = errno;
-				throw FileSystemException("Cannot create a symlink '" +
-					options.requestSocketLink +
-					"' to '" + getRequestSocketFilename() + "'",
-					e,
-					options.requestSocketLink);
+		WorkingObjects()
+			: bgloop(NULL),
+			  serverKitContext(NULL),
+			  requestHandler(NULL),
+			  adminServer(NULL),
+			  terminationCount(0),
+			  shutdownCounter(0)
+		{
+			for (unsigned int i = 0; i < SERVER_KIT_MAX_SERVER_ENDPOINTS; i++) {
+				serverFds[i] = -1;
+				adminServerFds[i] = -1;
 			}
 		}
+	};
+}
+
+static WorkingObjects *workingObjects;
+
+
+/***** Server stuff *****/
+
+static void waitForExitEvent();
+static void cleanup();
+static void deletePidFile();
+static void requestHandlerShutdownFinished(RequestHandler *server);
+static void adminServerShutdownFinished(ServerAgent::AdminServer *server);
+
+static void
+parseAndAddAdminAuthorization(const string &description) {
+	TRACE_POINT();
+	WorkingObjects *wo = workingObjects;
+	ServerAgent::AdminServer::Authorization auth;
+	vector<string> args;
+
+	split(description, ':', args);
+
+	if (args.size() == 2) {
+		auth.level = ServerAgent::AdminServer::FULL;
+		auth.username = args[0];
+		auth.password = strip(readAll(args[1]));
+	} else if (args.size() == 3) {
+		auth.level = ServerAgent::AdminServer::parseLevel(args[0]);
+		auth.username = args[1];
+		auth.password = strip(readAll(args[2]));
+	} else {
+		P_BUG("Too many elements in authorization description");
 	}
 
-	/**
-	 * Lowers this process's privilege to that of <em>username</em> and <em>groupname</em>.
-	 */
-	void lowerPrivilege(const string &username, const string &groupname) {
-		struct passwd *userEntry;
-		gid_t gid;
-		int e;
+	wo->adminAuthorizations.push_back(auth);
+}
 
-		userEntry = getpwnam(username.c_str());
-		if (userEntry == NULL) {
-			throw NonExistentUserException(string("Unable to lower Passenger "
-				"HelperAgent's privilege to that of user '") + username +
-				"': user does not exist.");
-		}
-		gid = lookupGid(groupname);
-		if (gid == (gid_t) -1) {
-			throw NonExistentGroupException(string("Unable to lower Passenger "
-				"HelperAgent's privilege to that of user '") + username +
-				"': user does not exist.");
-		}
+static void
+initializePrivilegedWorkingObjects() {
+	TRACE_POINT();
+	const VariantMap &options = *agentsOptions;
+	WorkingObjects *wo = workingObjects = new WorkingObjects();
 
-		if (initgroups(username.c_str(), userEntry->pw_gid) != 0) {
-			e = errno;
-			throw SystemException(string("Unable to lower Passenger HelperAgent's "
-				"privilege to that of user '") + username +
-				"': cannot set supplementary groups for this user", e);
-		}
-		if (setgid(gid) != 0) {
-			e = errno;
-			throw SystemException(string("Unable to lower Passenger HelperAgent's "
-				"privilege to that of user '") + username +
-				"': cannot set group ID", e);
-		}
-		if (setuid(userEntry->pw_uid) != 0) {
-			e = errno;
-			throw SystemException(string("Unable to lower Passenger HelperAgent's "
-				"privilege to that of user '") + username +
-				"': cannot set user ID", e);
-		}
-
-		setenv("HOME", userEntry->pw_dir, 1);
+	wo->password = options.get("server_password", false);
+	if (wo->password.empty() && options.has("server_password_file")) {
+		wo->password = strip(readAll(options.get("server_password_file")));
 	}
 
-	void onSigquit(ev::sig &signal, int revents) {
-		requestHandler->inspect(cerr);
-		cerr.flush();
-		cerr << "\n" << pool->inspect();
-		cerr.flush();
-		cerr << "\n" << oxt::thread::all_backtraces();
-		cerr.flush();
+	vector<string> authorizations = options.getStrSet("server_authorizations",
+		false);
+	string description;
+
+	UPDATE_TRACE_POINT();
+	foreach (description, authorizations) {
+		parseAndAddAdminAuthorization(description);
+	}
+}
+
+static void
+initializeSingleAppMode() {
+	TRACE_POINT();
+	VariantMap &options = *agentsOptions;
+
+	if (options.getBool("multi_app")) {
+		P_NOTICE("PassengerAgent server running in multi-application mode.");
+		return;
 	}
 
-	void installDiagnosticsDumper() {
-		::installDiagnosticsDumper(dumpDiagnosticsOnCrash, this);
+	if (!options.has("app_type")) {
+		P_DEBUG("Autodetecting application type...");
+		AppTypeDetector detector(NULL, 0);
+		PassengerAppType appType = detector.checkAppRoot(options.get("app_root"));
+		if (appType == PAT_NONE || appType == PAT_ERROR) {
+			fprintf(stderr, "ERROR: unable to autodetect what kind of application "
+				"lives in %s. Please specify information about the app using "
+				"--app-type and --startup-file, or specify a correct location to "
+				"the application you want to serve.\n"
+				"Type 'PassengerAgent server --help' for more information.\n",
+				options.get("app_root").c_str());
+			exit(1);
+		}
+
+		options.set("app_type", getAppTypeName(appType));
+		options.set("startup_file", getAppTypeStartupFile(appType));
 	}
 
-	void uninstallDiagnosticsDumper() {
-		::installDiagnosticsDumper(NULL, NULL);
+	P_NOTICE("PassengerAgent server running in single-application mode.");
+	P_NOTICE("Serving app     : " << options.get("app_root"));
+	P_NOTICE("App type        : " << options.get("app_type"));
+	P_NOTICE("App startup file: " << options.get("startup_file"));
+}
+
+static void
+startListening() {
+	TRACE_POINT();
+	WorkingObjects *wo = workingObjects;
+	vector<string> addresses = agentsOptions->getStrSet("server_addresses");
+	vector<string> adminAddresses = agentsOptions->getStrSet("server_admin_addresses", false);
+
+	for (unsigned int i = 0; i < addresses.size(); i++) {
+		wo->serverFds[i] = createServer(addresses[i]);
 	}
-
-	static void dumpDiagnosticsOnCrash(void *userData) {
-		Server *self = (Server *) userData;
-
-		cerr << "### Request handler state\n";
-		self->requestHandler->inspect(cerr);
-		cerr << "\n";
-		cerr.flush();
-
-		cerr << "### Pool state (simple)\n";
-		// Do not lock, the crash may occur within the pool.
-		Pool::InspectOptions options;
-		options.verbose = true;
-		cerr << self->pool->inspect(options, false);
-		cerr << "\n";
-		cerr.flush();
-
-		cerr << "### Pool state (XML)\n";
-		cerr << self->pool->toXml(true, false);
-		cerr << "\n\n";
-		cerr.flush();
-
-		cerr << "### Backtraces\n";
-		cerr << oxt::thread::all_backtraces();
-		cerr.flush();
+	for (unsigned int i = 0; i < adminAddresses.size(); i++) {
+		wo->adminServerFds[i] = createServer(adminAddresses[i]);
 	}
+}
 
-	void cloudTrackerAbortHandler(const string &message) {
-		P_CRITICAL(message);
-		requestSocket.close();
-		if (messageServerThread != NULL) {
-			messageServerThread->interrupt_and_join();
-		}
-		messageServer->forceClose();
-		execlp("sleep", "sleep", "999", (const char * const) 0);
-	}
+static void
+createPidFile() {
+	TRACE_POINT();
+	string pidFile = agentsOptions->get("server_pid_file", false);
+	if (!pidFile.empty()) {
+		char pidStr[32];
 
-public:
-	Server(FileDescriptor feedbackFd, const AgentOptions &_options)
-		: options(_options),
-		  requestLoop(true),
-		  serverInstanceDir(_options.serverInstanceDir, false),
-		  resourceLocator(options.passengerRoot)
-	{
-		TRACE_POINT();
-		this->feedbackFd = feedbackFd;
+		snprintf(pidStr, sizeof(pidStr), "%lld", (long long) getpid());
 
-		/* Enterprise license check. */
-		UPDATE_TRACE_POINT();
-		char *error;
-		passenger_enterprise_license_init();
-		error = passenger_enterprise_license_check();
-		if (error != NULL) {
-			string message = error;
-			free(error);
-			throw RuntimeException(message);
-		}
-
-		UPDATE_TRACE_POINT();
-		generation = serverInstanceDir.getGeneration(options.generationNumber);
-		startListening();
-		accountsDatabase = boost::make_shared<AccountsDatabase>();
-		accountsDatabase->add("_passenger-status", options.adminToolStatusPassword, false,
-			Account::INSPECT_BASIC_INFO | Account::INSPECT_SENSITIVE_INFO |
-			Account::INSPECT_BACKTRACES | Account::INSPECT_REQUESTS |
-			Account::DETACH | Account::RESTART);
-		accountsDatabase->add("_web_server", options.exitPassword, false, Account::EXIT);
-		messageServer = boost::make_shared<MessageServer>(
-			parseUnixSocketAddress(options.adminSocketAddress), accountsDatabase);
-
-		createFile(generation->getPath() + "/helper_agent.pid",
-			toString(getpid()), S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
-
-		if (geteuid() == 0 && !options.userSwitching) {
-			lowerPrivilege(options.defaultUser, options.defaultGroup);
-		}
-
-		UPDATE_TRACE_POINT();
-		randomGenerator = boost::make_shared<RandomGenerator>();
-		// Check whether /dev/urandom is actually random.
-		// https://code.google.com/p/phusion-passenger/issues/detail?id=516
-		if (randomGenerator->generateByteString(16) == randomGenerator->generateByteString(16)) {
-			throw RuntimeException("Your random number device, /dev/urandom, appears to be broken. "
-				"It doesn't seem to be returning random data. Please fix this.");
-		}
-
-		UPDATE_TRACE_POINT();
-		unionStationCore = boost::make_shared<UnionStation::Core>(options.loggingAgentAddress,
-			"logging", options.loggingAgentPassword);
-		spawnerConfig = boost::make_shared<SpawnerConfig>(resourceLocator, unionStationCore,
-				randomGenerator, &options);
-		spawnerFactory = boost::make_shared<SpawnerFactory>(generation, spawnerConfig);
-		pool = boost::make_shared<Pool>(spawnerFactory, &options);
-		pool->initialize();
-		pool->setMax(options.maxPoolSize);
-		pool->setMaxIdleTime(options.poolIdleTime * 1000000);
-
-		requestHandler = boost::make_shared<RequestHandler>(requestLoop.safe,
-			requestSocket, pool, options);
-
-		messageServer->addHandler(boost::make_shared<RemoteController>(requestHandler, pool));
-		messageServer->addHandler(ptr(new ExitHandler(exitEvent)));
-
-		sigquitWatcher.set(requestLoop.loop);
-		sigquitWatcher.set(SIGQUIT);
-		sigquitWatcher.set<Server, &Server::onSigquit>(this);
-		sigquitWatcher.start();
-
-		UPDATE_TRACE_POINT();
-		writeArrayMessage(feedbackFd,
-			"initialized",
-			getRequestSocketFilename().c_str(),
-			messageServer->getSocketFilename().c_str(),
-			NULL);
-
-		boost::function<void ()> func = boost::bind(prestartWebApps,
-			resourceLocator,
-			options.defaultRubyCommand,
-			options.prestartUrls
-		);
-		prestarterThread = ptr(new oxt::thread(
-			boost::bind(runAndPrintExceptions, func, true)
-		));
-	}
-
-	~Server() {
-		TRACE_POINT();
-		this_thread::disable_syscall_interruption dsi;
-		this_thread::disable_interruption di;
-
-		P_DEBUG("Shutting down helper agent...");
-		prestarterThread->interrupt_and_join();
-		if (messageServerThread != NULL) {
-			messageServerThread->interrupt_and_join();
-		}
-
-		messageServer.reset();
-		P_DEBUG("Destroying application pool...");
-		pool->destroy();
-		uninstallDiagnosticsDumper();
-		pool.reset();
-		poolLoop.stop();
-		requestLoop.stop();
-		requestHandler.reset();
-
-		if (!options.requestSocketLink.empty()) {
-			char path[PATH_MAX + 1];
-			ssize_t ret;
-			bool shouldUnlink;
-
-			ret = readlink(options.requestSocketLink.c_str(), path, PATH_MAX);
-			if (ret != -1) {
-				path[ret] = '\0';
-				// Only unlink if a new Flying Passenger instance hasn't overwritten the
-				// symlink.
-				// https://code.google.com/p/phusion-passenger/issues/detail?id=939
-				shouldUnlink = getRequestSocketFilename() == path;
-			} else {
-				shouldUnlink = true;
-			}
-
-			if (shouldUnlink) {
-				syscalls::unlink(options.requestSocketLink.c_str());
-			}
-		}
-
-		P_TRACE(2, "All threads have been shut down.");
-	}
-
-	void mainLoop() {
-		TRACE_POINT();
-		boost::function<void ()> func;
-
-		func = boost::bind(&MessageServer::mainLoop, messageServer.get());
-		messageServerThread = ptr(new oxt::thread(
-			boost::bind(runAndPrintExceptions, func, true),
-			"MessageServer thread", MESSAGE_SERVER_THREAD_STACK_SIZE
-		));
-
-		poolLoop.start("Pool event loop", 0);
-		requestLoop.start("Request event loop", 0);
-
-
-		/* Initialize cloud usage tracker. */
-		UPDATE_TRACE_POINT();
-		if (passenger_enterprise_should_track_usage()) {
-			string certificate;
-			if (options.licensingServerCert.empty()) {
-				certificate = resourceLocator.getResourcesDir() + "/licensing_server.crt";
-			} else if (options.licensingServerCert != "-") {
-				certificate = options.licensingServerCert;
-			}
-
-			string licensingDataDir = options.getLicensingDataDir();
-
-			P_INFO("Starting Phusion Passenger usage tracker using data directory " <<
-				licensingDataDir << " and certificate " <<
-				(certificate.empty() ? "(none)" : certificate));
-			makeDirTree(licensingDataDir);
-
-			CURLcode code = curl_global_init(CURL_GLOBAL_ALL);
-			if (code != CURLE_OK) {
-				P_CRITICAL("Could not initialize libcurl: " << curl_easy_strerror(code));
-				exit(1);
-			}
-
-			CloudUsageTracker *tracker = new CloudUsageTracker(
-				licensingDataDir,
-				options.licensingBaseUrl,
-				certificate,
-				options.licensingProxy);
-			tracker->abortHandler = boost::bind(&Server::cloudTrackerAbortHandler, this, _1);
-			tracker->start();
-		}
-
-
-		/* Wait until the watchdog closes the feedback fd (meaning it
-		 * was killed) or until we receive an exit message.
-		 */
-		this_thread::disable_syscall_interruption dsi;
-		fd_set fds;
-		int largestFd;
-
-		FD_ZERO(&fds);
-		FD_SET(feedbackFd, &fds);
-		FD_SET(exitEvent.fd(), &fds);
-		largestFd = (feedbackFd > exitEvent.fd()) ? (int) feedbackFd : exitEvent.fd();
-		UPDATE_TRACE_POINT();
-		installDiagnosticsDumper();
-		if (syscalls::select(largestFd + 1, &fds, NULL, NULL, NULL) == -1) {
+		int fd = syscalls::open(pidFile.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644);
+		if (fd == -1) {
 			int e = errno;
-			uninstallDiagnosticsDumper();
+			throw FileSystemException("Cannot create PID file " + pidFile, e, pidFile);
+		}
+
+		UPDATE_TRACE_POINT();
+		writeExact(fd, pidStr, strlen(pidStr));
+		syscalls::close(fd);
+	}
+}
+
+static void
+lowerPrivilege() {
+	TRACE_POINT();
+}
+
+static void
+printInfo(EV_P_ struct ev_signal *watcher, int revents) {
+	WorkingObjects *wo = workingObjects;
+
+	cerr << "### Request handler state\n";
+	cerr << wo->requestHandler->inspectStateAsJson();
+	cerr << "\n";
+	cerr.flush();
+
+	cerr << "### Request handler config\n";
+	cerr << wo->requestHandler->getConfigAsJson();
+	cerr << "\n";
+	cerr.flush();
+
+	cerr << "### Pool state\n";
+	cerr << "\n" << wo->appPool->inspect();
+	cerr << "\n";
+	cerr.flush();
+
+	cerr << "### mbuf stats\n\n";
+	cerr << "nfree_mbuf_blockq    : " <<
+		wo->serverKitContext->mbuf_pool.nfree_mbuf_blockq << "\n";
+	cerr << "nactive_mbuf_blockq  : " <<
+		wo->serverKitContext->mbuf_pool.nactive_mbuf_blockq << "\n";
+	cerr << "mbuf_block_chunk_size: " <<
+		wo->serverKitContext->mbuf_pool.mbuf_block_chunk_size << "\n";
+	cerr << "\n";
+	cerr.flush();
+
+	cerr << "### Backtraces\n";
+	cerr << "\n" << oxt::thread::all_backtraces();
+	cerr << "\n";
+	cerr.flush();
+}
+
+static void
+dumpDiagnosticsOnCrash(void *userData) {
+	WorkingObjects *wo = workingObjects;
+
+	cerr << "### Request handler state\n";
+	cerr << wo->requestHandler->inspectStateAsJson();
+	cerr << "\n";
+	cerr.flush();
+
+	cerr << "### Request handler config\n";
+	cerr << wo->requestHandler->getConfigAsJson();
+	cerr << "\n";
+	cerr.flush();
+
+	cerr << "### Pool state (simple)\n";
+	// Do not lock, the crash may occur within the pool.
+	Pool::InspectOptions options;
+	options.verbose = true;
+	cerr << wo->appPool->inspect(options, false);
+	cerr << "\n";
+	cerr.flush();
+
+	cerr << "### Pool state (XML)\n";
+	cerr << wo->appPool->toXml(true, false);
+	cerr << "\n\n";
+	cerr.flush();
+
+	cerr << "### mbuf stats\n\n";
+	cerr << "nfree_mbuf_blockq  : " <<
+		wo->serverKitContext->mbuf_pool.nfree_mbuf_blockq << "\n";
+	cerr << "nactive_mbuf_blockq: " <<
+		wo->serverKitContext->mbuf_pool.nactive_mbuf_blockq << "\n";
+	cerr << "mbuf_block_chunk_size: " <<
+		wo->serverKitContext->mbuf_pool.mbuf_block_chunk_size << "\n";
+	cerr << "\n";
+	cerr.flush();
+
+	cerr << "### Backtraces\n";
+	cerr << oxt::thread::all_backtraces();
+	cerr.flush();
+}
+
+static void
+onTerminationSignal(EV_P_ struct ev_signal *watcher, int revents) {
+	WorkingObjects *wo = workingObjects;
+
+	// Start output after '^C'
+	printf("\n");
+
+	wo->terminationCount++;
+	if (wo->terminationCount < 3) {
+		P_NOTICE("Signal received. Gracefully shutting down... (send signal " <<
+			(3 - wo->terminationCount) << " more time(s) to force shutdown)");
+		workingObjects->exitEvent.notify();
+	} else {
+		P_NOTICE("Signal received. Forcing shutdown.");
+		_exit(2);
+	}
+}
+
+static void
+initializeLicense() {
+	TRACE_POINT();
+	passenger_enterprise_license_init();
+
+	char *error = passenger_enterprise_license_check();
+	if (error != NULL) {
+		string message = error;
+		free(error);
+		throw RuntimeException(message);
+	}
+}
+
+static void
+initializeNonPrivilegedWorkingObjects() {
+	TRACE_POINT();
+	VariantMap &options = *agentsOptions;
+	WorkingObjects *wo = workingObjects;
+
+	if (options.get("server_software").find(SERVER_TOKEN_NAME) == string::npos) {
+		options.set("server_software", options.get("server_software") +
+			(" " SERVER_TOKEN_NAME "/" PASSENGER_VERSION));
+	}
+	setenv("SERVER_SOFTWARE", options.get("server_software").c_str(), 1);
+	options.set("data_buffer_dir", absolutizePath(options.get("data_buffer_dir")));
+
+	vector<string> addresses = options.getStrSet("server_addresses");
+	vector<string> adminAddresses = options.getStrSet("server_admin_addresses", false);
+
+	wo->resourceLocator = ResourceLocator(options.get("passenger_root"));
+
+	wo->randomGenerator = boost::make_shared<RandomGenerator>();
+	// Check whether /dev/urandom is actually random.
+	// https://code.google.com/p/phusion-passenger/issues/detail?id=516
+	if (wo->randomGenerator->generateByteString(16) == wo->randomGenerator->generateByteString(16)) {
+		throw RuntimeException("Your random number device, /dev/urandom, appears to be broken. "
+			"It doesn't seem to be returning random data. Please fix this.");
+	}
+
+	UPDATE_TRACE_POINT();
+	if (options.has("logging_agent_address")) {
+		wo->unionStationCore = boost::make_shared<UnionStation::Core>(
+			options.get("logging_agent_address"),
+			"logging",
+			options.get("logging_agent_password"));
+	}
+
+	UPDATE_TRACE_POINT();
+	wo->spawnerConfig = boost::make_shared<SpawnerConfig>();
+	wo->spawnerConfig->resourceLocator = &wo->resourceLocator;
+	wo->spawnerConfig->agentsOptions = agentsOptions;
+	wo->spawnerConfig->randomGenerator = wo->randomGenerator;
+	wo->spawnerConfig->instanceDir = options.get("instance_dir", false);
+	if (!wo->spawnerConfig->instanceDir.empty()) {
+		wo->spawnerConfig->instanceDir = absolutizePath(wo->spawnerConfig->instanceDir);
+	}
+	wo->spawnerConfig->finalize();
+
+	UPDATE_TRACE_POINT();
+	wo->spawnerFactory = boost::make_shared<SpawnerFactory>(wo->spawnerConfig);
+
+	wo->bgloop = new BackgroundEventLoop(true, true);
+	ev_signal_init(&wo->sigquitWatcher, printInfo, SIGQUIT);
+	ev_signal_start(wo->bgloop->loop, &wo->sigquitWatcher);
+	ev_signal_init(&wo->sigintWatcher, onTerminationSignal, SIGINT);
+	ev_signal_start(wo->bgloop->loop, &wo->sigintWatcher);
+	ev_signal_init(&wo->sigtermWatcher, onTerminationSignal, SIGTERM);
+	ev_signal_start(wo->bgloop->loop, &wo->sigtermWatcher);
+
+	UPDATE_TRACE_POINT();
+	wo->appPool = boost::make_shared<Pool>(wo->spawnerFactory, agentsOptions);
+	wo->appPool->initialize();
+	wo->appPool->setMax(options.getInt("max_pool_size"));
+	wo->appPool->setMaxIdleTime(options.getInt("pool_idle_time") * 1000000);
+
+	UPDATE_TRACE_POINT();
+	wo->serverKitContext = new ServerKit::Context(wo->bgloop->safe);
+	wo->serverKitContext->secureModePassword = wo->password;
+	wo->serverKitContext->defaultFileBufferedChannelConfig.bufferDir =
+		options.get("data_buffer_dir");
+	wo->requestHandler = new RequestHandler(wo->serverKitContext, agentsOptions);
+	wo->requestHandler->minSpareClients = 128;
+	wo->requestHandler->clientFreelistLimit = 1024;
+	wo->requestHandler->resourceLocator = &wo->resourceLocator;
+	wo->requestHandler->appPool = wo->appPool;
+	wo->requestHandler->unionStationCore = wo->unionStationCore;
+	wo->requestHandler->shutdownFinishCallback = requestHandlerShutdownFinished;
+	wo->requestHandler->initialize();
+	wo->shutdownCounter++;
+
+	UPDATE_TRACE_POINT();
+	if (!adminAddresses.empty()) {
+		wo->adminServer = new ServerAgent::AdminServer(wo->serverKitContext);
+		wo->adminServer->requestHandler = wo->requestHandler;
+		wo->adminServer->appPool = wo->appPool;
+		wo->adminServer->exitEvent = &wo->exitEvent;
+		wo->adminServer->shutdownFinishCallback = adminServerShutdownFinished;
+		wo->adminServer->authorizations = wo->adminAuthorizations;
+		wo->shutdownCounter++;
+	}
+
+	UPDATE_TRACE_POINT();
+	for (unsigned int i = 0; i < addresses.size(); i++) {
+		wo->requestHandler->listen(wo->serverFds[i]);
+	}
+	for (unsigned int i = 0; i < adminAddresses.size(); i++) {
+		wo->adminServer->listen(wo->adminServerFds[i]);
+	}
+	wo->requestHandler->createSpareClients();
+}
+
+static void
+cloudTrackerAbortHandler(const string &message) {
+	WorkingObjects *wo = workingObjects;
+
+	P_CRITICAL(message);
+	for (unsigned i = 0; i < SERVER_KIT_MAX_SERVER_ENDPOINTS; i++) {
+		if (wo->serverFds[i] != -1) {
+			syscalls::close(wo->serverFds[i]);
+		}
+		if (wo->adminServerFds[i] != -1) {
+			syscalls::close(wo->adminServerFds[i]);
+		}
+	}
+	execlp("sleep", "sleep", "999", (const char * const) 0);
+}
+
+static void
+initializeCloudUsageTracker() {
+	TRACE_POINT();
+	if (passenger_enterprise_should_track_usage()) {
+		VariantMap &options = *agentsOptions;
+		WorkingObjects *wo = workingObjects;
+
+		string licensingServerCert = options.get("licensing_server_cert", false);
+		string licensingBaseUrl = options.get("licensing_base_url", false);
+		string licensingProxy   = options.get("licensing_proxy", false);
+
+		string certificate;
+		if (licensingServerCert.empty()) {
+			certificate = wo->resourceLocator.getResourcesDir() + "/licensing_server.crt";
+		} else if (licensingServerCert != "-") {
+			certificate = licensingServerCert;
+		}
+
+		string licensingDataDir = options.get("licensing_data_dir", false,
+			getHomeDir() + "/.passenger-enterprise/usage_data");
+
+		P_INFO("Starting Phusion Passenger usage tracker using data directory " <<
+			licensingDataDir << " and certificate " <<
+			(certificate.empty() ? "(none)" : certificate));
+		makeDirTree(licensingDataDir);
+
+		CURLcode code = curl_global_init(CURL_GLOBAL_ALL);
+		if (code != CURLE_OK) {
+			P_CRITICAL("Could not initialize libcurl: " << curl_easy_strerror(code));
+			exit(1);
+		}
+
+		wo->tracker = new CloudUsageTracker(
+			licensingDataDir,
+			licensingBaseUrl,
+			certificate,
+			licensingProxy);
+		wo->tracker->abortHandler = cloudTrackerAbortHandler;
+		wo->tracker->start();
+	}
+}
+
+static void
+reportInitializationInfo() {
+	TRACE_POINT();
+	if (feedbackFdAvailable()) {
+		P_NOTICE("PassengerAgent server online, PID " << getpid());
+		writeArrayMessage(FEEDBACK_FD,
+			"initialized",
+			NULL);
+	} else {
+		vector<string> addresses = agentsOptions->getStrSet("server_addresses");
+		vector<string> adminAddresses = agentsOptions->getStrSet("server_admin_addresses", false);
+		string address;
+
+		P_NOTICE("PassengerAgent server online, PID " << getpid() <<
+			", listening on " << addresses.size() << " socket(s):");
+		foreach (address, addresses) {
+			if (startsWith(address, "tcp://")) {
+				address.erase(0, sizeof("tcp://") - 1);
+				address.insert(0, "http://");
+				address.append("/");
+			}
+			P_NOTICE(" * " << address);
+		}
+
+		if (!adminAddresses.empty()) {
+			P_NOTICE("Admin server listening on " << adminAddresses.size() << " socket(s):");
+			foreach (address, adminAddresses) {
+				if (startsWith(address, "tcp://")) {
+					address.erase(0, sizeof("tcp://") - 1);
+					address.insert(0, "http://");
+					address.append("/");
+				}
+				P_NOTICE(" * " << address);
+			}
+		}
+	}
+}
+
+static void
+mainLoop() {
+	TRACE_POINT();
+	installDiagnosticsDumper(dumpDiagnosticsOnCrash, NULL);
+	workingObjects->bgloop->start("Main event loop", 0);
+	waitForExitEvent();
+}
+
+static void
+shutdownRequestHandler() {
+	workingObjects->requestHandler->shutdown();
+}
+
+static void
+shutdownAdminServer() {
+	if (workingObjects->adminServer != NULL) {
+		workingObjects->adminServer->shutdown();
+	}
+}
+
+static void
+serverShutdownFinished() {
+	workingObjects->shutdownCounter--;
+	if (workingObjects->shutdownCounter == 0) {
+		workingObjects->allClientsDisconnectedEvent.notify();
+	}
+}
+
+static void
+requestHandlerShutdownFinished(RequestHandler *server) {
+	serverShutdownFinished();
+}
+
+static void
+adminServerShutdownFinished(ServerAgent::AdminServer *server) {
+	serverShutdownFinished();
+}
+
+/* Wait until the watchdog closes the feedback fd (meaning it
+ * was killed) or until we receive an exit message.
+ */
+static void
+waitForExitEvent() {
+	this_thread::disable_syscall_interruption dsi;
+	WorkingObjects *wo = workingObjects;
+	fd_set fds;
+	int largestFd = -1;
+
+	FD_ZERO(&fds);
+	if (feedbackFdAvailable()) {
+		FD_SET(FEEDBACK_FD, &fds);
+		largestFd = std::max(largestFd, FEEDBACK_FD);
+	}
+	FD_SET(wo->exitEvent.fd(), &fds);
+	largestFd = std::max(largestFd, wo->exitEvent.fd());
+
+	TRACE_POINT();
+	if (syscalls::select(largestFd + 1, &fds, NULL, NULL, NULL) == -1) {
+		int e = errno;
+		installDiagnosticsDumper(NULL, NULL);
+		throw SystemException("select() failed", e);
+	}
+
+	if (FD_ISSET(FEEDBACK_FD, &fds)) {
+		UPDATE_TRACE_POINT();
+		/* If the watchdog has been killed then we'll kill all descendant
+		 * processes and exit. There's no point in keeping the server agent
+		 * running because we can't detect when the web server exits,
+		 * and because this server agent doesn't own the instance
+		 * directory. As soon as passenger-status is run, the instance
+		 * directory will be cleaned up, making the server inaccessible.
+		 */
+		P_WARN("Watchdog seems to be killed; forcing shutdown of all subprocesses");
+		// We send a SIGTERM first to allow processes to gracefully shut down.
+		syscalls::killpg(getpgrp(), SIGTERM);
+		usleep(500000);
+		syscalls::killpg(getpgrp(), SIGKILL);
+		_exit(2); // In case killpg() fails.
+	} else {
+		UPDATE_TRACE_POINT();
+		/* We received an exit command. */
+		P_NOTICE("Received command to shutdown gracefully. "
+			"Waiting until all clients have disconnected...");
+		wo->appPool->prepareForShutdown();
+		wo->bgloop->safe->runLater(shutdownRequestHandler);
+		wo->bgloop->safe->runLater(shutdownAdminServer);
+
+		UPDATE_TRACE_POINT();
+		FD_ZERO(&fds);
+		FD_SET(wo->allClientsDisconnectedEvent.fd(), &fds);
+		if (syscalls::select(wo->allClientsDisconnectedEvent.fd() + 1,
+			&fds, NULL, NULL, NULL) == -1)
+		{
+			int e = errno;
+			installDiagnosticsDumper(NULL, NULL);
 			throw SystemException("select() failed", e);
 		}
 
-		if (FD_ISSET(feedbackFd, &fds)) {
-			/* If the watchdog has been killed then we'll kill all descendant
-			 * processes and exit. There's no point in keeping this helper
-			 * server running because we can't detect when the web server exits,
-			 * and because this helper agent doesn't own the server instance
-			 * directory. As soon as passenger-status is run, the server
-			 * instance directory will be cleaned up, making this helper agent
-			 * inaccessible.
-			 */
-			P_DEBUG("Watchdog seems to be killed; forcing shutdown of all subprocesses");
-			// We send a SIGTERM first to allow processes to gracefully shut down.
-			syscalls::killpg(getpgrp(), SIGTERM);
-			usleep(500000);
-			syscalls::killpg(getpgrp(), SIGKILL);
-			_exit(2); // In case killpg() fails.
+		P_INFO("All clients have now disconnected. Proceeding with graceful shutdown");
+	}
+}
+
+static void
+cleanup() {
+	TRACE_POINT();
+	WorkingObjects *wo = workingObjects;
+
+	P_DEBUG("Shutting down PassengerAgent server...");
+	wo->appPool->destroy();
+	installDiagnosticsDumper(NULL, NULL);
+	wo->bgloop->stop();
+	wo->appPool.reset();
+	delete wo->requestHandler;
+	deletePidFile();
+	P_NOTICE("PassengerAgent server shutdown finished");
+}
+
+static void
+deletePidFile() {
+	TRACE_POINT();
+	string pidFile = agentsOptions->get("server_pid_file", false);
+	if (!pidFile.empty()) {
+		syscalls::unlink(pidFile.c_str());
+	}
+}
+
+static int
+runServer() {
+	TRACE_POINT();
+	P_NOTICE("Starting PassengerAgent server...");
+
+	try {
+		UPDATE_TRACE_POINT();
+		initializePrivilegedWorkingObjects();
+		initializeSingleAppMode();
+		startListening();
+		createPidFile();
+		lowerPrivilege();
+		initializeLicense();
+		initializeNonPrivilegedWorkingObjects();
+		initializeCloudUsageTracker();
+
+		UPDATE_TRACE_POINT();
+		reportInitializationInfo();
+		mainLoop();
+
+		UPDATE_TRACE_POINT();
+		cleanup();
+	} catch (const tracable_exception &e) {
+		P_CRITICAL("ERROR: " << e.what() << "\n" << e.backtrace());
+		deletePidFile();
+		return 1;
+	}
+
+	return 0;
+}
+
+
+/***** Entry point and command line argument parsing *****/
+
+static void
+parseOptions(int argc, const char *argv[], VariantMap &options) {
+	OptionParser p(serverUsage);
+	int i = 2;
+
+	while (i < argc) {
+		if (parseServerOption(argc, argv, i, options)) {
+			continue;
+		} else if (p.isFlag(argv[i], 'h', "--help")) {
+			serverUsage();
+			exit(0);
 		} else {
-			/* We received an exit command. We want to exit 5 seconds after
-			 * all clients have disconnected have become inactive.
-			 */
-			P_DEBUG("Received command to exit gracefully. "
-				"Waiting until 5 seconds after all clients have disconnected...");
-			pool->prepareForShutdown();
-			requestHandler->resetInactivityTime();
-			while (requestHandler->inactivityTime() < 5000) {
-				syscalls::usleep(250000);
-			}
-			P_DEBUG("It's now 5 seconds after all clients have disconnected. "
-				"Proceeding with graceful exit.");
+			fprintf(stderr, "ERROR: unrecognized argument %s. Please type "
+				"'%s server --help' for usage.\n", argv[i], argv[0]);
+			exit(1);
 		}
 	}
 
-	string getRequestSocketFilename() const {
-		return options.requestSocketFilename;
+	// Set log_level here so that initializeAgent() calls setLogLevel()
+	// with the right value.
+	if (options.has("server_log_level")) {
+		options.setInt("log_level", options.getInt("server_log_level"));
 	}
-};
+}
 
-/**
- * Initializes and starts the helper agent that is responsible for handling communication
- * between Nginx and the backend Rails processes.
- *
- * @see Server
- * @see Client
- */
+static void
+setAgentsOptionsDefaults() {
+	VariantMap &options = *agentsOptions;
+	set<string> defaultAddress;
+	defaultAddress.insert(DEFAULT_HTTP_SERVER_LISTEN_ADDRESS);
+
+	options.setDefaultStrSet("server_addresses", defaultAddress);
+	options.setDefaultBool("multi_app", false);
+	options.setDefault("environment", DEFAULT_APP_ENV);
+	options.setDefaultInt("max_pool_size", DEFAULT_MAX_POOL_SIZE);
+	options.setDefaultInt("pool_idle_time", DEFAULT_POOL_IDLE_TIME);
+	options.setDefaultInt("min_instances", 1);
+	options.setDefaultInt("stat_throttle_rate", DEFAULT_STAT_THROTTLE_RATE);
+	options.setDefault("server_software", SERVER_TOKEN_NAME "/" PASSENGER_VERSION);
+	options.setDefaultBool("show_version_in_header", true);
+	options.setDefault("data_buffer_dir", getSystemTempDir());
+
+	string firstAddress = options.getStrSet("server_addresses")[0];
+	if (getSocketAddressType(firstAddress) == SAT_TCP) {
+		string host;
+		unsigned short port;
+
+		parseTcpSocketAddress(firstAddress, host, port);
+		options.setDefault("default_server_name", host);
+		options.setDefaultInt("default_server_port", port);
+	} else {
+		options.setDefault("default_server_name", "localhost");
+		options.setDefaultInt("default_server_port", 80);
+	}
+
+	options.setDefault("default_ruby", DEFAULT_RUBY);
+	if (!options.getBool("multi_app") && !options.has("app_root")) {
+		char *pwd = getcwd(NULL, 0);
+		options.set("app_root", pwd);
+		free(pwd);
+	}
+}
+
+static void
+sanityCheckOptions() {
+	VariantMap &options = *agentsOptions;
+	bool ok = true;
+
+	if (!options.has("passenger_root")) {
+		fprintf(stderr, "ERROR: please set the --passenger-root argument.\n");
+		ok = false;
+	}
+	if (options.getBool("multi_app") && options.has("app_root")) {
+		fprintf(stderr, "ERROR: you may not specify an application directory "
+			"when in multi-app mode.\n");
+		ok = false;
+	}
+	if (!options.getBool("multi_app") && options.has("app_type")) {
+		PassengerAppType appType = getAppType(options.get("app_type"));
+		if (appType == PAT_NONE || appType == PAT_ERROR) {
+			fprintf(stderr, "ERROR: '%s' is not a valid applicaion type. Supported app types are:",
+				options.get("app_type").c_str());
+			const AppTypeDefinition *definition = &appTypeDefinitions[0];
+			while (definition->type != PAT_NONE) {
+				fprintf(stderr, " %s", definition->name);
+				definition++;
+			}
+			fprintf(stderr, "\n");
+			ok = false;
+		}
+
+		if (!options.has("startup_file")) {
+			fprintf(stderr, "ERROR: if you've passed --app-type, then you must also pass --startup-file.\n");
+			ok = false;
+		}
+	}
+
+	if (!ok) {
+		exit(1);
+	}
+}
+
 int
-main(int argc, char *argv[]) {
-	TRACE_POINT();
-
-	if (argc > 1 && strcmp(argv[1], "system-metrics") == 0) {
-		return SystemMetricsTool::main(argc, argv);
-	}
-
-	AgentOptionsPtr options;
-	try {
-		options = boost::make_shared<AgentOptions>(
-			initializeAgent(argc, argv, "PassengerHelperAgent"));
-	} catch (const VariantMap::MissingKeyException &e) {
-		fprintf(stderr, "Option required: %s\n", e.getKey().c_str());
-		return 1;
-	}
-	if (options->testBinary) {
-		printf("PASS\n");
-		exit(0);
-	}
-
-	P_DEBUG("Starting PassengerHelperAgent...");
-	MultiLibeio::init();
-
-	try {
-		UPDATE_TRACE_POINT();
-		Server server(FileDescriptor(FEEDBACK_FD), *options);
-		P_WARN("PassengerHelperAgent online, listening at unix:" <<
-			server.getRequestSocketFilename());
-
-		UPDATE_TRACE_POINT();
-		server.mainLoop();
-	} catch (const tracable_exception &e) {
-		P_ERROR("*** ERROR: " << e.what() << "\n" << e.backtrace());
-		return 1;
-	}
-
-	MultiLibeio::shutdown();
-	P_TRACE(2, "Helper agent exiting with code 0.");
-	return 0;
+serverMain(int argc, char *argv[]) {
+	agentsOptions = new VariantMap();
+	*agentsOptions = initializeAgent(argc, &argv, "PassengerAgent server", parseOptions, 2);
+	setAgentsOptionsDefaults();
+	sanityCheckOptions();
+	return runServer();
 }

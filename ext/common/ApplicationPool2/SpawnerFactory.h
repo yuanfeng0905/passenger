@@ -1,6 +1,6 @@
 /*
  *  Phusion Passenger - https://www.phusionpassenger.com/
- *  Copyright (c) 2011-2013 Phusion
+ *  Copyright (c) 2011-2014 Phusion
  *
  *  "Phusion Passenger" is a trademark of Hongli Lai & Ninh Bui.
  *
@@ -24,32 +24,26 @@ using namespace oxt;
 
 class SpawnerFactory {
 private:
-	ServerInstanceDir::GenerationPtr generation;
 	boost::mutex syncher;
 	SpawnerConfigPtr config;
 	DummySpawnerPtr dummySpawner;
 
 	SpawnerPtr tryCreateSmartSpawner(const Options &options) {
-		string dir = config->resourceLocator.getHelperScriptsDir();
+		string dir = config->resourceLocator->getHelperScriptsDir();
 		vector<string> preloaderCommand;
-		if (options.appType == "classic-rails") {
-			preloaderCommand.push_back(options.ruby);
-			preloaderCommand.push_back(dir + "/classic-rails-preloader.rb");
-		} else if (options.appType == "rack") {
+		if (options.appType == "rack") {
 			preloaderCommand.push_back(options.ruby);
 			preloaderCommand.push_back(dir + "/rack-preloader.rb");
 		} else {
 			return SpawnerPtr();
 		}
-		return boost::make_shared<SmartSpawner>(generation, preloaderCommand,
+		return boost::make_shared<SmartSpawner>(preloaderCommand,
 			options, config);
 	}
 
 public:
-	SpawnerFactory(const ServerInstanceDir::GenerationPtr &_generation,
-		const SpawnerConfigPtr &_config)
-		: generation(_generation),
-		  config(_config)
+	SpawnerFactory(const SpawnerConfigPtr &_config)
+		: config(_config)
 		{ }
 
 	virtual ~SpawnerFactory() { }
@@ -58,12 +52,12 @@ public:
 		if (options.spawnMethod == "smart" || options.spawnMethod == "smart-lv2") {
 			SpawnerPtr spawner = tryCreateSmartSpawner(options);
 			if (spawner == NULL) {
-				spawner = boost::make_shared<DirectSpawner>(generation, config);
+				spawner = boost::make_shared<DirectSpawner>(config);
 			}
 			return spawner;
 		} else if (options.spawnMethod == "direct" || options.spawnMethod == "conservative") {
 			boost::shared_ptr<DirectSpawner> spawner = boost::make_shared<DirectSpawner>(
-				generation, config);
+				config);
 			return spawner;
 		} else if (options.spawnMethod == "dummy") {
 			syscalls::usleep(config->spawnerCreationSleepTime);

@@ -1,6 +1,6 @@
 /*
  *  Phusion Passenger - https://www.phusionpassenger.com/
- *  Copyright (c) 2010-2013 Phusion
+ *  Copyright (c) 2010-2014 Phusion
  *
  *  "Phusion Passenger" is a trademark of Hongli Lai & Ninh Bui.
  *
@@ -88,6 +88,7 @@ private:
 		result.push_back(&options.ruby);
 		result.push_back(&options.python);
 		result.push_back(&options.nodejs);
+		result.push_back(&options.environmentVariables);
 		result.push_back(&options.loggingAgentAddress);
 		result.push_back(&options.loggingAgentUsername);
 		result.push_back(&options.loggingAgentPassword);
@@ -253,9 +254,12 @@ public:
 
 	/**
 	 * Environment variables which should be passed to the spawned application
-	 * process.
+	 * process. This is a base64-encoded string of key-value pairs, with each
+	 * element terminated by a NUL character. For example:
+	 *
+	 *     base64("PATH\0/usr/bin\0RUBY\0/usr/bin/ruby\0")
 	 */
-	vector< pair<StaticString, StaticString> > environmentVariables;
+	StaticString environmentVariables;
 
 	/** Whether debugger support should be enabled. */
 	bool debugger;
@@ -402,6 +406,11 @@ public:
 	 */
 	unsigned long maxRequests;
 
+	/** If the current time (in microseconds) has already been queried, set it
+	 * here. Pool will use this timestamp instead of querying it again.
+	 */
+	unsigned long long currentTime;
+
 	/** When true, Pool::get() and Pool::asyncGet() will create the necessary
 	 * SuperGroup and Group structures just as normally, and will even handle
 	 * restarting logic, but will not actually spawn any processes and will not
@@ -439,33 +448,35 @@ public:
 	 * Creates a new Options object with the default values filled in.
 	 * One must still set appRoot manually, after having used this constructor.
 	 */
-	Options() {
-		logLevel                = DEFAULT_LOG_LEVEL;
-		startTimeout            = 90 * 1000;
-		environment             = P_STATIC_STRING("production");
-		baseURI                 = P_STATIC_STRING("/");
-		spawnMethod             = P_STATIC_STRING("smart");
-		defaultUser             = P_STATIC_STRING("nobody");
-		ruby                    = P_STATIC_STRING(DEFAULT_RUBY);
-		python                  = P_STATIC_STRING(DEFAULT_PYTHON);
-		nodejs                  = P_STATIC_STRING(DEFAULT_NODEJS);
-		rights                  = DEFAULT_BACKEND_ACCOUNT_RIGHTS;
-		debugger                = false;
-		loadShellEnvvars        = true;
-		analytics               = false;
-		raiseInternalError      = false;
+	Options()
+		: logLevel(DEFAULT_LOG_LEVEL),
+		  startTimeout(90 * 1000),
+		  environment(DEFAULT_APP_ENV, sizeof(DEFAULT_APP_ENV) - 1),
+		  baseURI("/", 1),
+		  spawnMethod("smart", sizeof("smart") - 1),
+		  defaultUser("nobody", sizeof("nobody") - 1),
+		  ruby(DEFAULT_RUBY, sizeof(DEFAULT_RUBY) - 1),
+		  python(DEFAULT_PYTHON, sizeof(DEFAULT_PYTHON) - 1),
+		  nodejs(DEFAULT_NODEJS, sizeof(DEFAULT_NODEJS) - 1),
+		  rights(DEFAULT_BACKEND_ACCOUNT_RIGHTS),
+		  debugger(false),
+		  loadShellEnvvars(true),
+		  analytics(false),
+		  raiseInternalError(false),
 
-		minProcesses            = 1;
-		maxProcesses            = 0;
-		maxPreloaderIdleTime    = -1;
-		maxOutOfBandWorkInstances = 1;
-		maxRequestQueueSize     = 100;
+		  minProcesses(1),
+		  maxProcesses(0),
+		  maxPreloaderIdleTime(-1),
+		  maxOutOfBandWorkInstances(1),
+		  maxRequestQueueSize(100),
 
-		stickySessionId         = 0;
-		statThrottleRate        = 0;
-		maxRequests             = 0;
-		noop                    = false;
-
+		  stickySessionId(0),
+		  statThrottleRate(DEFAULT_STAT_THROTTLE_RATE),
+		  maxRequests(0),
+		  currentTime(0),
+		  noop(false)
+		  /*********************************/
+	{
 		/*********************************/
 
 		concurrencyModel   = "process";
@@ -505,10 +516,6 @@ public:
 		for (i = 0; i < otherStrings.size(); i++) {
 			otherLen += otherStrings[i]->size() + 1;
 		}
-		for (i = 0; i < other.environmentVariables.size(); i++) {
-			otherLen += environmentVariables[i].first.size() + 1;
-			otherLen += environmentVariables[i].second.size() + 1;
-		}
 
 		shared_array<char> data(new char[otherLen]);
 		end = data.get();
@@ -530,28 +537,6 @@ public:
 			*str = StaticString(pos, end - pos - 1);
 		}
 
-		// Copy environmentVariables names and values into the internal storage area.
-		for (i = 0; i < other.environmentVariables.size(); i++) {
-			const pair<StaticString, StaticString> &p = other.environmentVariables[i];
-
-			environmentVariables[i] = make_pair(
-				StaticString(end, p.first.size()),
-				StaticString(end + p.first.size() + 1, p.second.size())
-			);
-
-			// Copy over string data.
-			memcpy(end, p.first.data(), p.first.size());
-			end += p.first.size();
-			*end = '\0';
-			end++;
-
-			// Copy over value data.
-			memcpy(end, p.second.data(), p.second.size());
-			end += p.second.size();
-			*end = '\0';
-			end++;
-		}
-
 		storage = data;
 
 		return *this;
@@ -561,6 +546,7 @@ public:
 		hostName = StaticString();
 		uri      = StaticString();
 		stickySessionId = 0;
+		currentTime     = 0;
 		noop     = false;
 		return detachFromUnionStationTransaction();
 	}
@@ -663,9 +649,7 @@ public:
 	}
 
 	string getStartCommand(const ResourceLocator &resourceLocator) const {
-		if (appType == P_STATIC_STRING("classic-rails")) {
-			return ruby + "\t" + resourceLocator.getHelperScriptsDir() + "/classic-rails-loader.rb";
-		} else if (appType == P_STATIC_STRING("rack")) {
+		if (appType == P_STATIC_STRING("rack")) {
 			return ruby + "\t" + resourceLocator.getHelperScriptsDir() + "/rack-loader.rb";
 		} else if (appType == P_STATIC_STRING("wsgi")) {
 			return python + "\t" + resourceLocator.getHelperScriptsDir() + "/wsgi-loader.py";

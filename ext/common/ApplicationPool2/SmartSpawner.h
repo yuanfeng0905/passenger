@@ -1,6 +1,6 @@
 /*
  *  Phusion Passenger - https://www.phusionpassenger.com/
- *  Copyright (c) 2011-2013 Phusion
+ *  Copyright (c) 2011-2014 Phusion
  *
  *  "Phusion Passenger" is a trademark of Hongli Lai & Ninh Bui.
  *
@@ -83,7 +83,7 @@ private:
 	vector<string> createRealPreloaderCommand(const Options &options,
 		shared_array<const char *> &args)
 	{
-		string agentsDir = config->resourceLocator.getAgentsDir();
+		string agentsDir = config->resourceLocator->getAgentsDir();
 		vector<string> command;
 
 		if (shouldLoadShellEnvvars(options, preparation)) {
@@ -315,15 +315,19 @@ private:
 	void sendStartupRequest(StartupDetails &details) {
 		TRACE_POINT();
 		try {
+			const size_t UNIX_PATH_MAX = sizeof(((struct sockaddr_un *) 0)->sun_path);
 			string data = "You have control 1.0\n"
-				"passenger_root: " + config->resourceLocator.getRoot() + "\n"
-				"ruby_libdir: " + config->resourceLocator.getRubyLibDir() + "\n"
+				"passenger_root: " + config->resourceLocator->getRoot() + "\n"
+				"ruby_libdir: " + config->resourceLocator->getRubyLibDir() + "\n"
 				"passenger_version: " PASSENGER_VERSION "\n"
-				"generation_dir: " + generation->getPath() + "\n";
+				"UNIX_PATH_MAX: " + toString(UNIX_PATH_MAX) + "\n";
+			if (!config->instanceDir.empty()) {
+				data.append("socket_dir: " + config->instanceDir + "/apps.s\n");
+			}
 
 			vector<string> args;
 			vector<string>::const_iterator it, end;
-			details.options->toVector(args, config->resourceLocator, Options::SPAWN_OPTIONS);
+			details.options->toVector(args, *config->resourceLocator, Options::SPAWN_OPTIONS);
 			for (it = args.begin(); it != args.end(); it++) {
 				const string &key = *it;
 				it++;
@@ -605,7 +609,7 @@ private:
 		vector<string>::const_iterator it;
 
 		writeExact(fd, "spawn\n", &timeout);
-		options.toVector(args, config->resourceLocator, Options::SPAWN_OPTIONS);
+		options.toVector(args, *config->resourceLocator, Options::SPAWN_OPTIONS);
 		for (it = args.begin(); it != args.end(); it++) {
 			const string &key = *it;
 			it++;
@@ -687,8 +691,7 @@ protected:
 	}
 
 public:
-	SmartSpawner(const ServerInstanceDir::GenerationPtr &_generation,
-		const vector<string> &_preloaderCommand,
+	SmartSpawner(const vector<string> &_preloaderCommand,
 		const Options &_options,
 		const SpawnerConfigPtr &_config)
 		: Spawner(_config),
@@ -698,7 +701,6 @@ public:
 			throw ArgumentException("preloaderCommand must have at least 2 elements");
 		}
 
-		generation = _generation;
 		options    = _options.copyAndPersist().detachFromUnionStationTransaction();
 		pid        = -1;
 		m_lastUsed = SystemTime::getUsec();
@@ -709,7 +711,7 @@ public:
 		stopPreloader();
 	}
 
-	virtual ProcessPtr spawn(const Options &options) {
+	virtual SpawnObject spawn(const Options &options) {
 		TRACE_POINT();
 		assert(options.appType == this->options.appType);
 		assert(options.appRoot == this->options.appRoot);
@@ -747,10 +749,10 @@ public:
 		details.adminSocket = result.adminSocket;
 		details.io = result.io;
 		details.options = &options;
-		ProcessPtr process = negotiateSpawn(details);
+		SpawnObject object = negotiateSpawn(details);
 		P_DEBUG("Process spawning done: appRoot=" << options.appRoot <<
-			", pid=" << process->pid);
-		return process;
+			", pid=" << object.process->pid);
+		return object;
 	}
 
 	virtual bool cleanable() const {

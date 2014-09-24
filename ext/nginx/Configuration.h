@@ -34,10 +34,13 @@
 typedef struct {
     ngx_http_upstream_conf_t upstream_config;
     ngx_array_t *flushes;
-    ngx_array_t *vars_len;
-    ngx_array_t *vars;
-    /** Raw SCGI header data for this location is cached here. */
+    ngx_array_t *headers_set_len;
+    ngx_array_t *headers_set;
+    ngx_hash_t   headers_set_hash;
+
+    /** Raw HTTP header data for this location are cached here. */
     ngx_str_t    options_cache;
+    ngx_str_t    env_vars_cache;
 
     #include "ConfigurationFields.h"
 
@@ -54,10 +57,13 @@ typedef struct {
     ngx_str_t    default_ruby;
     ngx_int_t    log_level;
     ngx_str_t    debug_log_file;
-    ngx_str_t    temp_dir;
+    ngx_str_t    data_buffer_dir;
+    ngx_str_t    instance_registry_dir;
     ngx_flag_t   abort_on_startup_error;
     ngx_uint_t   max_pool_size;
     ngx_uint_t   pool_idle_time;
+    ngx_uint_t   stat_throttle_rate;
+    ngx_flag_t   show_version_in_header;
     ngx_flag_t   user_switching;
     ngx_str_t    default_user;
     ngx_str_t    default_group;

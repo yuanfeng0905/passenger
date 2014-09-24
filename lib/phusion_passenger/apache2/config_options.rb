@@ -1,5 +1,5 @@
 #  Phusion Passenger - https://www.phusionpassenger.com/
-#  Copyright (c) 2013 Phusion
+#  Copyright (c) 2014 Phusion
 #
 #  "Phusion Passenger" is a trademark of Hongli Lai & Ninh Bui.
 #
@@ -8,16 +8,16 @@
 # This file defines all supported Apache per-directory configuration options. The
 # build system automatically generates the corresponding Apache module boilerplate
 # code from the definitions in this file.
-# 
+#
 # Main configuration options are not defined in this file, but are defined in
 # ext/apache2/Configuraion.cpp instead.
-# 
+#
 # The following boilerplate code is generated:
-# 
+#
 #  * command_rec array members (ConfigurationCommands.cpp.erb)
-# 
+#
 # Options:
-# 
+#
 #  * name - The configuration option name. Required.
 #  * context - The context in which this configuration option is valid.
 #              Defaults to ["OR_OPTIONS", "ACCESS_CONF", "RSRC_CONF"]
@@ -32,6 +32,9 @@
 #             Setting this to nil will disable auto-generation of CGI header
 #             generation code. You are then responsible for writing CGI header
 #             passing code yourself in Hooks.cpp.
+#  * header_expression - The expression to be passed to `addHeader()`.
+#  * function - If nil, a setter function will be automatically generated. If
+#               non-nil, must be the name of the setter function.
 
 APACHE2_DIRECTORY_CONFIGURATION_OPTIONS = [
 	{
@@ -54,18 +57,6 @@ APACHE2_DIRECTORY_CONFIGURATION_OPTIONS = [
 		:name => "PassengerAppEnv",
 		:type => :string,
 		:desc => "The environment under which applications are run."
-	},
-	{
-		:name => "RailsEnv",
-		:type => :string,
-		:desc => "The environment under which applications are run.",
-		:alias_for => "PassengerAppEnv"
-	},
-	{
-		:name => "RackEnv",
-		:type => :string,
-		:desc => "The environment under which applications are run.",
-		:alias_for => "PassengerAppEnv"
 	},
 	{
 		:name => "PassengerMinInstances",
@@ -130,11 +121,18 @@ APACHE2_DIRECTORY_CONFIGURATION_OPTIONS = [
 		:header  => nil
 	},
 	{
-		:name => "PassengerMaxRequestQueueSize",
-		:type => :integer,
+		:name      => "PassengerMaxRequestQueueSize",
+		:type      => :integer,
 		:min_value => 0,
-		:context => ["OR_ALL"],
-		:desc => "The maximum number of queued requests."
+		:context   => ["OR_ALL"],
+		:desc      => "The maximum number of queued requests."
+	},
+	{
+		:name      => "PassengerMaxPreloaderIdleTime",
+		:type      => :integer,
+		:min_value => 0,
+		:context   => ["RSRC_CONF"],
+		:desc      => "The maximum number of seconds that a preloader process may be idle before it is shutdown."
 	},
 	{
 		:name => "PassengerLoadShellEnvvars",
@@ -172,5 +170,57 @@ APACHE2_DIRECTORY_CONFIGURATION_OPTIONS = [
 		:type    => :flag,
 		:context => ["OR_ALL"],
 		:desc    => "The cookie name to use for sticky sessions."
+	},
+	{
+		:name     => "PassengerSpawnMethod",
+		:type     => :string,
+		:context  => ["RSRC_CONF"],
+		:desc     => "The spawn method to use.",
+		:function => "cmd_passenger_spawn_method"
+	},
+	{
+		:name     => "PassengerShowVersionInHeader",
+		:type     => :flag,
+		:desc     => "Whether to show the Phusion Passenger version number in the X-Powered-By header."
+	},
+	{
+		:name     => "PassengerFriendlyErrorPages",
+		:type     => :flag,
+		:desc     => "Whether to display friendly error pages when something goes wrong."
+	},
+	{
+		:name     => "PassengerRestartDir",
+		:type     => :string,
+		:desc     => "The directory in which Passenger should look for restart.txt."
+	},
+	{
+		:name     => "PassengerAppGroupName",
+		:type     => :string,
+		:desc     => "Application process group name."
+	},
+
+	##### Aliases #####
+
+	{
+		:name => "RailsEnv",
+		:type => :string,
+		:desc => "The environment under which applications are run.",
+		:alias_for => "PassengerAppEnv"
+	},
+	{
+		:name => "RackEnv",
+		:type => :string,
+		:desc => "The environment under which applications are run.",
+		:alias_for => "PassengerAppEnv"
+	},
+
+	##### Deprecated options #####
+
+	{
+		:name      => "RailsSpawnMethod",
+		:type      => :string,
+		:context   => ["RSRC_CONF"],
+		:desc      => "Deprecated option.",
+		:alias_for => "PassengerSpawnMethod"
 	}
 ]

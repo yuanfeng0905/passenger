@@ -19,7 +19,7 @@
 
 #include "../tut/tut.h"
 #include <ResourceLocator.h>
-#include <ServerInstanceDir.h>
+#include <InstanceDirectory.h>
 #include <BackgroundEventLoop.h>
 #include <Exceptions.h>
 #include <Utils.h>
@@ -101,11 +101,12 @@ extern Json::Value testConfig;
 
 
 /**
- * Create a server instance directory and generation with default parameters,
- * suitable for unit testing.
+ * Create an instance directory with default parameters, suitable for unit testing.
  */
-void createServerInstanceDirAndGeneration(ServerInstanceDirPtr &serverInstanceDir,
-                                          ServerInstanceDir::GenerationPtr &generation);
+void createInstanceDir(InstanceDirectoryPtr &instanceDir);
+
+void initializeLibeio();
+void shutdownLibeio();
 
 /**
  * Writes zeroes into the given file descriptor its buffer is full (i.e.
@@ -176,7 +177,7 @@ public:
 		}
 		ignoreRemoveErrors = _ignoreRemoveErrors;
 	}
-	
+
 	~TempDir() {
 		if (ignoreRemoveErrors) {
 			try {
@@ -202,7 +203,7 @@ public:
 	TempDirCopy(const string &source, const string &dest) {
 		dir = dest;
 		removeDirTree(dest);
-		
+
 		char command[1024];
 		snprintf(command, sizeof(command), "cp -pR \"%s\" \"%s\"",
 			source.c_str(), dest.c_str());
@@ -220,7 +221,7 @@ public:
 			waitpid(pid, NULL, 0);
 		}
 	}
-	
+
 	~TempDirCopy() {
 		removeDirTree(dir);
 	}
@@ -240,7 +241,7 @@ public:
 			unlink(filename.c_str());
 		}
 	}
-	
+
 	~DeleteFileEventually() {
 		unlink(filename.c_str());
 	}
@@ -254,13 +255,22 @@ public:
 class TempThread {
 public:
 	oxt::thread thread;
-	
+	bool joined;
+
 	TempThread(boost::function<void ()> func)
-		: thread(boost::bind(runAndPrintExceptions, func, true))
+		: thread(boost::bind(runAndPrintExceptions, func, true)),
+		  joined(false)
 		{ }
-	
+
 	~TempThread() {
-		thread.interrupt_and_join();
+		if (!joined) {
+			thread.interrupt_and_join();
+		}
+	}
+
+	void join() {
+		thread.join();
+		joined = true;
 	}
 };
 
@@ -273,43 +283,43 @@ public:
 	AtomicInt() {
 		val = 0;
 	}
-	
+
 	AtomicInt(int value) {
 		val = value;
 	}
-	
+
 	AtomicInt(const AtomicInt &other) {
 		val = other.val;
 	}
-	
+
 	int get() const {
 		boost::lock_guard<boost::mutex> l(lock);
 		return val;
 	}
-	
+
 	void set(int value) {
 		boost::lock_guard<boost::mutex> l(lock);
 		val = value;
 	}
-	
+
 	AtomicInt &operator=(int value) {
 		set(value);
 		return *this;
 	}
-	
+
 	AtomicInt &operator++() {
 		boost::lock_guard<boost::mutex> l(lock);
 		val++;
 		return *this;
 	}
-	
+
 	AtomicInt operator++(int) {
 		boost::lock_guard<boost::mutex> l(lock);
 		AtomicInt temp(*this);
 		val++;
 		return temp;
 	}
-	
+
 	operator int() const {
 		return get();
 	}

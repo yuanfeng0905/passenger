@@ -42,7 +42,6 @@ require 'phusion_passenger'
 PhusionPassenger.locate_directories
 PhusionPassenger.require_passenger_lib 'debug_logging'
 PhusionPassenger.require_passenger_lib 'utils'
-PhusionPassenger.require_passenger_lib 'utils/tmpdir'
 require 'support/test_helper'
 
 include TestHelper
@@ -103,21 +102,14 @@ DEADLINE_TIMER = DeadlineTimer.new(Thread.current, 30)
 RSpec.configure do |config|
 	config.before(:each) do
 		# Suppress warning messages.
-		PhusionPassenger::DebugLogging.log_level = -1
+		PhusionPassenger::DebugLogging.log_level = PhusionPassenger::LVL_CRIT
 		PhusionPassenger::DebugLogging.log_file = nil
 		PhusionPassenger::DebugLogging.stderr_evaluator = nil
-		
-		# Create the temp directory.
-		PhusionPassenger::Utils.passenger_tmpdir
 
 		DEADLINE_TIMER.start
 	end
-	
+
 	config.after(:each) do
-		tmpdir = PhusionPassenger::Utils.passenger_tmpdir(false)
-		if File.exist?(tmpdir)
-			remove_dir_tree(tmpdir)
-		end
 		DEADLINE_TIMER.stop
 	end
 end

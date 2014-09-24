@@ -1,10 +1,14 @@
 #include "TestSupport.h"
+#include "../support/valgrind.h"
+#include <oxt/backtrace.hpp>
+#include <sys/types.h>
 #include <dirent.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <pwd.h>
 #include <grp.h>
 #include <cassert>
+#include <eio.h>
 #include <BackgroundEventLoop.cpp>
 #include <Utils/IOUtils.h>
 #include <Utils/ScopeGuard.h>
@@ -16,25 +20,57 @@ ResourceLocator *resourceLocator = NULL;
 Json::Value testConfig;
 
 
-void createServerInstanceDirAndGeneration(ServerInstanceDirPtr &serverInstanceDir,
-                                          ServerInstanceDir::GenerationPtr &generation)
-{
-	string path = "/tmp/passenger-test." + toString(getpid());
-	serverInstanceDir.reset(new ServerInstanceDir(path));
-	generation = serverInstanceDir->newGeneration(geteuid() == 0,
-		"nobody", getPrimaryGroupName("nobody"),
-		geteuid(), getegid());
+void
+createInstanceDir(InstanceDirectoryPtr &instanceDir) {
+	InstanceDirectory::CreationOptions options;
+	struct passwd *pwUser;
+
+	pwUser = getpwnam("nobody");
+	options.prefix = "passenger-test";
+	options.userSwitching = geteuid() == 0;
+	options.defaultUid = pwUser->pw_uid;
+	options.defaultGid = pwUser->pw_gid;
+	instanceDir = make_shared<InstanceDirectory>(options);
+}
+
+static int
+doNothing(eio_req *req) {
+	return 0;
+}
+
+void
+initializeLibeio() {
+	eio_set_idle_timeout(1);
+	eio_set_min_parallel(0);
+	eio_set_max_parallel(1);
+	eio_set_max_idle(0);
+	if (RUNNING_ON_VALGRIND) {
+		// Start an EIO thread to warm up Valgrind.
+		eio_nop(0, doNothing, NULL);
+	}
+}
+
+void
+shutdownLibeio() {
+	// For some reason, eio_nreqs() and eio_npending() never reach 0.
+	// We're probably not shutting down libeio correctly.
+	// As a workaround, we wait for 20 ms after deinitializing.
+	while (eio_nready() > 0) {
+		usleep(10000);
+	}
+	eio_deinit();
+	usleep(20000);
 }
 
 void
 writeUntilFull(int fd) {
 	int flags, ret;
 	char buf[1024];
-	
+
 	memset(buf, 0, sizeof(buf));
 	flags = fcntl(fd, F_GETFL);
 	fcntl(fd, F_SETFL, flags | O_NONBLOCK);
-	
+
 	while (true) {
 		ret = write(fd, buf, sizeof(buf));
 		if (ret == -1) {
@@ -68,7 +104,7 @@ writeUntilFull(int fd) {
 			}
 		}
 	}
-	
+
 	fcntl(fd, F_SETFL, flags);
 }
 
@@ -121,7 +157,7 @@ touchFile(const char *filename, time_t timestamp) {
 		message.append("'");
 		throw FileSystemException(message, e, filename);
 	}
-	
+
 	if (timestamp != (time_t) -1) {
 		struct utimbuf times;
 		times.actime = timestamp;
@@ -135,7 +171,7 @@ listDir(const string &path) {
 	vector<string> result;
 	DIR *d = opendir(path.c_str());
 	struct dirent *ent;
-	
+
 	if (d == NULL) {
 		int e = errno;
 		throw FileSystemException("Cannot open directory " + path,
@@ -155,7 +191,7 @@ string
 getPrimaryGroupName(const string &username) {
 	struct passwd *user;
 	struct group  *group;
-	
+
 	user = getpwnam(username.c_str());
 	if (user == NULL) {
 		throw RuntimeException(string("User '") + username + "' does not exist.");
@@ -164,7 +200,7 @@ getPrimaryGroupName(const string &username) {
 	if (group == NULL) {
 		throw RuntimeException(string("Primary group for user '") + username + "' does not exist.");
 	}
-	
+
 	return group->gr_name;
 }
 

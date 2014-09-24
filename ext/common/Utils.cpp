@@ -1,6 +1,6 @@
 /*
  *  Phusion Passenger - https://www.phusionpassenger.com/
- *  Copyright (c) 2010-2013 Phusion
+ *  Copyright (c) 2010-2014 Phusion
  *
  *  "Phusion Passenger" is a trademark of Hongli Lai & Ninh Bui.
  *
@@ -44,7 +44,6 @@
 #include <Utils/CachedFileStat.hpp>
 #include <Utils/StrIntUtils.h>
 #include <Utils/IOUtils.h>
-#include <Utils/HttpHeaderBufferer.h>
 
 #ifndef HOST_NAME_MAX
 	#if defined(_POSIX_HOST_NAME_MAX)
@@ -64,7 +63,6 @@
 namespace Passenger {
 
 static string passengerTempDir;
-HttpHeaderBufferer::StaticData HttpHeaderBufferer::staticData;
 
 namespace {
 	/**
@@ -97,16 +95,24 @@ namespace {
 }
 
 bool
-fileExists(const StaticString &filename, CachedFileStat *cstat, unsigned int throttleRate) {
-	return getFileType(filename, cstat, throttleRate) == FT_REGULAR;
+fileExists(const StaticString &filename, CachedFileStat *cstat, boost::mutex *cstatMutex,
+	unsigned int throttleRate)
+{
+	return getFileType(filename, cstat, cstatMutex, throttleRate) == FT_REGULAR;
 }
 
 FileType
-getFileType(const StaticString &filename, CachedFileStat *cstat, unsigned int throttleRate) {
+getFileType(const StaticString &filename, CachedFileStat *cstat, boost::mutex *cstatMutex,
+	unsigned int throttleRate)
+{
 	struct stat buf;
 	int ret;
 
 	if (cstat != NULL) {
+		boost::unique_lock<boost::mutex> l;
+		if (cstatMutex != NULL) {
+			l = boost::unique_lock<boost::mutex>(*cstatMutex);
+		}
 		ret = cstat->stat(filename, &buf, throttleRate);
 	} else {
 		ret = stat(filename.c_str(), &buf);
@@ -635,12 +641,9 @@ absolutizePath(const StaticString &path, const StaticString &workingDir) {
 
 const char *
 getSystemTempDir() {
-	const char *temp_dir = getenv("PASSENGER_TEMP_DIR");
+	const char *temp_dir = getenv("TMPDIR");
 	if (temp_dir == NULL || *temp_dir == '\0') {
-		temp_dir = getenv("PASSENGER_TMPDIR");
-		if (temp_dir == NULL || *temp_dir == '\0') {
-			temp_dir = "/tmp";
-		}
+		temp_dir = "/tmp";
 	}
 	return temp_dir;
 }

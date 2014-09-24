@@ -1,6 +1,6 @@
 /*
  *  Phusion Passenger - https://www.phusionpassenger.com/
- *  Copyright (c) 2011 Phusion
+ *  Copyright (c) 2011-2014 Phusion
  *
  *  "Phusion Passenger" is a trademark of Hongli Lai & Ninh Bui.
  *
@@ -9,15 +9,17 @@
 #ifndef _PASSENGER_APPLICATION_POOL_SOCKET_H_
 #define _PASSENGER_APPLICATION_POOL_SOCKET_H_
 
-#include <string>
 #include <vector>
+#include <oxt/macros.hpp>
 #include <boost/thread.hpp>
 #include <boost/shared_ptr.hpp>
 #include <boost/weak_ptr.hpp>
 #include <climits>
 #include <cassert>
 #include <Logging.h>
-#include <Utils/PriorityQueue.h>
+#include <StaticString.h>
+#include <ApplicationPool2/Common.h>
+#include <Utils/SmallVector.h>
 #include <Utils/IOUtils.h>
 
 namespace Passenger {
@@ -27,18 +29,16 @@ using namespace std;
 using namespace boost;
 
 
-class Process;
-
 struct Connection {
 	int fd;
 	bool persistent: 1;
 	bool fail: 1;
 
-	Connection() {
-		fd = -1;
-		persistent = false;
-		fail = false;
-	}
+	Connection()
+		: fd(-1),
+		  persistent(false),
+		  fail(false)
+		{ }
 
 	void close() {
 		if (fd != -1) {
@@ -57,9 +57,9 @@ struct Connection {
 class Socket {
 private:
 	boost::mutex connectionPoolLock;
-	int totalConnections;
 	vector<Connection> idleConnections;
 
+	OXT_FORCE_INLINE
 	int connectionPoolLimit() const {
 		return concurrency;
 	}
@@ -68,20 +68,20 @@ private:
 		Connection connection;
 		P_TRACE(3, "Connecting to " << address);
 		connection.fd = connectToServer(address);
+		connection.fail = true;
+		connection.persistent = false;
 		return connection;
 	}
 
 public:
-	// Read-only.
-	string name;
-	string address;
-	string protocol;
+	// Socket properties. Read-only.
+	StaticString name;
+	StaticString address;
+	StaticString protocol;
 	int concurrency;
 
-	/** The handle inside the associated Process's 'sessionSockets' priority queue.
-	 * Guaranteed to be valid as long as the Process is alive.
-	 */
-	PriorityQueue<Socket>::Handle pqHandle;
+	// Private. In public section as alignment optimization.
+	int totalActiveConnections;
 
 	/** Invariant: sessions >= 0 */
 	int sessions;
@@ -90,34 +90,32 @@ public:
 		: concurrency(0)
 		{ }
 
-	Socket(const string &_name, const string &_address, const string &_protocol, int _concurrency)
-		: totalConnections(0),
-		  name(_name),
+	Socket(const StaticString &_name, const StaticString &_address, const StaticString &_protocol, int _concurrency)
+		: name(_name),
 		  address(_address),
 		  protocol(_protocol),
 		  concurrency(_concurrency),
+		  totalActiveConnections(0),
 		  sessions(0)
 		{ }
 
 	Socket(const Socket &other)
-		: totalConnections(other.totalConnections),
-		  idleConnections(other.idleConnections),
+		: idleConnections(other.idleConnections),
 		  name(other.name),
 		  address(other.address),
 		  protocol(other.protocol),
 		  concurrency(other.concurrency),
-		  pqHandle(other.pqHandle),
+		  totalActiveConnections(other.totalActiveConnections),
 		  sessions(other.sessions)
 		{ }
 
 	Socket &operator=(const Socket &other) {
-		totalConnections = other.totalConnections;
+		totalActiveConnections = other.totalActiveConnections;
 		idleConnections = other.idleConnections;
 		name = other.name;
 		address = other.address;
 		protocol = other.protocol;
 		concurrency = other.concurrency;
-		pqHandle = other.pqHandle;
 		sessions = other.sessions;
 		return *this;
 	}
@@ -129,36 +127,43 @@ public:
 	 * Failure to do so will result in a resource leak.
 	 */
 	Connection checkoutConnection() {
-		boost::lock_guard<boost::mutex> l(connectionPoolLock);
+		boost::unique_lock<boost::mutex> l(connectionPoolLock);
 
 		if (!idleConnections.empty()) {
+			P_TRACE(3, "Socket " << address << ": checking out connection from connection pool (" <<
+				idleConnections.size() << " -> " << (idleConnections.size() - 1) <<
+				" items). Current active connections: " << totalActiveConnections);
 			Connection connection = idleConnections.back();
 			idleConnections.pop_back();
 			return connection;
-		} else if (totalConnections < connectionPoolLimit()) {
+		} else if (totalActiveConnections < connectionPoolLimit()) {
 			Connection connection = connect();
-			connection.persistent = true;
-			totalConnections++;
+			totalActiveConnections++;
+			P_TRACE(3, "Socket " << address << ": there are now " <<
+				totalActiveConnections << " active connections");
+			l.unlock();
 			return connection;
 		} else {
+			l.unlock();
 			return connect();
 		}
 	}
 
-	void checkinConnection(Connection connection) {
+	void checkinConnection(Connection &connection) {
 		boost::unique_lock<boost::mutex> l(connectionPoolLock);
 
-		if (connection.persistent) {
-			if (connection.fail) {
-				totalConnections--;
-				l.unlock();
-				connection.close();
-			} else {
-				idleConnections.push_back(connection);
-			}
-		} else {
+		if (connection.fail || !connection.persistent) {
+			totalActiveConnections--;
+			P_TRACE(3, "Socket " << address << ": connection not checked back into "
+				"connection pool. There are now " << totalActiveConnections <<
+				" active connections");
 			l.unlock();
 			connection.close();
+		} else {
+			P_TRACE(3, "Socket " << address << ": checking in connection into connection pool (" <<
+				idleConnections.size() << " -> " << (idleConnections.size() + 1) <<
+				" items). Current active connections: " << totalActiveConnections);
+			idleConnections.push_back(connection);
 		}
 	}
 
@@ -192,11 +197,17 @@ public:
 	bool isTotallyBusy() const {
 		return concurrency != 0 && sessions >= concurrency;
 	}
+
+	void recreateStrings(psg_pool_t *newPool) {
+		recreateString(newPool, name);
+		recreateString(newPool, address);
+		recreateString(newPool, protocol);
+	}
 };
 
-class SocketList: public vector<Socket> {
+class SocketList: public SmallVector<Socket, 1> {
 public:
-	void add(const string &name, const string &address, const string &protocol, int concurrency) {
+	void add(const StaticString &name, const StaticString &address, const StaticString &protocol, int concurrency) {
 		push_back(Socket(name, address, protocol, concurrency));
 	}
 
