@@ -46,6 +46,7 @@
 #include <boost/shared_array.hpp>
 #include <boost/bind.hpp>
 #include <boost/foreach.hpp>
+#include <boost/move/move.hpp>
 #include <oxt/system_calls.hpp>
 #include <oxt/backtrace.hpp>
 #include <sys/types.h>
@@ -526,7 +527,7 @@ private:
 			sockets, creationTime, details.spawnStartTime);
 		result.process->codeRevision = psg_pstrdup(result.pool,
 			details.preparation->codeRevision);
-		return result;
+		return boost::move(result);
 	}
 
 protected:

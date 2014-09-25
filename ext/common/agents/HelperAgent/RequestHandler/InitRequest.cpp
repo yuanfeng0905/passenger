@@ -312,7 +312,7 @@ createNewPoolOptions(Client *client, Request *req, const LString *appGroupName) 
 	fillPoolOption(req, options.concurrencyModel, "!~PASSENGER_CONCURRENCY_MODEL");
 	fillPoolOption(req, options.threadCount, "!~PASSENGER_THREAD_COUNT");
 
-	boost::shared_ptr<Options> optionsCopy = make_shared<Options>(options);
+	boost::shared_ptr<Options> optionsCopy = boost::make_shared<Options>(options);
 	optionsCopy->persist(options);
 	optionsCopy->clearPerRequestFields();
 	optionsCopy->detachFromUnionStationTransaction();
