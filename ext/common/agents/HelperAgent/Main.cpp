@@ -236,7 +236,9 @@ initializePrivilegedWorkingObjects() {
 	WorkingObjects *wo = workingObjects = new WorkingObjects();
 
 	wo->password = options.get("server_password", false);
-	if (wo->password.empty() && options.has("server_password_file")) {
+	if (wo->password == "-") {
+		wo->password.clear();
+	} else if (wo->password.empty() && options.has("server_password_file")) {
 		wo->password = strip(readAll(options.get("server_password_file")));
 	}
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env ruby
 #  Phusion Passenger - https://www.phusionpassenger.com/
-#  Copyright (c) 2013 Phusion
+#  Copyright (c) 2013-2014 Phusion
 #
 #  "Phusion Passenger" is a trademark of Hongli Lai & Ninh Bui.
 #
@@ -14,6 +14,7 @@ PhusionPassenger.locate_directories
 require 'optparse'
 require 'socket'
 require 'logger'
+require 'base64'
 require 'phusion_passenger/constants'
 require 'phusion_passenger/message_channel'
 require 'phusion_passenger/message_client'
@@ -56,7 +57,8 @@ class FlyingPassenger
 		maybe_daemonize
 		maybe_write_pidfile
 		spawn
-		@logger.info("Flying Passenger up and listening on #{@watchdog_options[:request_socket_link]}!")
+		socket_filename = Base64.decode64(@watchdog_options[:server_addresses])
+		@logger.info("Flying Passenger up and listening on #{socket_filename}!")
 		return nil
 	rescue Exit => e
 		return e.code
@@ -102,7 +104,7 @@ private
 			
 			opts.separator "Options:"
 			opts.on("--socket-file FILENAME", String, "The socket to listen on") do |val|
-				@watchdog_options[:request_socket_link] = val
+				@watchdog_options[:server_addresses] = Base64.encode64("unix:#{val}")
 			end
 			opts.on("--daemonize", "Daemonize into background") do
 				@options[:daemonize] = true
@@ -126,8 +128,11 @@ private
 			opts.on("--max-preloader-idle-time SECONDS", Integer, "Max preloader idle time") do |val|
 				@watchdog_options[:max_preloader_idle_time] = val
 			end
-			opts.on("--temp-dir PATH", String, "Directory to store the server instance dir in") do |val|
-				@watchdog_options[:temp_dir] = val
+			opts.on("--instance-registry-dir PATH", String, "Use the given instance registry directory") do |val|
+				@watchdog_options[:instance_registry] = val
+			end
+			opts.on("--data-buffer-dir PATH", String, "Use the given data buffer directory") do |val|
+				@watchdog_options[:data_buffer_dir] = val
 			end
 			opts.on("--help", "Show this help message") do
 				@options[:help] = true
@@ -147,7 +152,7 @@ private
 			exit 0
 		end
 
-		if !@watchdog_options[:request_socket_link]
+		if !@watchdog_options[:server_addresses]
 			STDERR.puts "You didn't specify a socket filename. Please set --socket-file."
 			exit 1
 		end
@@ -170,23 +175,31 @@ private
 		else
 			@logger = Logger.new(STDERR)
 		end
-		if @watchdog_options[:log_level] <= 0
+		case @watchdog_options[:log_level]
+		when LVL_ERROR
+			@logger.level = Logger::ERROR
+		when LVL_WARN
+			@logger.level = Logger::WARN
+		when LVL_NOTICE, LVL_INFO
 			@logger.level = Logger::INFO
 		else
-			@logger.level = Logger::DEBUG
+			if @watchdog_options[:log_level] <= LVL_CRIT
+				@logger.level = Logger::FATAL
+			else
+				@logger.level = Logger::DEBUG
+			end
 		end
 		@logger.info("Welcome to Flying Passenger #{PhusionPassenger::VERSION_STRING}")
 	end
 
 	def create_arguments
 		args = {
-			"web_server_type" => "nginx",
-			"web_server_pid"  => $$.to_s,
-			"web_server_passenger_version" => PhusionPassenger::VERSION_STRING,
+			"server_software" => "Flying Passenger #{PhusionPassenger::VERSION_STRING}",
 			"passenger_root"  => PhusionPassenger.source_root,
 			"ruby" => PlatformInfo.ruby_command,
 			"setsid" => "true",
-			"request_socket_password" => "-"
+			"server_password" => "-",
+			"multi_app" => "true"
 		}
 		@watchdog_options.each_pair do |name, val|
 			args[name.to_s] = val.to_s
@@ -195,10 +208,10 @@ private
 	end
 
 	def spawn
-		args = ["#{PhusionPassenger.agents_dir}/PassengerWatchdog"]
-		#args.concat(create_arguments)
+		ENV['PASSENGER_USE_FEEDBACK_FD'] = '1'
+		args = ["#{PhusionPassenger.agents_dir}/PassengerAgent", "watchdog"]
 
-		@logger.info("Starting PassengerWatchdog...")
+		@logger.info("Starting PassengerAgent...")
 		a, b = UNIXSocket.pair
 		channel = MessageChannel.new(a)
 		args << {
@@ -215,24 +228,24 @@ private
 			raise SpawnError, e.message
 		end
 		b.close
-		@logger.info("PassengerWatchdog started on PID #{pid}")
+		@logger.info("PassengerAgent started on PID #{pid}")
 		
-		@logger.debug { "Sending arguments to PassengerWatchdog: " + create_arguments.inspect }
+		@logger.debug { "Sending arguments to PassengerAgent: " + create_arguments.inspect }
 		channel.write("VariantMap", *create_arguments)
 		result = channel.read
 		result_name, *result_args = result
-		@logger.debug { "PassengerWatchdog response: " + result.inspect }
+		@logger.debug { "PassengerAgent response: " + result.inspect }
 
 		case result_name
 		when "Agents information"
-			@logger.info("PassengerWatchdog initialized properly")
+			@logger.info("PassengerAgent initialized properly")
 		when "Watchdog startup error"
-			raise SpawnError, "Unable to start the Phusion Passenger watchdog " +
+			raise SpawnError, "Unable to start the Phusion Passenger agent " +
 				"because it encountered the following error during startup: " +
 				result_args[0]
 		else
 			a.close
-			raise SpawnError, "The Phusion Passenger watchdog sent an unknown feedback message: " +
+			raise SpawnError, "The Phusion Passenger agent sent an unknown feedback message: " +
 				result.inspect
 		end
 
@@ -300,34 +313,10 @@ private
 		return [a, thread]
 	end
 
-	def gracefully_shut_down_agent(address, username, password)
-		client = MessageClient.new(username, password, address)
-		client.write("exit")
-		result = client.read
-		if result && result[0] == "Passed security"
-			result = client.read
-			return result[0] == "exit command received"
-		else
-			return false
-		end
-	rescue SystemCallError, IOError
-		return false
-	end
-
 	def send_shutdown_signal
 		@logger.info("Performing clean shutdown")
-		clean_shutdown = gracefully_shut_down_agent(
-			@info["helper_agent_admin_socket_address"],
-			"_web_server",
-			@info["helper_agent_exit_password"])
-		clean_shutdown = clean_shutdown &&
-			gracefully_shut_down_agent(
-				@info["logging_socket_address"],
-				"logging",
-				@info["logging_socket_password"])
-		
 		begin
-			@pipe.write_nonblock(clean_shutdown ? 'c' : 'u')
+			@pipe.write_nonblock('c')
 			@pipe.close
 		rescue Errno::EAGAIN, Errno::EPIPE, Errno::ECONNRESET
 			# Ignore error, we don't care.
