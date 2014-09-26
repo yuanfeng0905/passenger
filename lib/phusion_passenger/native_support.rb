@@ -22,7 +22,7 @@ class NativeSupportLoader
 			load_from_home_dir
 		end
 	end
-	
+
 	def start
 		if ENV['PASSENGER_USE_RUBY_NATIVE_SUPPORT'] == '0'
 			STDERR.puts " --> Continuing without #{library_name}."
@@ -46,29 +46,29 @@ private
 			PlatformInfo.ruby_extension_binary_compatibility_id
 		end
 	end
-	
+
 	def libext
 		@libext ||= begin
 			PhusionPassenger.require_passenger_lib 'platform_info/operating_system'
 			PlatformInfo.library_extension
 		end
 	end
-	
+
 	def home
 		@home ||= begin
 			require 'etc' if !defined?(Etc)
 			home = Etc.getpwuid(Process.uid).dir
 		end
 	end
-	
+
 	def library_name
 		return "passenger_native_support.#{libext}"
 	end
-	
+
 	def extconf_rb
 		File.join(PhusionPassenger.ruby_extension_source_dir, "extconf.rb")
 	end
-	
+
 	def load_from_native_support_output_dir
 		# Quick workaround for people suffering from
 		# https://code.google.com/p/phusion-passenger/issues/detail?id=865
@@ -83,7 +83,7 @@ private
 			return false
 		end
 	end
-	
+
 	def load_from_buildout_dir
 		if PhusionPassenger.buildout_dir
 			begin
@@ -95,13 +95,13 @@ private
 			return false
 		end
 	end
-	
+
 	def load_from_load_path
 		return load_native_extension('passenger_native_support')
 	rescue LoadError
 		return false
 	end
-	
+
 	def load_from_home_dir
 		begin
 			return load_native_extension("#{home}/#{USER_NAMESPACE_DIRNAME}/native_support/#{VERSION_STRING}/#{archdir}/#{library_name}")
@@ -121,7 +121,7 @@ private
 
 		STDERR.puts " --> Downloading precompiled #{library_name} for the current Ruby interpreter..."
 		STDERR.puts "     (set PASSENGER_DOWNLOAD_NATIVE_SUPPORT_BINARY=0 to disable)"
-		
+
 		require 'logger'
 		PhusionPassenger.require_passenger_lib 'platform_info/ruby'
 		PhusionPassenger.require_passenger_lib 'utils/tmpio'
@@ -201,7 +201,7 @@ private
 		require 'fileutils'
 		PhusionPassenger.require_passenger_lib 'utils/shellwords'
 		PhusionPassenger.require_passenger_lib 'platform_info/ruby'
-		
+
 		target_dir = compile(installation_target_dirs)
 		if target_dir
 			return load_native_extension("#{target_dir}/#{library_name}")
@@ -250,7 +250,7 @@ private
 		)
 		return PhusionPassenger::Utils::Download.download(url, filename, real_options)
 	end
-	
+
 	def log(message, options = {})
 		if logger = options[:logger]
 			logger.puts(message)
@@ -266,7 +266,7 @@ private
 		rescue Errno::EEXIST
 		end
 	end
-	
+
 	def sh(command_string)
 		if !sh_nonfatal(command_string)
 			raise "Could not compile #{library_name} (\"#{command_string}\" failed)"
@@ -287,7 +287,7 @@ private
 			end
 		end
 	end
-	
+
 	def compile(target_dirs)
 		logger = Utils::TmpIO.new('passenger_native_support',
 			:mode   => File::WRONLY | File::APPEND,

@@ -133,6 +133,8 @@ public:
 			return "ONEHUNDRED_CONTINUE";
 		case ERROR:
 			return "ERROR";
+		default:
+			return "UNKNOWN";
 		}
 	}
 
@@ -148,6 +150,8 @@ public:
 			return "RBT_UNTIL_EOF";
 		case RBT_CHUNKED:
 			return "CHUNKED";
+		default:
+			return "UNKNOWN";
 		}
 	}
 
@@ -163,6 +167,8 @@ public:
 			return aux.bodyInfo.endChunkReached;
 		case RBT_UNTIL_EOF:
 			return aux.bodyInfo.endReached;
+		default:
+			return false;
 		}
 	}
 
