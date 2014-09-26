@@ -1,5 +1,5 @@
 #  Phusion Passenger - https://www.phusionpassenger.com/
-#  Copyright (c) 2010-2013 Phusion
+#  Copyright (c) 2010-2014 Phusion
 #
 #  "Phusion Passenger" is a trademark of Hongli Lai & Ninh Bui.
 #
@@ -23,7 +23,7 @@ module Packaging
 		'ext/common/Constants.h',
 		'doc/Packaging.html'
 	] + ASCII_DOCS
-	
+
 	USER_EXECUTABLES = [
 		'passenger',
 		'passenger-install-apache2-module',
@@ -31,7 +31,7 @@ module Packaging
 		'passenger-config',
 		'flying-passenger'
 	]
-	
+
 	SUPER_USER_EXECUTABLES = [
 		'passenger-status',
 		'passenger-memory-stats',
@@ -49,7 +49,7 @@ module Packaging
 		'passenger-install-nginx-module',
 		'flying-passenger'
 	]
-	
+
 	# A list of globs which match all files that should be packaged
 	# in the Phusion Passenger gem or tarball.
 	GLOB = [
@@ -58,6 +58,8 @@ module Packaging
 		'.editorconfig',
 		'configure',
 		'Rakefile',
+		'Gemfile',
+		'Gemfile.lock',
 		'Vagrantfile',
 		'README.md',
 		'CONTRIBUTORS',
@@ -116,7 +118,7 @@ module Packaging
 		'test/stub/**/*',
 		'test/stub/**/.*'
 	]
-	
+
 	EXCLUDE_GLOB = [
 		'**/.DS_Store',
 		'packaging/*/.git',
@@ -133,7 +135,8 @@ module Packaging
 	# Files and directories that should be excluded from the Homebrew installation.
 	HOMEBREW_EXCLUDE = [
 		".gitignore", ".gitmodules", ".travis.yml", "package.json", "Vagrantfile",
-		"npm-shrinkwrap.json", "debian.template", "packaging", "dev", "test"
+		"npm-shrinkwrap.json", "Gemfile", "Gemfile.lock", "debian.template",
+		"packaging", "dev", "test"
 	]
 
 	def self.files
