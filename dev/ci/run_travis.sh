@@ -135,11 +135,24 @@ if [[ -f /persist/passenger-enterprise-license ]]; then
 	export CCACHE_DIR=/persist/ccache
 	export CCACHE_COMPRESS=1
 	export CCACHE_COMPRESS_LEVEL=3
-	run sudo apt-get install ccache
-fi
+	run mkdir -p "$CCACHE_DIR"
+	if [[ ! -e /usr/bin/ccache ]]; then
+		run sudo apt-get install ccache
+	fi
+elif [[ -e /host_cache ]]; then
+	echo "Using /host_cache/ccache as ccache directory"
+	export USE_CCACHE=1
+	export CCACHE_DIR=/host_cache/ccache
+	export CCACHE_COMPRESS=1
+	export CCACHE_COMPRESS_LEVEL=3
+	run mkdir -p "$CCACHE_DIR"
+	if [[ ! -e /usr/bin/ccache ]]; then
+		run sudo apt-get install ccache
+	fi
 
-if [[ "$MAGNUM" != "" ]]; then
-	run sudo sh -c "echo 127.0.0.1 magnum >> /etc/hosts"
+	echo "Using /host_cache/bundle as bundler directory"
+	export DEPS_TARGET=/host_cache/bundle
+	run mkdir -p "$DEPS_TARGET"
 fi
 
 run uname -a
