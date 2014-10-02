@@ -69,6 +69,8 @@ serverUsage() {
 	printf("                            (single-app mode only)\n");
 	printf("      --startup-file PATH   The path of the app's startup file, relative to\n");
 	printf("                            the app root directory (single-app mode only)\n");
+	printf("      --spawn-method NAME   Spawn method to use. Can either be 'smart' or\n");
+	printf("                            'direct'. Default: %s\n", DEFAULT_SPAWN_METHOD);
 	printf("\n");
 	printf("      --multi-app           Enable multi-app mode\n");
 	printf("\n");
@@ -81,6 +83,7 @@ serverUsage() {
 	printf("      --min-instances N     Minimum number of application processes. Default: 1\n");
 	printf("\n");
 	printf("Other options (optional):\n");
+	printf("      --log-file PATH       Log to the given file.\n");
 	printf("      --log-level LEVEL     Logging level. Default: %d\n", DEFAULT_LOG_LEVEL);
 	printf("      --stat-throttle-rate SECONDS\n");
 	printf("                            Throttle filesystem restart.txt checks to at most\n");
@@ -176,6 +179,9 @@ parseServerOption(int argc, const char *argv[], int &i, VariantMap &options) {
 	} else if (p.isValueFlag(argc, i, argv[i], '\0', "--startup-file")) {
 		options.set("startup_file", argv[i + 1]);
 		i += 2;
+	} else if (p.isValueFlag(argc, i, argv[i], '\0', "--spawn-method")) {
+		options.set("spawn_method", argv[i + 1]);
+		i += 2;
 	} else if (p.isFlag(argv[i], '\0', "--multi-app")) {
 		options.setBool("multi_app", true);
 		i++;
@@ -183,6 +189,11 @@ parseServerOption(int argc, const char *argv[], int &i, VariantMap &options) {
 		// We do not set log_level because, when this function is called from
 		// the Watchdog, we don't want to affect the Watchdog's own log level.
 		options.setInt("server_log_level", atoi(argv[i + 1]));
+		i += 2;
+	} else if (p.isValueFlag(argc, i, argv[i], '\0', "--log-file")) {
+		// We do not set debug_log_file because, when this function is called from
+		// the Watchdog, we don't want to affect the Watchdog's own log file.
+		options.set("server_log_file", argv[i + 1]);
 		i += 2;
 	} else if (p.isValueFlag(argc, i, argv[i], '\0', "--stat-throttle-rate")) {
 		options.setInt("stat_throttle_rate", atoi(argv[i + 1]));

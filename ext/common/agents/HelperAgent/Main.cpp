@@ -64,12 +64,11 @@ using namespace oxt;
 using namespace Passenger;
 using namespace Passenger::ApplicationPool2;
 
-static VariantMap *agentsOptions;
 
 /***** Structures, constants, global variables and forward declarations *****/
 
-// Avoid namespace conflict with Watchdog's WorkingObjects.
-namespace {
+namespace Passenger {
+namespace ServerAgent {
 	struct WorkingObjects {
 		int serverFds[SERVER_KIT_MAX_SERVER_ENDPOINTS];
 		int adminServerFds[SERVER_KIT_MAX_SERVER_ENDPOINTS];
@@ -111,8 +110,12 @@ namespace {
 			}
 		}
 	};
-}
+} // namespace ServerAgent
+} // namespace Passenger
 
+using namespace Passenger::ServerAgent;
+
+static VariantMap *agentsOptions;
 static WorkingObjects *workingObjects;
 
 
@@ -774,9 +777,12 @@ parseOptions(int argc, const char *argv[], VariantMap &options) {
 	}
 
 	// Set log_level here so that initializeAgent() calls setLogLevel()
-	// with the right value.
+	// and setLogFile() with the right value.
 	if (options.has("server_log_level")) {
 		options.setInt("log_level", options.getInt("server_log_level"));
+	}
+	if (options.has("server_log_file")) {
+		options.setInt("debug_log_file", options.getInt("server_log_file"));
 	}
 }
 
@@ -789,6 +795,7 @@ setAgentsOptionsDefaults() {
 	options.setDefaultStrSet("server_addresses", defaultAddress);
 	options.setDefaultBool("multi_app", false);
 	options.setDefault("environment", DEFAULT_APP_ENV);
+	options.setDefault("spawn_method", DEFAULT_SPAWN_METHOD);
 	options.setDefaultInt("max_pool_size", DEFAULT_MAX_POOL_SIZE);
 	options.setDefaultInt("pool_idle_time", DEFAULT_POOL_IDLE_TIME);
 	options.setDefaultInt("min_instances", 1);

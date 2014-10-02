@@ -15,13 +15,11 @@
 #include <agents/LoggingAgent/LoggingServer.h>
 #include <ServerKit/HttpServer.h>
 #include <DataStructures/LString.h>
-#include <FileDescriptor.h>
 #include <Exceptions.h>
 #include <StaticString.h>
 #include <Utils/StrIntUtils.h>
 #include <Utils/Base64.h>
 #include <Utils/json.h>
-#include <Utils/JsonUtils.h>
 
 namespace Passenger {
 namespace LoggingAgent {
@@ -107,40 +105,31 @@ private:
 			&& constantTimeCompare(password, auth->password);
 	}
 
-	void processStatusTxt(Client *client, Request *req) {
-		if (authorize(client, req, READONLY)) {
-			HeaderTable headers;
-			stringstream stream;
-			headers.insert(req->pool, "content-type", "text/plain");
-			loggingServer->dump(stream);
-			writeSimpleResponse(client, 200, &headers, stream.str());
-			endRequest(&client, &req);
-		} else {
-			respondWith401(client, req);
-		}
-	}
-
 	void processPing(Client *client, Request *req) {
 		if (authorize(client, req, READONLY)) {
 			HeaderTable headers;
 			headers.insert(req->pool, "cache-control", "no-cache, no-store, must-revalidate");
 			headers.insert(req->pool, "content-type", "application/json");
 			writeSimpleResponse(client, 200, &headers, "{ \"status\": \"ok\" }");
-			endRequest(&client, &req);
+			if (!req->ended()) {
+				endRequest(&client, &req);
+			}
 		} else {
 			respondWith401(client, req);
 		}
 	}
 
 	void processShutdown(Client *client, Request *req) {
-		if (req->method != HTTP_PUT) {
+		if (req->method != HTTP_POST) {
 			respondWith405(client, req);
 		} else if (authorize(client, req, FULL)) {
 			HeaderTable headers;
 			headers.insert(req->pool, "content-type", "application/json");
 			exitEvent->notify();
 			writeSimpleResponse(client, 200, &headers, "{ \"status\": \"ok\" }");
-			endRequest(&client, &req);
+			if (!req->ended()) {
+				endRequest(&client, &req);
+			}
 		} else {
 			respondWith401(client, req);
 		}
@@ -158,8 +147,10 @@ private:
 			headers.insert(req->pool, "content-type", "application/json");
 			doc["log_level"] = getLogLevel();
 
-			writeSimpleResponse(client, 200, &headers, stringifyJson(doc));
-			endRequest(&client, &req);
+			writeSimpleResponse(client, 200, &headers, doc.toStyledString());
+			if (!req->ended()) {
+				endRequest(&client, &req);
+			}
 		} else if (req->method == HTTP_PUT) {
 			if (!authorize(client, req, FULL)) {
 				respondWith401(client, req);
@@ -174,17 +165,71 @@ private:
 
 	void processConfigBody(Client *client, Request *req) {
 		HeaderTable headers;
+		Json::Value &json = req->jsonBody;
 
 		headers.insert(req->pool, "content-type", "application/json");
 
-		if (!req->jsonBody["log_level"].isInt()) {
-			respondWith422(client, req, "{\"status\": \"error\", \"message\": \"log_level required\"}");
-			return;
+		if (json.isMember("log_level")) {
+			setLogLevel(json["log_level"].asInt());
+		}
+		if (json.isMember("log_file")) {
+			if (!setLogFile(json["log_file"].asCString())) {
+				int e = errno;
+				unsigned int bufsize = 1024;
+				char *message = (char *) psg_pnalloc(req->pool, bufsize);
+				snprintf(message, bufsize, "{ \"status\": \"error\", "
+					"\"message\": \"Cannot open log file: %s (errno=%d)\" }",
+					strerror(e), e);
+				writeSimpleResponse(client, 500, &headers, message);
+				if (!req->ended()) {
+					endRequest(&client, &req);
+				}
+				return;
+			}
+			P_NOTICE("Log file opened.");
 		}
 
-		setLogLevel(req->jsonBody["log_level"].asInt());
-		writeSimpleResponse(client, 200, &headers, "{ \"status\": \"ok\" }");
-		endRequest(&client, &req);
+		writeSimpleResponse(client, 200, &headers, "{ \"status\": \"ok\" }\n");
+		if (!req->ended()) {
+			endRequest(&client, &req);
+		}
+	}
+
+	void processReopenLogs(Client *client, Request *req) {
+		if (req->method != HTTP_POST) {
+			respondWith405(client, req);
+		} else if (authorize(client, req, FULL)) {
+			HeaderTable headers;
+			headers.insert(req->pool, "content-type", "application/json");
+
+			string logFile = getLogFile();
+			if (logFile.empty()) {
+				writeSimpleResponse(client, 500, &headers, "{ \"status\": \"error\", "
+					"\"message\": \"" PROGRAM_NAME " was not configured with a log file.\" }\n");
+			} else {
+				if (!setLogFile(logFile.c_str())) {
+					int e = errno;
+					unsigned int bufsize = 1024;
+					char *message = (char *) psg_pnalloc(req->pool, bufsize);
+					snprintf(message, bufsize, "{ \"status\": \"error\", "
+						"\"message\": \"Cannot reopen log file: %s (errno=%d)\" }",
+						strerror(e), e);
+					writeSimpleResponse(client, 500, &headers, message);
+					if (!req->ended()) {
+						endRequest(&client, &req);
+					}
+					return;
+				}
+				P_NOTICE("Log file reopened.");
+				writeSimpleResponse(client, 200, &headers, "{ \"status\": \"ok\" }\n");
+			}
+
+			if (!req->ended()) {
+				endRequest(&client, &req);
+			}
+		} else {
+			respondWith401(client, req);
+		}
 	}
 
 	void respondWith401(Client *client, Request *req) {
@@ -192,46 +237,49 @@ private:
 		headers.insert(req->pool, "cache-control", "no-cache, no-store, must-revalidate");
 		headers.insert(req->pool, "www-authenticate", "Basic realm=\"admin\"");
 		writeSimpleResponse(client, 401, &headers, "Unauthorized");
-		endRequest(&client, &req);
+		if (!req->ended()) {
+			endRequest(&client, &req);
+		}
 	}
 
 	void respondWith404(Client *client, Request *req) {
 		HeaderTable headers;
 		headers.insert(req->pool, "cache-control", "no-cache, no-store, must-revalidate");
 		writeSimpleResponse(client, 404, &headers, "Not found");
-		endRequest(&client, &req);
+		if (!req->ended()) {
+			endRequest(&client, &req);
+		}
 	}
 
 	void respondWith405(Client *client, Request *req) {
 		HeaderTable headers;
 		headers.insert(req->pool, "cache-control", "no-cache, no-store, must-revalidate");
 		writeSimpleResponse(client, 405, &headers, "Method not allowed");
-		endRequest(&client, &req);
+		if (!req->ended()) {
+			endRequest(&client, &req);
+		}
 	}
 
 	void respondWith422(Client *client, Request *req, const StaticString &body) {
 		HeaderTable headers;
 		headers.insert(req->pool, "cache-control", "no-cache, no-store, must-revalidate");
 		writeSimpleResponse(client, 422, &headers, body);
-		endRequest(&client, &req);
+		if (!req->ended()) {
+			endRequest(&client, &req);
+		}
 	}
 
 protected:
 	virtual void onRequestBegin(Client *client, Request *req) {
-		const LString *path = &req->path;
+		const StaticString path(req->path.start->data, req->path.size);
 
-		if (OXT_UNLIKELY(getLogLevel() >= LVL_DEBUG)) {
-			path = psg_lstr_make_contiguous(&req->path, req->pool);
-			P_INFO("Admin request: " << StaticString(path->start->data, path->size));
-		}
+		P_INFO("Admin request: " << path);
 
-		if (psg_lstr_cmp(path, P_STATIC_STRING("/status.txt"))) {
-			processStatusTxt(client, req);
-		} else if (psg_lstr_cmp(path, P_STATIC_STRING("/ping.json"))) {
+		if (path == P_STATIC_STRING("/ping.json")) {
 			processPing(client, req);
-		} else if (psg_lstr_cmp(path, P_STATIC_STRING("/shutdown.json"))) {
+		} else if (path == P_STATIC_STRING("/shutdown.json")) {
 			processShutdown(client, req);
-		} else if (psg_lstr_cmp(path, P_STATIC_STRING("/config.json"))) {
+		} else if (path == P_STATIC_STRING("/config.json")) {
 			processConfig(client, req);
 		} else {
 			respondWith404(client, req);
