@@ -151,6 +151,7 @@ if [[ -f /persist/passenger-enterprise-license ]]; then
 	export CCACHE_DIR=/persist/ccache
 	export CCACHE_COMPRESS=1
 	export CCACHE_COMPRESS_LEVEL=3
+	export CCACHE_SLOPPINESS=time_macros
 	run mkdir -p "$CCACHE_DIR"
 	if [[ ! -e /usr/bin/ccache ]]; then
 		run sudo apt-get install ccache
@@ -161,6 +162,7 @@ elif [[ -e /host_cache ]]; then
 	export CCACHE_DIR=/host_cache/ccache
 	export CCACHE_COMPRESS=1
 	export CCACHE_COMPRESS_LEVEL=3
+	export CCACHE_SLOPPINESS=time_macros
 	run mkdir -p "$CCACHE_DIR"
 	if [[ ! -e /usr/bin/ccache ]]; then
 		run sudo apt-get install ccache
