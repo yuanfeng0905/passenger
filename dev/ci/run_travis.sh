@@ -121,10 +121,6 @@ if [[ -f /persist/passenger-enterprise-license ]]; then
 	run sudo apt-get install ccache
 fi
 
-if [[ "$MAGNUM" != "" ]]; then
-	run sudo sh -c "echo 127.0.0.1 magnum >> /etc/hosts"
-fi
-
 run uname -a
 run lsb_release -a
 run sudo tee /etc/dpkg/dpkg.cfg.d/02apt-speedup >/dev/null <<<"force-unsafe-io"

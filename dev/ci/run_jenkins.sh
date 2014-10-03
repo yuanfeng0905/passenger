@@ -11,11 +11,30 @@ if [[ "$WORKSPACE" = "" ]]; then
 	exit 1
 fi
 
-JENKINS_CACHE_DIR="$WORKSPACE/jenkins_cache"
+JENKINS_CACHE_DIR="$WORKSPACE/.jenkins_cache"
 mkdir -p "$JENKINS_CACHE_DIR"
 if [[ "$TEST_RPM_BUILDING" != 0 ]]; then
 	rm -rf "$JENKINS_CACHE_DIR/passenger_rpm/output"
 fi
+
+# run_travis.sh defaults COMPILE_CONCURRENCY to 2, but
+# Jenkins jobs are run on a single machine so we'll want
+# a COMPILE_CONCURRENCY of 1.
+COMPILE_CONCURRENCY=${COMPILE_CONCURRENCY:-1}
+
+# Relax permissions. Necessary for unit tests which test permissions.
+echo "Relaxing permissions"
+umask u=rwx,g=rx,o=rx
+(
+	set -x
+	chmod g+rx,o+rx .
+	find * -type f -print0 | xargs -0 -n 512 chmod g+r,o+r
+	find * -type d -print0 | xargs -0 -n 512 chmod g+rx,o+rx
+
+	# Create this file now because otherwise it would be owned by root,
+	# which Jenkins cannot remove.
+	touch test/test.log
+)
 
 function run_exec()
 {
@@ -38,6 +57,7 @@ run_exec docker run --rm \
 	-e "APP_UID=`id -u`" \
 	-e "APP_GID=`id -g`" \
 	-e "SUDO=$SUDO" \
+	-e "COMPILE_CONCURRENCY=$COMPILE_CONCURRENCY" \
 	-e "TEST_CXX=$TEST_CXX" \
 	-e "TEST_RUBY=$TEST_RUBY" \
 	-e "TEST_NODE=$TEST_NODE" \
