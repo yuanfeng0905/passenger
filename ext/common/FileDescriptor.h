@@ -13,6 +13,7 @@
 #include <boost/make_shared.hpp>
 #include <oxt/system_calls.hpp>
 
+#include <sys/types.h>
 #include <utility>
 #include <unistd.h>
 #include <cerrno>

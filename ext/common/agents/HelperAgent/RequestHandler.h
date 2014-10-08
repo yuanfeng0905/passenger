@@ -133,6 +133,7 @@
 #include <Utils/Timer.h>
 #include <agents/HelperAgent/RequestHandler/Client.h>
 #include <agents/HelperAgent/RequestHandler/AppResponse.h>
+#include <agents/HelperAgent/RequestHandler/TurboCaching.h>
 
 namespace Passenger {
 
@@ -142,14 +143,16 @@ using namespace oxt;
 using namespace ApplicationPool2;
 
 
-#define RH_LOG_EVENT(client, eventName) \
-	char _clientName[32]; \
-	getClientName(client, _clientName, sizeof(_clientName)); \
-	TRACE_POINT_WITH_DATA(_clientName); \
-	SKC_TRACE(client, 3, "Event: " eventName)
-
-
 class RequestHandler: public ServerKit::HttpServer<RequestHandler, Client> {
+public:
+	enum BenchmarkMode {
+		BM_NONE,
+		BM_AFTER_ACCEPT,
+		BM_BEFORE_CHECKOUT,
+		BM_AFTER_CHECKOUT,
+		BM_UNKNOWN
+	};
+
 private:
 	typedef ServerKit::HttpServer<RequestHandler, Client> ParentClass;
 	typedef ServerKit::Channel Channel;
@@ -160,9 +163,15 @@ private:
 
 	static const unsigned int MAX_SESSION_CHECKOUT_TRY = 10;
 
+	unsigned int statThrottleRate;
+	BenchmarkMode benchmarkMode: 3;
+	bool singleAppMode: 1;
+	bool showVersionInHeader: 1;
+
 	const VariantMap *agentsOptions;
 	psg_pool_t *stringPool;
-	unsigned int statThrottleRate;
+	StringKeyTable< boost::shared_ptr<Options> > poolOptionsCache;
+
 	StaticString defaultRuby;
 	StaticString loggingAgentAddress;
 	StaticString loggingAgentPassword;
@@ -193,9 +202,12 @@ private:
 	HashedStaticString HTTP_STATUS;
 	HashedStaticString HTTP_TRANSFER_ENCODING;
 
-	StringKeyTable< boost::shared_ptr<Options> > poolOptionsCache;
-	bool singleAppMode: 1;
-	bool showVersionInHeader: 1;
+	unsigned int threadNumber;
+	StaticString serverLogName;
+
+	friend class TurboCaching<Request>;
+	struct ev_check checkWatcher;
+	TurboCaching<Request> turboCaching;
 
 public:
 	ResourceLocator *resourceLocator;
@@ -212,10 +224,19 @@ protected:
 	#include <agents/HelperAgent/RequestHandler/ForwardResponse.cpp>
 
 public:
-	RequestHandler(ServerKit::Context *context, const VariantMap *_agentsOptions)
+	RequestHandler(ServerKit::Context *context, const VariantMap *_agentsOptions,
+		unsigned int _threadNumber = 1)
 		: ParentClass(context),
+
+		  statThrottleRate(_agentsOptions->getInt("stat_throttle_rate")),
+		  benchmarkMode(parseBenchmarkMode(_agentsOptions->get("benchmark_mode", false))),
+		  singleAppMode(false),
+		  showVersionInHeader(_agentsOptions->getBool("show_version_in_header")),
+
 		  agentsOptions(_agentsOptions),
 		  stringPool(psg_create_pool(1024 * 4)),
+		  poolOptionsCache(4),
+
 		  PASSENGER_APP_GROUP_NAME("!~PASSENGER_APP_GROUP_NAME"),
 		  PASSENGER_MAX_REQUESTS("!~PASSENGER_MAX_REQUESTS"),
 		  PASSENGER_STICKY_SESSIONS("!~PASSENGER_STICKY_SESSIONS"),
@@ -236,9 +257,9 @@ public:
 		  HTTP_CONNECTION("connection"),
 		  HTTP_STATUS("status"),
 		  HTTP_TRANSFER_ENCODING("transfer-encoding"),
-		  poolOptionsCache(4),
-		  singleAppMode(false),
-		  showVersionInHeader(false)
+
+		  threadNumber(_threadNumber),
+		  turboCaching(getTurboCachingInitialState(_agentsOptions))
 	{
 		defaultRuby = psg_pstrdup(stringPool,
 			agentsOptions->get("default_ruby"));
@@ -257,9 +278,7 @@ public:
 		serverSoftware = psg_pstrdup(stringPool,
 			agentsOptions->get("server_software"));
 
-		statThrottleRate = agentsOptions->getInt("stat_throttle_rate");
-		showVersionInHeader = agentsOptions->getBool(
-			"show_version_in_header");
+		generateServerLogName(_threadNumber);
 
 		if (!agentsOptions->getBool("multi_app")) {
 			boost::shared_ptr<Options> options = boost::make_shared<Options>();
@@ -277,10 +296,29 @@ public:
 				agentsOptions->get("startup_file"));
 			poolOptionsCache.insert(options->getAppGroupName(), options);
 		}
+
+		ev_check_init(&checkWatcher, onEventLoopCheck);
+		ev_set_priority(&checkWatcher, EV_MAXPRI);
+		ev_check_start(getLoop(), &checkWatcher);
+		checkWatcher.data = this;
 	}
 
 	~RequestHandler() {
 		psg_destroy_pool(stringPool);
+	}
+
+	static BenchmarkMode parseBenchmarkMode(const StaticString mode) {
+		if (mode.empty()) {
+			return BM_NONE;
+		} else if (mode == "after_accept") {
+			return BM_AFTER_ACCEPT;
+		} else if (mode == "before_checkout") {
+			return BM_BEFORE_CHECKOUT;
+		} else if (mode == "after_checkout") {
+			return BM_AFTER_CHECKOUT;
+		} else {
+			return BM_UNKNOWN;
+		}
 	}
 
 	void initialize() {
@@ -293,6 +331,53 @@ public:
 		}
 		if (unionStationCore == NULL) {
 			unionStationCore = appPool->getUnionStationCore();
+		}
+	}
+
+	void disconnectLongRunningConnections(const StaticString &gupid) {
+		vector<Client *> clients;
+		vector<Client *>::iterator v_it, v_end;
+		Client *client;
+
+		// We collect all clients in a vector so that we don't have to worry about
+		// `activeClients` being mutated while we work.
+		TAILQ_FOREACH (client, &activeClients, nextClient.activeOrDisconnectedClient) {
+			P_ASSERT_EQ(client->getConnState(), Client::ACTIVE);
+			if (client->currentRequest != NULL) {
+				Request *req = client->currentRequest;
+				if (req->httpState >= Request::COMPLETE
+				 && req->upgraded()
+				 && req->session != NULL
+				 && req->session->getGupid() == gupid)
+				{
+					if (getLogLevel() >= LVL_INFO) {
+						char clientName[32];
+						unsigned int size;
+						const LString *host;
+						StaticString hostStr;
+
+						size = getClientName(client, clientName, sizeof(clientName));
+						if (req->host != NULL) {
+							host = psg_lstr_make_contiguous(req->host, req->pool);
+							hostStr = StaticString(host->start->data, host->size);
+						}
+						P_INFO("[" << getServerName() << "] Disconnecting client " <<
+							StaticString(clientName, size) << ": " <<
+							hostStr << StaticString(req->path.start->data, req->path.size));
+					}
+					refClient(client, __FILE__, __LINE__);
+					clients.push_back(client);
+				}
+			}
+		}
+
+		// Disconnect each eligible client.
+		v_end = clients.end();
+		for (v_it = clients.begin(); v_it != v_end; v_it++) {
+			client = *v_it;
+			Client *c = client;
+			disconnect(&client);
+			unrefClient(c, __FILE__, __LINE__);
 		}
 	}
 

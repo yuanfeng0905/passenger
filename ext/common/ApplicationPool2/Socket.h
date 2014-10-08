@@ -33,11 +33,13 @@ struct Connection {
 	int fd;
 	bool persistent: 1;
 	bool fail: 1;
+	bool blocking: 1;
 
 	Connection()
 		: fd(-1),
 		  persistent(false),
-		  fail(false)
+		  fail(false),
+		  blocking(true)
 		{ }
 
 	void close() {
@@ -70,6 +72,7 @@ private:
 		connection.fd = connectToServer(address);
 		connection.fail = true;
 		connection.persistent = false;
+		connection.blocking = true;
 		return connection;
 	}
 

@@ -169,6 +169,7 @@ private:
 	static void runAllActions(const boost::container::vector<Callback> &actions);
 	const PoolPtr getPoolPtr();
 	string generateSecret() const;
+	bool selfCheckingEnabled() const;
 	void runInitializationHooks() const;
 	void runDestructionHooks() const;
 	void setupInitializationOrDestructionHook(HookScriptOptions &options) const;
@@ -177,7 +178,12 @@ private:
 		unsigned int stackSize);
 
 	void verifyInvariants() const {
+		#ifndef NDEBUG
 		// !a || b: logical equivalent of a IMPLIES b.
+
+		if (!selfCheckingEnabled()) {
+			return;
+		}
 
 		assert(groups.empty() ==
 			(state == INITIALIZING || state == DESTROYING || state == DESTROYED));
@@ -186,6 +192,7 @@ private:
 		assert(!( state == READY || state == RESTARTING || state == DESTROYING || state == DESTROYED ) ||
 			( getWaitlist.empty() ));
 		assert(!( state == DESTROYED ) || ( detachedGroups.empty() ));
+		#endif
 	}
 
 	void setState(State newState) {
@@ -451,6 +458,7 @@ public:
 	 * because Pool::destroy() joins all threads, so Pool can never
 	 * be destroyed before all thread callbacks have finished.
 	 */
+	OXT_FORCE_INLINE
 	Pool *getPool() const {
 		return pool;
 	}

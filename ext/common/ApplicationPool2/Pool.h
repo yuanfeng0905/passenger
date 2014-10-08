@@ -59,6 +59,8 @@ using namespace oxt;
 
 class Pool: public boost::enable_shared_from_this<Pool> {
 public:
+	typedef void (*AbortLongRunningConnectionsCallback)(const ProcessPtr &process);
+
 	struct InspectOptions {
 		bool colorize;
 		bool verbose;
@@ -124,6 +126,7 @@ public:
 	mutable boost::mutex syncher;
 	unsigned int max;
 	unsigned long long maxIdleTime;
+	bool selfchecking;
 
 	boost::condition_variable garbageCollectionCond;
 
@@ -146,7 +149,7 @@ public:
 		SHUT_DOWN
 	} lifeStatus;
 
-	SuperGroupMap superGroups;
+	mutable SuperGroupMap superGroups;
 	boost::mutex sessionObjectPoolSyncher;
 	object_pool<Session> sessionObjectPool;
 	psg_pool_t *palloc;
@@ -217,12 +220,20 @@ public:
 
 	void verifyInvariants() const {
 		// !a || b: logical equivalent of a IMPLIES b.
-		assert(!( !getWaitlist.empty() ) || ( atFullCapacity(false) ));
-		assert(!( !atFullCapacity(false) ) || ( getWaitlist.empty() ));
+		#ifndef NDEBUG
+		if (!selfchecking) {
+			return;
+		}
+		assert(!( !getWaitlist.empty() ) || ( atFullCapacityUnlocked() ));
+		assert(!( !atFullCapacityUnlocked() ) || ( getWaitlist.empty() ));
+		#endif
 	}
 
 	void verifyExpensiveInvariants() const {
 		#ifndef NDEBUG
+		if (!selfchecking) {
+			return;
+		}
 		vector<GetWaiter>::const_iterator it, end = getWaitlist.end();
 		for (it = getWaitlist.begin(); it != end; it++) {
 			const GetWaiter &waiter = *it;
@@ -372,7 +383,7 @@ public:
 				/* else: the callback has now been put in
 				 *       the group's get wait list.
 				 */
-			} else if (!atFullCapacity(false)) {
+			} else if (!atFullCapacityUnlocked()) {
 				createSuperGroupAndAsyncGetFromIt(waiter.options, waiter.callback,
 					postLockActions);
 			} else {
@@ -410,7 +421,7 @@ public:
 				if (group->isWaitingForCapacity()) {
 					P_DEBUG("Group " << group->name << " is waiting for capacity");
 					group->spawn();
-					if (atFullCapacity(false)) {
+					if (atFullCapacityUnlocked()) {
 						return;
 					}
 				}
@@ -427,7 +438,7 @@ public:
 				if (group->shouldSpawn()) {
 					P_DEBUG("Group " << group->name << " requests more processes to be spawned");
 					group->spawn();
-					if (atFullCapacity(false)) {
+					if (atFullCapacityUnlocked()) {
 						return;
 					}
 				}
@@ -442,6 +453,27 @@ public:
 			getWaitlist.push_back(superGroup->getWaitlist.front());
 			superGroup->getWaitlist.pop_front();
 		}
+	}
+
+	unsigned int capacityUsedUnlocked() const {
+		if (superGroups.size() == 1) {
+			SuperGroupPtr *superGroup;
+			superGroups.lookupRandom(NULL, &superGroup);
+			return (*superGroup)->capacityUsed();
+		} else {
+			SuperGroupMap::ConstIterator sg_it(superGroups);
+			int result = 0;
+			while (*sg_it != NULL) {
+				const SuperGroupPtr &superGroup = sg_it.getValue();
+				result += superGroup->capacityUsed();
+				sg_it.next();
+			}
+			return result;
+		}
+	}
+
+	bool atFullCapacityUnlocked() const {
+		return capacityUsedUnlocked() >= max;
 	}
 
 	/**
@@ -1300,9 +1332,12 @@ public:
 	const SuperGroupPtr getSuperGroup(const char *name);
 
 public:
+	AbortLongRunningConnectionsCallback abortLongRunningConnectionsCallback;
+
 	Pool(const SpawnerFactoryPtr &spawnerFactory,
 		const VariantMap *agentsOptions = NULL)
-		: sessionObjectPool(64, 1024)
+		: sessionObjectPool(64, 1024),
+		  abortLongRunningConnectionsCallback(NULL)
 	{
 		this->spawnerFactory = spawnerFactory;
 		this->agentsOptions = agentsOptions;
@@ -1313,10 +1348,11 @@ public:
 			P_WARN("Unable to collect system metrics: " << e.what());
 		}
 
-		lifeStatus  = ALIVE;
-		max         = 6;
-		maxIdleTime = 60 * 1000000;
-		palloc      = psg_create_pool(PSG_DEFAULT_POOL_SIZE);
+		lifeStatus   = ALIVE;
+		max          = 6;
+		maxIdleTime  = 60 * 1000000;
+		selfchecking = true;
+		palloc       = psg_create_pool(PSG_DEFAULT_POOL_SIZE);
 
 		restarterThreadActive = false;
 
@@ -1366,11 +1402,12 @@ public:
 		ScopedLock lock(syncher);
 		assert(lifeStatus == ALIVE);
 		lifeStatus = PREPARED_FOR_SHUTDOWN;
-		vector<ProcessPtr> processes = getProcesses(false);
-		foreach (ProcessPtr process, processes) {
-			if (process->abortLongRunningConnections()) {
+		if (abortLongRunningConnectionsCallback != NULL) {
+			vector<ProcessPtr> processes = getProcesses(false);
+			foreach (ProcessPtr process, processes) {
 				// Ensure that the process is not immediately respawned.
 				process->getGroup()->options.minProcesses = 0;
+				abortLongRunningConnectionsCallback(process);
 			}
 		}
 	}
@@ -1431,7 +1468,7 @@ public:
 				callback(session, ExceptionPtr());
 			}
 
-		} else if (!atFullCapacity(false)) {
+		} else if (!atFullCapacityUnlocked()) {
 			/* The app super group isn't in the pool and we have enough free
 			 * resources to make a new one.
 			 */
@@ -1482,7 +1519,7 @@ public:
 				superGroup->verifyInvariants();
 			}
 
-			assert(atFullCapacity(false));
+			assert(atFullCapacityUnlocked());
 			verifyInvariants();
 			verifyExpensiveInvariants();
 			P_TRACE(2, "asyncGet() finished");
@@ -1580,21 +1617,19 @@ public:
 		garbageCollectionCond.notify_all();
 	}
 
-	unsigned int capacityUsed(bool lock = true) const {
-		DynamicScopedLock l(syncher, lock);
-		SuperGroupMap::ConstIterator sg_it(superGroups);
-		int result = 0;
-		while (*sg_it != NULL) {
-			const SuperGroupPtr &superGroup = sg_it.getValue();
-			result += superGroup->capacityUsed();
-			sg_it.next();
-		}
-		return result;
+	void enableSelfChecking(bool enabled) {
+		LockGuard l(syncher);
+		selfchecking = enabled;
 	}
 
-	bool atFullCapacity(bool lock = true) const {
-		DynamicScopedLock l(syncher, lock);
-		return capacityUsed(false) >= max;
+	unsigned int capacityUsed() const {
+		LockGuard l(syncher);
+		return capacityUsedUnlocked();
+	}
+
+	bool atFullCapacity() const {
+		LockGuard l(syncher);
+		return atFullCapacityUnlocked();
 	}
 
 	vector<ProcessPtr> getProcesses(bool lock = true) const {
@@ -1941,7 +1976,7 @@ public:
 		result << "<passenger_version>" << PASSENGER_VERSION << "</passenger_version>";
 		result << "<process_count>" << getProcessCount(false) << "</process_count>";
 		result << "<max>" << max << "</max>";
-		result << "<capacity_used>" << capacityUsed(false) << "</capacity_used>";
+		result << "<capacity_used>" << capacityUsedUnlocked() << "</capacity_used>";
 		result << "<get_wait_list_size>" << getWaitlist.size() << "</get_wait_list_size>";
 		if (restarterThreadActive) {
 			result << "<rolling_restart_status>" << escapeForXml(restarterThreadStatus) <<

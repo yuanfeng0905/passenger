@@ -9,6 +9,18 @@
 
 // This file is included inside the RequestHandler class.
 
+public:
+
+virtual unsigned int getClientName(const Client *client, char *buf, size_t size) const {
+	char *pos = buf;
+	const char *end = buf + size - 1;
+	pos += uintToString(threadNumber, pos, end - pos);
+	pos = appendData(pos, end, ".", 1);
+	pos += uintToString(client->number, pos, end - pos);
+	*pos = '\0';
+	return pos - buf;
+}
+
 protected:
 
 virtual void
@@ -55,8 +67,11 @@ virtual void reinitializeRequest(Client *client, Request *req) {
 	req->halfCloseAppConnection = false;
 	req->sessionCheckoutTry = 0;
 	req->strip100ContinueHeader = false;
+	req->hasPragmaHeader = false;
 	req->host = NULL;
 	req->bodyBytesBuffered = 0;
+	req->cacheKey = HashedStaticString();
+	req->cacheControl = NULL;
 
 	/***************/
 
@@ -98,12 +113,19 @@ void reinitializeAppResponse(Client *client, Request *req) {
 	resp->bodyType  = AppResponse::RBT_NO_BODY;
 	resp->wantKeepAlive = false;
 	resp->oneHundredContinueSent = false;
-	resp->hasDateHeader = false;
 	resp->statusCode = 0;
 	resp->parserState.headerParser = getHeaderParserStatePool().construct();
 	createAppResponseHeaderParser(getContext(), req).initialize();
 	resp->aux.bodyInfo.contentLength = 0; // Sets the entire union to 0.
 	resp->bodyAlreadyRead = 0;
+	resp->date = NULL;
+	resp->cacheControl = NULL;
+	resp->expiresHeader = NULL;
+	resp->lastModifiedHeader = NULL;
+
+	resp->headerCacheBuffers = NULL;
+	resp->nHeaderCacheBuffers = 0;
+	psg_lstr_init(&resp->bodyCacheBuffer);
 }
 
 void deinitializeAppResponse(Client *client, Request *req) {
@@ -132,6 +154,8 @@ void deinitializeAppResponse(Client *client, Request *req) {
 
 	resp->headers.clear();
 	resp->secureHeaders.clear();
+
+	psg_lstr_deinit(&resp->bodyCacheBuffer);
 }
 
 virtual Channel::Result
@@ -149,6 +173,10 @@ onRequestBody(Client *client, Request *req, const MemoryKit::mbuf &buffer,
 	}
 }
 
+virtual StaticString getServerName() const {
+	return serverLogName;
+}
+
 private:
 
 static Channel::Result
@@ -162,4 +190,10 @@ onBodyBufferData(Channel *_channel, const MemoryKit::mbuf &buffer, int errcode) 
 
 	assert(req->requestBodyBuffering);
 	return self->whenSendingRequest_onRequestBody(client, req, buffer, errcode);
+}
+
+static void
+onEventLoopCheck(EV_P_ struct ev_check *w, int revents) {
+	RequestHandler *self = static_cast<RequestHandler *>(w->data);
+	self->turboCaching.updateState(ev_now(EV_A));
 }

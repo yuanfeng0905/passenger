@@ -31,6 +31,7 @@
 #include <boost/thread.hpp>
 #include <boost/shared_ptr.hpp>
 #include <boost/make_shared.hpp>
+#include <boost/atomic.hpp>
 #include <oxt/thread.hpp>
 #include <oxt/system_calls.hpp>
 
@@ -69,6 +70,30 @@ using namespace Passenger::ApplicationPool2;
 
 namespace Passenger {
 namespace ServerAgent {
+	struct ThreadWorkingObjects {
+		BackgroundEventLoop *bgloop;
+		ServerKit::Context *serverKitContext;
+		RequestHandler *requestHandler;
+
+		ThreadWorkingObjects()
+			: bgloop(NULL),
+			  serverKitContext(NULL),
+			  requestHandler(NULL)
+			{ }
+	};
+
+	struct AdminWorkingObjects {
+		BackgroundEventLoop *bgloop;
+		ServerKit::Context *serverKitContext;
+		AdminServer *adminServer;
+
+		AdminWorkingObjects()
+			: bgloop(NULL),
+			  serverKitContext(NULL),
+			  adminServer(NULL)
+			{ }
+	};
+
 	struct WorkingObjects {
 		int serverFds[SERVER_KIT_MAX_SERVER_ENDPOINTS];
 		int adminServerFds[SERVER_KIT_MAX_SERVER_ENDPOINTS];
@@ -80,28 +105,25 @@ namespace ServerAgent {
 		UnionStation::CorePtr unionStationCore;
 		SpawnerConfigPtr spawnerConfig;
 		SpawnerFactoryPtr spawnerFactory;
-		BackgroundEventLoop *bgloop;
+		PoolPtr appPool;
+
+		vector<ThreadWorkingObjects> threadWorkingObjects;
 		struct ev_signal sigintWatcher;
 		struct ev_signal sigtermWatcher;
 		struct ev_signal sigquitWatcher;
-		PoolPtr appPool;
-		ServerKit::Context *serverKitContext;
-		RequestHandler *requestHandler;
-		ServerAgent::AdminServer *adminServer;
+
+		AdminWorkingObjects adminWorkingObjects;
+
 		EventFd exitEvent;
 		EventFd allClientsDisconnectedEvent;
 		unsigned int terminationCount;
-		unsigned int shutdownCounter;
+		boost::atomic<unsigned int> shutdownCounter;
 		oxt::thread *prestarterThread;
 
 		CloudUsageTracker *tracker;
 
 		WorkingObjects()
-			: bgloop(NULL),
-			  serverKitContext(NULL),
-			  requestHandler(NULL),
-			  adminServer(NULL),
-			  terminationCount(0),
+			: terminationCount(0),
 			  shutdownCounter(0)
 		{
 			for (unsigned int i = 0; i < SERVER_KIT_MAX_SERVER_ENDPOINTS; i++) {
@@ -124,8 +146,10 @@ static WorkingObjects *workingObjects;
 static void waitForExitEvent();
 static void cleanup();
 static void deletePidFile();
+static void abortLongRunningConnections(const ApplicationPool2::ProcessPtr &process);
 static void requestHandlerShutdownFinished(RequestHandler *server);
 static void adminServerShutdownFinished(ServerAgent::AdminServer *server);
+static void printInfoInThread();
 
 static void
 parseAndAddAdminAuthorization(const string &description) {
@@ -268,15 +292,67 @@ lowerPrivilege() {
 
 static void
 printInfo(EV_P_ struct ev_signal *watcher, int revents) {
-	WorkingObjects *wo = workingObjects;
+	oxt::thread(printInfoInThread, "Information printer");
+}
 
-	cerr << "### Request handler state\n";
-	cerr << wo->requestHandler->inspectStateAsJson();
+static void
+inspectRequestHandlerStateAsJson(RequestHandler *rh, string *result) {
+	*result = rh->inspectStateAsJson().toStyledString();
+}
+
+static void
+inspectRequestHandlerConfigAsJson(RequestHandler *rh, string *result) {
+	*result = rh->getConfigAsJson().toStyledString();
+}
+
+static void
+getMbufStats(struct MemoryKit::mbuf_pool *input, struct MemoryKit::mbuf_pool *result) {
+	*result = *input;
+}
+
+static void
+printInfoInThread() {
+	TRACE_POINT();
+	WorkingObjects *wo = workingObjects;
+	unsigned int i;
+
+	cerr << "### Backtraces\n";
+	cerr << "\n" << oxt::thread::all_backtraces();
 	cerr << "\n";
 	cerr.flush();
 
-	cerr << "### Request handler config\n";
-	cerr << wo->requestHandler->getConfigAsJson();
+	for (i = 0; i < wo->threadWorkingObjects.size(); i++) {
+		ThreadWorkingObjects *two = &wo->threadWorkingObjects[i];
+		string json;
+
+		cerr << "### Request handler state (thread " << (i + 1) << ")\n";
+		two->bgloop->safe->runSync(boost::bind(inspectRequestHandlerStateAsJson,
+			two->requestHandler, &json));
+		cerr << json;
+		cerr << "\n";
+		cerr.flush();
+	}
+
+	for (i = 0; i < wo->threadWorkingObjects.size(); i++) {
+		ThreadWorkingObjects *two = &wo->threadWorkingObjects[i];
+		string json;
+
+		cerr << "### Request handler config (thread " << (i + 1) << ")\n";
+		two->bgloop->safe->runSync(boost::bind(inspectRequestHandlerConfigAsJson,
+			two->requestHandler, &json));
+		cerr << json;
+		cerr << "\n";
+		cerr.flush();
+	}
+
+	struct MemoryKit::mbuf_pool stats;
+	cerr << "### mbuf stats\n\n";
+	wo->threadWorkingObjects[0].bgloop->safe->runSync(boost::bind(getMbufStats,
+		&wo->threadWorkingObjects[0].serverKitContext->mbuf_pool,
+		&stats));
+	cerr << "nfree_mbuf_blockq    : " << stats.nfree_mbuf_blockq << "\n";
+	cerr << "nactive_mbuf_blockq  : " << stats.nactive_mbuf_blockq << "\n";
+	cerr << "mbuf_block_chunk_size: " << stats.mbuf_block_chunk_size << "\n";
 	cerr << "\n";
 	cerr.flush();
 
@@ -284,36 +360,32 @@ printInfo(EV_P_ struct ev_signal *watcher, int revents) {
 	cerr << "\n" << wo->appPool->inspect();
 	cerr << "\n";
 	cerr.flush();
-
-	cerr << "### mbuf stats\n\n";
-	cerr << "nfree_mbuf_blockq    : " <<
-		wo->serverKitContext->mbuf_pool.nfree_mbuf_blockq << "\n";
-	cerr << "nactive_mbuf_blockq  : " <<
-		wo->serverKitContext->mbuf_pool.nactive_mbuf_blockq << "\n";
-	cerr << "mbuf_block_chunk_size: " <<
-		wo->serverKitContext->mbuf_pool.mbuf_block_chunk_size << "\n";
-	cerr << "\n";
-	cerr.flush();
-
-	cerr << "### Backtraces\n";
-	cerr << "\n" << oxt::thread::all_backtraces();
-	cerr << "\n";
-	cerr.flush();
 }
 
 static void
 dumpDiagnosticsOnCrash(void *userData) {
 	WorkingObjects *wo = workingObjects;
+	unsigned int i;
 
-	cerr << "### Request handler state\n";
-	cerr << wo->requestHandler->inspectStateAsJson();
-	cerr << "\n";
+	cerr << "### Backtraces\n";
+	cerr << oxt::thread::all_backtraces();
 	cerr.flush();
 
-	cerr << "### Request handler config\n";
-	cerr << wo->requestHandler->getConfigAsJson();
-	cerr << "\n";
-	cerr.flush();
+	for (i = 0; i < wo->threadWorkingObjects.size(); i++) {
+		ThreadWorkingObjects *two = &wo->threadWorkingObjects[i];
+		cerr << "### Request handler state (thread " << (i + 1) << ")\n";
+		cerr << two->requestHandler->inspectStateAsJson();
+		cerr << "\n";
+		cerr.flush();
+	}
+
+	for (i = 0; i < wo->threadWorkingObjects.size(); i++) {
+		ThreadWorkingObjects *two = &wo->threadWorkingObjects[i];
+		cerr << "### Request handler config (thread " << (i + 1) << ")\n";
+		cerr << two->requestHandler->getConfigAsJson();
+		cerr << "\n";
+		cerr.flush();
+	}
 
 	cerr << "### Pool state (simple)\n";
 	// Do not lock, the crash may occur within the pool.
@@ -323,23 +395,19 @@ dumpDiagnosticsOnCrash(void *userData) {
 	cerr << "\n";
 	cerr.flush();
 
-	cerr << "### Pool state (XML)\n";
-	cerr << wo->appPool->toXml(true, false);
-	cerr << "\n\n";
-	cerr.flush();
-
 	cerr << "### mbuf stats\n\n";
 	cerr << "nfree_mbuf_blockq  : " <<
-		wo->serverKitContext->mbuf_pool.nfree_mbuf_blockq << "\n";
+		wo->threadWorkingObjects[0].serverKitContext->mbuf_pool.nfree_mbuf_blockq << "\n";
 	cerr << "nactive_mbuf_blockq: " <<
-		wo->serverKitContext->mbuf_pool.nactive_mbuf_blockq << "\n";
+		wo->threadWorkingObjects[0].serverKitContext->mbuf_pool.nactive_mbuf_blockq << "\n";
 	cerr << "mbuf_block_chunk_size: " <<
-		wo->serverKitContext->mbuf_pool.mbuf_block_chunk_size << "\n";
+		wo->threadWorkingObjects[0].serverKitContext->mbuf_pool.mbuf_block_chunk_size << "\n";
 	cerr << "\n";
 	cerr.flush();
 
-	cerr << "### Backtraces\n";
-	cerr << oxt::thread::all_backtraces();
+	cerr << "### Pool state (XML)\n";
+	cerr << wo->appPool->toXml(true, false);
+	cerr << "\n\n";
 	cerr.flush();
 }
 
@@ -423,45 +491,83 @@ initializeNonPrivilegedWorkingObjects() {
 
 	UPDATE_TRACE_POINT();
 	wo->spawnerFactory = boost::make_shared<SpawnerFactory>(wo->spawnerConfig);
-
-	wo->bgloop = new BackgroundEventLoop(true, true);
-	ev_signal_init(&wo->sigquitWatcher, printInfo, SIGQUIT);
-	ev_signal_start(wo->bgloop->loop, &wo->sigquitWatcher);
-	ev_signal_init(&wo->sigintWatcher, onTerminationSignal, SIGINT);
-	ev_signal_start(wo->bgloop->loop, &wo->sigintWatcher);
-	ev_signal_init(&wo->sigtermWatcher, onTerminationSignal, SIGTERM);
-	ev_signal_start(wo->bgloop->loop, &wo->sigtermWatcher);
-
-	UPDATE_TRACE_POINT();
 	wo->appPool = boost::make_shared<Pool>(wo->spawnerFactory, agentsOptions);
 	wo->appPool->initialize();
 	wo->appPool->setMax(options.getInt("max_pool_size"));
 	wo->appPool->setMaxIdleTime(options.getInt("pool_idle_time") * 1000000);
+	wo->appPool->enableSelfChecking(options.getBool("selfchecks"));
+	wo->appPool->abortLongRunningConnectionsCallback = abortLongRunningConnections;
 
 	UPDATE_TRACE_POINT();
-	wo->serverKitContext = new ServerKit::Context(wo->bgloop->safe);
-	wo->serverKitContext->secureModePassword = wo->password;
-	wo->serverKitContext->defaultFileBufferedChannelConfig.bufferDir =
-		options.get("data_buffer_dir");
-	wo->requestHandler = new RequestHandler(wo->serverKitContext, agentsOptions);
-	wo->requestHandler->minSpareClients = 128;
-	wo->requestHandler->clientFreelistLimit = 1024;
-	wo->requestHandler->resourceLocator = &wo->resourceLocator;
-	wo->requestHandler->appPool = wo->appPool;
-	wo->requestHandler->unionStationCore = wo->unionStationCore;
-	wo->requestHandler->shutdownFinishCallback = requestHandlerShutdownFinished;
-	wo->requestHandler->initialize();
-	wo->shutdownCounter++;
+	unsigned int nthreads = options.getInt("server_threads");
+	BackgroundEventLoop *firstLoop;
+	wo->threadWorkingObjects.reserve(nthreads);
+	for (unsigned int i = 0; i < nthreads; i++) {
+		UPDATE_TRACE_POINT();
+		ThreadWorkingObjects two;
+
+		if (i == 0) {
+			two.bgloop = firstLoop = new BackgroundEventLoop(true, true);
+		} else {
+			two.bgloop = new BackgroundEventLoop(true, false);
+		}
+
+		UPDATE_TRACE_POINT();
+		two.serverKitContext = new ServerKit::Context(two.bgloop->safe);
+		two.serverKitContext->secureModePassword = wo->password;
+		two.serverKitContext->defaultFileBufferedChannelConfig.bufferDir =
+			options.get("data_buffer_dir");
+
+		UPDATE_TRACE_POINT();
+		two.requestHandler = new RequestHandler(two.serverKitContext, agentsOptions, i + 1);
+		two.requestHandler->minSpareClients = 128;
+		two.requestHandler->clientFreelistLimit = 1024;
+		two.requestHandler->resourceLocator = &wo->resourceLocator;
+		two.requestHandler->appPool = wo->appPool;
+		two.requestHandler->unionStationCore = wo->unionStationCore;
+		two.requestHandler->shutdownFinishCallback = requestHandlerShutdownFinished;
+		two.requestHandler->initialize();
+		wo->shutdownCounter.fetch_add(1, boost::memory_order_relaxed);
+
+		wo->threadWorkingObjects.push_back(two);
+	}
+
+	UPDATE_TRACE_POINT();
+	ev_signal_init(&wo->sigquitWatcher, printInfo, SIGQUIT);
+	ev_signal_start(firstLoop->loop, &wo->sigquitWatcher);
+	ev_signal_init(&wo->sigintWatcher, onTerminationSignal, SIGINT);
+	ev_signal_start(firstLoop->loop, &wo->sigintWatcher);
+	ev_signal_init(&wo->sigtermWatcher, onTerminationSignal, SIGTERM);
+	ev_signal_start(firstLoop->loop, &wo->sigtermWatcher);
 
 	UPDATE_TRACE_POINT();
 	if (!adminAddresses.empty()) {
-		wo->adminServer = new ServerAgent::AdminServer(wo->serverKitContext);
-		wo->adminServer->requestHandler = wo->requestHandler;
-		wo->adminServer->appPool = wo->appPool;
-		wo->adminServer->exitEvent = &wo->exitEvent;
-		wo->adminServer->shutdownFinishCallback = adminServerShutdownFinished;
-		wo->adminServer->authorizations = wo->adminAuthorizations;
-		wo->shutdownCounter++;
+		UPDATE_TRACE_POINT();
+		AdminWorkingObjects *awo = &wo->adminWorkingObjects;
+
+		awo->bgloop = new BackgroundEventLoop(true, false);
+		awo->serverKitContext = new ServerKit::Context(awo->bgloop->safe);
+		awo->serverKitContext->secureModePassword = wo->password;
+		// Configure a large threshold so that it uses libeio as little as possible.
+		// libeio runs on the RequestHandler's first thread, and if there's a
+		// problem there we don't want it to affect the admin server.
+		awo->serverKitContext->defaultFileBufferedChannelConfig.threshold = 1024 * 1024;
+		awo->serverKitContext->defaultFileBufferedChannelConfig.bufferDir =
+			options.get("data_buffer_dir");
+
+		UPDATE_TRACE_POINT();
+		awo->adminServer = new ServerAgent::AdminServer(awo->serverKitContext);
+		awo->adminServer->requestHandlers.reserve(wo->threadWorkingObjects.size());
+		for (unsigned int i = 0; i < wo->threadWorkingObjects.size(); i++) {
+			awo->adminServer->requestHandlers.push_back(
+				wo->threadWorkingObjects[i].requestHandler);
+		}
+		awo->adminServer->appPool = wo->appPool;
+		awo->adminServer->exitEvent = &wo->exitEvent;
+		awo->adminServer->shutdownFinishCallback = adminServerShutdownFinished;
+		awo->adminServer->authorizations = wo->adminAuthorizations;
+
+		wo->shutdownCounter.fetch_add(1, boost::memory_order_relaxed);
 	}
 
 	UPDATE_TRACE_POINT();
@@ -473,12 +579,15 @@ initializeNonPrivilegedWorkingObjects() {
 	 * This is especially noticeable on systems that heavily swap.
 	 */
 	for (unsigned int i = 0; i < addresses.size(); i++) {
-		wo->requestHandler->listen(wo->serverFds[i]);
+		for (unsigned int j = 0; j < nthreads; j++) {
+			ThreadWorkingObjects *two = &wo->threadWorkingObjects[j];
+			two->requestHandler->listen(wo->serverFds[i]);
+			two->requestHandler->createSpareClients();
+		}
 	}
 	for (unsigned int i = 0; i < adminAddresses.size(); i++) {
-		wo->adminServer->listen(wo->adminServerFds[i]);
+		wo->adminWorkingObjects.adminServer->listen(wo->adminServerFds[i]);
 	}
-	wo->requestHandler->createSpareClients();
 }
 
 static void
@@ -597,26 +706,52 @@ static void
 mainLoop() {
 	TRACE_POINT();
 	installDiagnosticsDumper(dumpDiagnosticsOnCrash, NULL);
-	workingObjects->bgloop->start("Main event loop", 0);
+	for (unsigned int i = 0; i < workingObjects->threadWorkingObjects.size(); i++) {
+		ThreadWorkingObjects *two = &workingObjects->threadWorkingObjects[i];
+		two->bgloop->start("Main event loop: thread " + toString(i + 1), 0);
+	}
+	if (workingObjects->adminWorkingObjects.adminServer != NULL) {
+		workingObjects->adminWorkingObjects.bgloop->start("Admin event loop", 0);
+	}
 	waitForExitEvent();
 }
 
 static void
-shutdownRequestHandler() {
-	workingObjects->requestHandler->shutdown();
+abortLongRunningConnectionsOnRequestHandler(RequestHandler *requestHandler,
+	string gupid)
+{
+	requestHandler->disconnectLongRunningConnections(gupid);
 }
 
 static void
-shutdownAdminServer() {
-	if (workingObjects->adminServer != NULL) {
-		workingObjects->adminServer->shutdown();
+abortLongRunningConnections(const ApplicationPool2::ProcessPtr &process) {
+	// We are inside the ApplicationPool lock. Be very careful here.
+	WorkingObjects *wo = workingObjects;
+	P_NOTICE("Disconnecting long-running connections for process " <<
+		process->pid << ", application " << process->getGroup()->name);
+	for (unsigned int i = 0; i < wo->threadWorkingObjects.size(); i++) {
+		wo->threadWorkingObjects[i].bgloop->safe->runLater(
+			boost::bind(abortLongRunningConnectionsOnRequestHandler,
+				wo->threadWorkingObjects[i].requestHandler,
+				string(process->gupid, process->gupidSize)));
 	}
 }
 
 static void
+shutdownRequestHandler(ThreadWorkingObjects *two) {
+	two->requestHandler->shutdown();
+}
+
+static void
+shutdownAdminServer() {
+	workingObjects->adminWorkingObjects.adminServer->shutdown();
+}
+
+static void
 serverShutdownFinished() {
-	workingObjects->shutdownCounter--;
-	if (workingObjects->shutdownCounter == 0) {
+	unsigned int i = workingObjects->shutdownCounter.fetch_sub(1, boost::memory_order_release);
+	if (i == 1) {
+		boost::atomic_thread_fence(boost::memory_order_acquire);
 		workingObjects->allClientsDisconnectedEvent.notify();
 	}
 }
@@ -677,8 +812,14 @@ waitForExitEvent() {
 		P_NOTICE("Received command to shutdown gracefully. "
 			"Waiting until all clients have disconnected...");
 		wo->appPool->prepareForShutdown();
-		wo->bgloop->safe->runLater(shutdownRequestHandler);
-		wo->bgloop->safe->runLater(shutdownAdminServer);
+
+		for (unsigned i = 0; i < wo->threadWorkingObjects.size(); i++) {
+			ThreadWorkingObjects *two = &wo->threadWorkingObjects[i];
+			two->bgloop->safe->runLater(boost::bind(shutdownRequestHandler, two));
+		}
+		if (wo->adminWorkingObjects.adminServer != NULL) {
+			wo->adminWorkingObjects.bgloop->safe->runLater(shutdownAdminServer);
+		}
 
 		UPDATE_TRACE_POINT();
 		FD_ZERO(&fds);
@@ -703,9 +844,18 @@ cleanup() {
 	P_DEBUG("Shutting down PassengerAgent server...");
 	wo->appPool->destroy();
 	installDiagnosticsDumper(NULL, NULL);
-	wo->bgloop->stop();
+	for (unsigned i = 0; i < wo->threadWorkingObjects.size(); i++) {
+		ThreadWorkingObjects *two = &wo->threadWorkingObjects[i];
+		two->bgloop->stop();
+	}
+	if (wo->adminWorkingObjects.adminServer != NULL) {
+		wo->adminWorkingObjects.bgloop->stop();
+	}
 	wo->appPool.reset();
-	delete wo->requestHandler;
+	for (unsigned i = 0; i < wo->threadWorkingObjects.size(); i++) {
+		ThreadWorkingObjects *two = &wo->threadWorkingObjects[i];
+		delete two->requestHandler;
+	}
 	if (wo->prestarterThread != NULL) {
 		wo->prestarterThread->interrupt_and_join();
 		delete wo->prestarterThread;
@@ -775,7 +925,10 @@ parseOptions(int argc, const char *argv[], VariantMap &options) {
 			exit(1);
 		}
 	}
+}
 
+static void
+preinitialize(VariantMap &options) {
 	// Set log_level here so that initializeAgent() calls setLogLevel()
 	// and setLogFile() with the right value.
 	if (options.has("server_log_level")) {
@@ -803,6 +956,8 @@ setAgentsOptionsDefaults() {
 	options.setDefault("server_software", SERVER_TOKEN_NAME "/" PASSENGER_VERSION);
 	options.setDefaultBool("show_version_in_header", true);
 	options.setDefault("data_buffer_dir", getSystemTempDir());
+	options.setDefaultBool("selfchecks", false);
+	options.setDefaultInt("server_threads", boost::thread::hardware_concurrency());
 
 	string firstAddress = options.getStrSet("server_addresses")[0];
 	if (getSocketAddressType(firstAddress) == SAT_TCP) {
@@ -858,6 +1013,17 @@ sanityCheckOptions() {
 			ok = false;
 		}
 	}
+	if (RequestHandler::parseBenchmarkMode(options.get("benchmark_mode", false))
+		== RequestHandler::BM_UNKNOWN)
+	{
+		fprintf(stderr, "ERROR: '%s' is not a valid mode for --benchmark.\n",
+			options.get("benchmark_mode", false).c_str());
+		ok = false;
+	}
+	if (options.getInt("server_threads") < 1) {
+		fprintf(stderr, "ERROR: you may only specify for --threads a number greater than or equal to 1.\n");
+		ok = false;
+	}
 
 	if (!ok) {
 		exit(1);
@@ -867,7 +1033,8 @@ sanityCheckOptions() {
 int
 serverMain(int argc, char *argv[]) {
 	agentsOptions = new VariantMap();
-	*agentsOptions = initializeAgent(argc, &argv, "PassengerAgent server", parseOptions, 2);
+	*agentsOptions = initializeAgent(argc, &argv, "PassengerAgent server", parseOptions,
+		preinitialize, 2);
 	setAgentsOptionsDefaults();
 	sanityCheckOptions();
 	return runServer();

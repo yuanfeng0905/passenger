@@ -322,6 +322,11 @@ SuperGroup::generateSecret() const {
 	return getPool()->getRandomGenerator()->generateAsciiString(43);
 }
 
+bool
+SuperGroup::selfCheckingEnabled() const {
+	return getPool()->selfchecking;
+}
+
 void
 SuperGroup::runInitializationHooks() const {
 	getPool()->runHookScripts("after_initialize_supergroup",
@@ -521,7 +526,7 @@ Group::Group(SuperGroup *_superGroup, const Options &options, const ComponentInf
 	processesBeingSpawned = 0;
 	m_spawning     = false;
 	m_restarting   = false;
-	lifeStatus     = ALIVE;
+	lifeStatus.store(ALIVE, boost::memory_order_relaxed);
 	lastRestartFileMtime = 0;
 	lastRestartFileCheckTime = 0;
 	alwaysRestartFileExists = false;
@@ -563,12 +568,26 @@ Group::initialize() {
 	nullProcess->setGroup(this);
 }
 
-Pool *
+OXT_FORCE_INLINE Pool *
 Group::getPool() const {
 	return getSuperGroup()->getPool();
 }
 
 void
+Group::_onSessionInitiateFailure(Session *session) {
+	Process *process = session->getProcess();
+	assert(process != NULL);
+	process->getGroup()->onSessionInitiateFailure(process, session);
+}
+
+void
+Group::_onSessionClose(Session *session) {
+	Process *process = session->getProcess();
+	assert(process != NULL);
+	process->getGroup()->onSessionClose(process, session);
+}
+
+OXT_FORCE_INLINE void
 Group::onSessionInitiateFailure(Process *process, Session *session) {
 	boost::container::vector<Callback> actions;
 
@@ -590,7 +609,7 @@ Group::onSessionInitiateFailure(Process *process, Session *session) {
 	runAllActions(actions);
 }
 
-void
+OXT_FORCE_INLINE void
 Group::onSessionClose(Process *process, Session *session) {
 	TRACE_POINT();
 	// Standard resource management boilerplate stuff...
@@ -1104,7 +1123,7 @@ Group::spawnThreadRealMain(const SpawnerPtr &spawner, const Options &options, un
 		done = done
 			|| (processLowerLimitsSatisfied() && getWaitlist.empty())
 			|| processUpperLimitsReached()
-			|| pool->atFullCapacity(false);
+			|| pool->atFullCapacityUnlocked();
 		m_spawning = !done;
 		if (done) {
 			P_DEBUG("Spawn loop done");
@@ -1376,6 +1395,11 @@ Group::detachedProcessesCheckerMain(GroupPtr self) {
 	}
 }
 
+bool
+Group::selfCheckingEnabled() const {
+	return getPool()->selfchecking;
+}
+
 void
 Group::wakeUpGarbageCollector() {
 	getPool()->garbageCollectionCond.notify_all();
@@ -1383,7 +1407,7 @@ Group::wakeUpGarbageCollector() {
 
 bool
 Group::poolAtFullCapacity() const {
-	return getPool()->atFullCapacity(false);
+	return getPool()->atFullCapacityUnlocked();
 }
 
 bool
@@ -1430,6 +1454,15 @@ Group::testOverflowRequestQueue() const {
 		return debug->testOverflowRequestQueue;
 	} else {
 		return false;
+	}
+}
+
+void
+Group::callAbortLongRunningConnectionsCallback(const ProcessPtr &process) {
+	Pool::AbortLongRunningConnectionsCallback callback =
+		getPool()->abortLongRunningConnectionsCallback;
+	if (callback != NULL) {
+		callback(process);
 	}
 }
 
@@ -1494,28 +1527,6 @@ Process::isBeingRollingRestarted() const {
 StaticString
 Process::getGroupSecret() const {
 	return StaticString(getGroup()->secret, Group::SECRET_SIZE);
-}
-
-void
-Process::sendAbortLongRunningConnectionsMessage(const string &address) {
-	boost::function<void ()> func = boost::bind(
-		realSendAbortLongRunningConnectionsMessage, address);
-	return getPool()->nonInterruptableThreads.create_thread(
-		boost::bind(runAndPrintExceptions, func, false),
-		"Sending detached message to process " + toString(pid),
-		256 * 1024);
-}
-
-void
-Process::realSendAbortLongRunningConnectionsMessage(string address) {
-	TRACE_POINT();
-	FileDescriptor fd(connectToServer(address));
-	unsigned long long timeout = 3000000;
-	vector<string> args;
-
-	UPDATE_TRACE_POINT();
-	args.push_back("abort_long_running_connections");
-	writeArrayMessage(fd, args, &timeout);
 }
 
 SessionPtr

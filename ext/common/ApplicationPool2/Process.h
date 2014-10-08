@@ -107,9 +107,6 @@ public:
 	 * "session" or "http_session" protocol. */
 	Socket *sessionSockets[MAX_SESSION_SOCKETS];
 
-	void sendAbortLongRunningConnectionsMessage(const string &address);
-	static void realSendAbortLongRunningConnectionsMessage(string address);
-
 	static bool
 	isZombie(pid_t pid) {
 		string filename = "/proc/" + toString(pid) + "/status";
@@ -425,35 +422,21 @@ public:
 	Socket *findSessionSocketWithLowestBusyness() const {
 		if (OXT_UNLIKELY(sessionSocketCount == 0)) {
 			return NULL;
-		}
+		} else if (sessionSocketCount == 1) {
+			return sessionSockets[0];
+		} else {
+			int leastBusySessionSocketIndex = 0;
+			int lowestBusyness = sessionSockets[0]->busyness();
 
-		int leastBusySessionSocketIndex = 0;
-		int lowestBusyness = sessionSockets[0]->busyness();
-
-		for (unsigned i = 1; i < sessionSocketCount; i++) {
-			if (sessionSockets[i]->busyness() < lowestBusyness) {
-				leastBusySessionSocketIndex = i;
-				lowestBusyness = sessionSockets[i]->busyness();
-			}
-		}
-
-		return sessionSockets[leastBusySessionSocketIndex];
-	}
-
-	bool abortLongRunningConnections() {
-		bool sent = false;
-		if (!longRunningConnectionsAborted) {
-			SocketList::iterator it, end = sockets.end();
-			for (it = sockets.begin(); it != end; it++) {
-				Socket *socket = &(*it);
-				if (socket->name == "control") {
-					sendAbortLongRunningConnectionsMessage(socket->address);
-					sent = true;
+			for (unsigned i = 1; i < sessionSocketCount; i++) {
+				if (sessionSockets[i]->busyness() < lowestBusyness) {
+					leastBusySessionSocketIndex = i;
+					lowestBusyness = sessionSockets[i]->busyness();
 				}
 			}
-			longRunningConnectionsAborted = true;
+
+			return sessionSockets[leastBusySessionSocketIndex];
 		}
-		return sent;
 	}
 
 	bool canTriggerShutdown() const {

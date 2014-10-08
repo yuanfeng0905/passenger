@@ -9,6 +9,7 @@
 #ifndef _PASSENGER_SERVER_OPTION_PARSER_H_
 #define _PASSENGER_SERVER_OPTION_PARSER_H_
 
+#include <boost/thread.hpp>
 #include <cstdio>
 #include <cstdlib>
 #include <Constants.h>
@@ -74,6 +75,10 @@ serverUsage() {
 	printf("\n");
 	printf("      --multi-app           Enable multi-app mode\n");
 	printf("\n");
+	printf("      --force-turbocaching  Force turbocaching to be always on\n");
+	printf("      --disable-turbocaching\n");
+	printf("                            Completely disable turbocaching\n");
+	printf("\n");
 	printf("Process management options (optional):\n");
 	printf("      --max-pool-size N     Maximum number of application processes.\n");
 	printf("                            Default: %d\n", DEFAULT_MAX_POOL_SIZE);
@@ -94,6 +99,14 @@ serverUsage() {
 	printf("      --data-buffer-dir PATH\n");
 	printf("                            Directory to store data buffers in. Default:\n");
 	printf("                            %s\n", getSystemTempDir());
+	printf("      --benchmark MODE      Enable benchmark mode. Available modes:\n");
+	printf("                            after_accept,before_checkout,after_checkout\n");
+	printf("      --disable-selfchecks  Disable various self-checks. This improves\n");
+	printf("                            performance, but might delay finding bugs in\n");
+	printf("                            " PROGRAM_NAME "\n");
+	printf("      --threads NUMBER      Number of threads to use for request handling.\n");
+	printf("                            Default: number of CPU cores (%d)\n",
+		boost::thread::hardware_concurrency());
 	printf("  -h, --help                Show this help\n");
 	printf("\n");
 	printf("Admin account privilege levels (ordered from most to least privileges):\n");
@@ -185,6 +198,12 @@ parseServerOption(int argc, const char *argv[], int &i, VariantMap &options) {
 	} else if (p.isFlag(argv[i], '\0', "--multi-app")) {
 		options.setBool("multi_app", true);
 		i++;
+	} else if (p.isFlag(argv[i], '\0', "--force-turbocaching")) {
+		options.set("turbocaching", "user_enabled");
+		i++;
+	} else if (p.isFlag(argv[i], '\0', "--disable-turbocaching")) {
+		options.set("turbocaching", "user_disabled");
+		i++;
 	} else if (p.isValueFlag(argc, i, argv[i], '\0', "--log-level")) {
 		// We do not set log_level because, when this function is called from
 		// the Watchdog, we don't want to affect the Watchdog's own log level.
@@ -203,6 +222,15 @@ parseServerOption(int argc, const char *argv[], int &i, VariantMap &options) {
 		i++;
 	} else if (p.isValueFlag(argc, i, argv[i], '\0', "--data-buffer-dir")) {
 		options.setInt("data_buffer_dir", atoi(argv[i + 1]));
+		i += 2;
+	} else if (p.isValueFlag(argc, i, argv[i], '\0', "--benchmark")) {
+		options.set("benchmark_mode", argv[i + 1]);
+		i += 2;
+	} else if (p.isFlag(argv[i], '\0', "--disable-selfchecks")) {
+		options.setBool("selfchecks", false);
+		i++;
+	} else if (p.isValueFlag(argc, i, argv[i], '\0', "--threads")) {
+		options.setInt("server_threads", atoi(argv[i + 1]));
 		i += 2;
 	} else if (!startsWith(argv[i], "-")) {
 		if (!options.has("app_root")) {

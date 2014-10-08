@@ -196,8 +196,10 @@ private:
 		P_ASSERT_EQ(req->httpState, Request::WAITING_FOR_REFERENCES);
 		assert(req->pool != NULL);
 		c->currentRequest = NULL;
-		psg_destroy_pool(req->pool);
-		req->pool = NULL;
+		if (!psg_reset_pool(req->pool, PSG_DEFAULT_POOL_SIZE)) {
+			psg_destroy_pool(req->pool);
+			req->pool = NULL;
+		}
 		unrefRequest(req, __FILE__, __LINE__);
 		if (keepAlive) {
 			SKC_TRACE(c, 3, "Keeping alive connection, handling next request");
@@ -246,7 +248,7 @@ private:
 			}
 
 			// Done parsing.
-			SKC_TRACE(client, 2, "New request received");
+			SKC_TRACE(client, 2, "New request received: #" << (totalRequestsAccepted + 1));
 			headerParserStatePool.destroy(req->parserState.headerParser);
 			req->parserState.headerParser = NULL;
 
@@ -681,7 +683,7 @@ protected:
 
 	void writeResponse(Client *client, const MemoryKit::mbuf &buffer) {
 		client->currentRequest->responseBegun = true;
-		client->output.feed(buffer);
+		client->output.feedWithoutRefGuard(buffer);
 	}
 
 	void writeResponse(Client *client, const char *data, unsigned int size) {
@@ -832,7 +834,7 @@ protected:
 		req->pool = pool;
 
 		if (!c->output.ended()) {
-			c->output.feed(MemoryKit::mbuf());
+			c->output.feedWithoutRefGuard(MemoryKit::mbuf());
 		}
 		if (c->output.endAcked()) {
 			doneWithCurrentRequest(&c);
@@ -853,7 +855,6 @@ protected:
 	/***** Hook overrides *****/
 
 	virtual void onClientObjectCreated(Client *client) {
-		SKC_LOG_EVENT(HttpServer, client, "onClientObjectCreated");
 		ParentClass::onClientObjectCreated(client);
 		client->output.setDataFlushedCallback(_onClientOutputDataFlushed);
 	}
@@ -927,6 +928,7 @@ protected:
 
 	virtual void onRequestBegin(Client *client, Request *req) {
 		totalRequestsAccepted++;
+		client->requestsAccepted++;
 	}
 
 	virtual Channel::Result onRequestBody(Client *client, Request *req,
@@ -952,7 +954,11 @@ protected:
 		req->responseBegun = false;
 		req->parserState.headerParser = headerParserStatePool.construct();
 		createRequestHeaderParser(this->getContext(), req).initialize();
-		req->pool      = psg_create_pool(PSG_DEFAULT_POOL_SIZE);
+		if (OXT_UNLIKELY(req->pool == NULL)) {
+			// We assume that most of the time, the pool from the
+			// last request is reset and reused.
+			req->pool = psg_create_pool(PSG_DEFAULT_POOL_SIZE);
+		}
 		psg_lstr_init(&req->path);
 		req->bodyChannel.reinitialize();
 		req->aux.bodyInfo.contentLength = 0; // Sets the entire union to 0.
@@ -988,7 +994,7 @@ protected:
 			it.next();
 		}
 
-		if (req->pool != NULL) {
+		if (req->pool != NULL && !psg_reset_pool(req->pool, PSG_DEFAULT_POOL_SIZE)) {
 			psg_destroy_pool(req->pool);
 			req->pool = NULL;
 		}
@@ -1036,6 +1042,7 @@ public:
 		if (client->currentRequest) {
 			doc["current_request"] = inspectRequestStateAsJson(client->currentRequest);
 		}
+		doc["requests_accepted"] = client->requestsAccepted;
 		doc["ended_request_count"] = client->endedRequestCount;
 		return doc;
 	}

@@ -25,7 +25,7 @@ sendHeaderToApp(Client *client, Request *req) {
 	 */
 	if (req->session->getProtocol() == "session") {
 		UPDATE_TRACE_POINT();
-		req->halfCloseAppConnection = true;
+		req->halfCloseAppConnection = req->bodyType != Request::RBT_NO_BODY;
 		sendHeaderToAppWithSessionProtocol(client, req);
 	} else {
 		UPDATE_TRACE_POINT();
@@ -54,8 +54,7 @@ sendHeaderToApp(Client *client, Request *req) {
 			// ForwardResponse.cpp will now forward the response data and end the
 			// request when it's done.
 			UPDATE_TRACE_POINT();
-			assert(!req->appSink.ended());
-			assert(req->appSink.hasError());
+			assert(req->appSink.ended() || req->appSink.hasError());
 			logAppSocketWriteError(client, req->appSink.getErrcode());
 			req->state = Request::WAITING_FOR_APP_OUTPUT;
 			req->appSource.startReading();
@@ -474,6 +473,27 @@ sendHeaderToAppWithHttpProtocol(Client *client, Request *req) {
 
 	cache.cached = false;
 
+	if (OXT_UNLIKELY(getLogLevel() >= LVL_DEBUG3)) {
+		struct iovec *buffers;
+		unsigned int nbuffers, dataSize;
+		bool ok;
+
+		ok = constructHeaderBuffersForHttpProtocol(req, NULL, 0, nbuffers, dataSize, cache);
+		assert(ok);
+
+		buffers = (struct iovec *) psg_palloc(req->pool,
+			sizeof(struct iovec) * nbuffers);
+		ok = constructHeaderBuffersForHttpProtocol(req, buffers, nbuffers,
+			nbuffers, dataSize, cache);
+		assert(ok);
+		(void) ok; // Shut up compiler warning
+
+		char *buffer = (char *) psg_pnalloc(req->pool, dataSize);
+		gatherBuffers(buffer, dataSize, buffers, nbuffers);
+		SKC_TRACE(client, 3, "Header data: \"" <<
+			cEscapeString(StaticString(buffer, dataSize)) << "\"");
+	}
+
 	if (!sendHeaderToAppWithHttpProtocolAndWritev(req, bytesWritten, cache)) {
 		if (bytesWritten >= 0 || errno == EAGAIN || errno == EWOULDBLOCK) {
 			sendHeaderToAppWithHttpProtocolWithBuffering(req, bytesWritten, cache);
@@ -552,7 +572,11 @@ constructHeaderBuffersForHttpProtocol(Request *req, struct iovec *buffers,
 	INC_BUFFER_ITER(i);
 	dataSize += req->path.size;
 
-	PUSH_STATIC_BUFFER(" HTTP/1.1\r\nConnection: close\r\n");
+	if (req->upgraded()) {
+		PUSH_STATIC_BUFFER(" HTTP/1.1\r\nConnection: upgrade\r\n");
+	} else {
+		PUSH_STATIC_BUFFER(" HTTP/1.1\r\nConnection: close\r\n");
+	}
 
 	while (*it != NULL) {
 		if (it->header->hash == HTTP_CONNECTION.hash()
@@ -639,7 +663,7 @@ sendHeaderToAppWithHttpProtocolAndWritev(Request *req, ssize_t &bytesWritten,
 	HttpHeaderConstructionCache &cache)
 {
 	unsigned int maxbuffers = std::min<unsigned int>(
-		4 + req->headers.size() * 4 + 4, IOV_MAX);
+		5 + req->headers.size() * 4 + 4, IOV_MAX);
 	struct iovec *buffers = (struct iovec *) psg_palloc(req->pool,
 		sizeof(struct iovec) * maxbuffers);
 	unsigned int nbuffers, dataSize;

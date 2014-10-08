@@ -139,13 +139,28 @@ private:
 		return params;
 	}
 
+	static void inspectRequestHandlerState(RequestHandler *rh, Json::Value *json) {
+		*json = rh->inspectStateAsJson();
+	}
+
 	void processConnectionsStatus(Client *client, Request *req) {
 		if (authorize(client, req, READONLY)) {
 			HeaderTable headers;
 			headers.insert(req->pool, "content-type", "application/json");
+
+			Json::Value doc;
+			doc["threads"] = (Json::UInt) requestHandlers.size();
+			for (unsigned int i = 0; i < requestHandlers.size(); i++) {
+				Json::Value json;
+				string key = "thread" + toString(i + 1);
+
+				requestHandlers[i]->getContext()->libev->runSync(boost::bind(
+					inspectRequestHandlerState, requestHandlers[i], &json));
+				doc[key] = json;
+			}
+
 			writeSimpleResponse(client, 200, &headers,
-				psg_pstrdup(req->pool,
-					requestHandler->inspectStateAsJson().toStyledString()));
+				psg_pstrdup(req->pool, doc.toStyledString()));
 			if (!req->ended()) {
 				endRequest(&client, &req);
 			}
@@ -324,6 +339,10 @@ private:
 		}
 	}
 
+	static void getRequestHandlerConfig(RequestHandler *rh, Json::Value *json) {
+		*json = rh->getConfigAsJson();
+	}
+
 	void processConfig(Client *client, Request *req) {
 		if (req->method == HTTP_GET) {
 			if (!authorize(client, req, READONLY)) {
@@ -334,7 +353,9 @@ private:
 			string logFile = getLogFile();
 
 			headers.insert(req->pool, "content-type", "application/json");
-			Json::Value doc = requestHandler->getConfigAsJson();
+			Json::Value doc;
+			requestHandlers[0]->getContext()->libev->runSync(boost::bind(
+				getRequestHandlerConfig, requestHandlers[0], &doc));
 			doc["log_level"] = getLogLevel();
 			if (!logFile.empty()) {
 				doc["log_file"] = logFile;
@@ -355,6 +376,10 @@ private:
 		} else {
 			respondWith405(client, req);
 		}
+	}
+
+	static void configureRequestHandler(RequestHandler *rh, Json::Value json) {
+		rh->configure(json);
 	}
 
 	void processConfigBody(Client *client, Request *req) {
@@ -383,7 +408,10 @@ private:
 			}
 			P_NOTICE("Log file opened.");
 		}
-		requestHandler->configure(json);
+		for (unsigned int i = 0; i < requestHandlers.size(); i++) {
+			requestHandlers[i]->getContext()->libev->runLater(boost::bind(
+				configureRequestHandler, requestHandlers[i], json));
+		}
 
 		writeSimpleResponse(client, 200, &headers, "{ \"status\": \"ok\" }");
 		if (!req->ended()) {
@@ -572,15 +600,23 @@ protected:
 		ParentClass::deinitializeRequest(client, req);
 	}
 
+	virtual unsigned int getClientName(const Client *client, char *buf, size_t size) const {
+		char *pos = buf;
+		const char *end = buf + size - 1;
+		pos = appendData(pos, end, "Adm.", 1);
+		pos += uintToString(client->number, pos, end - pos);
+		*pos = '\0';
+		return pos - buf;
+	}
+
 public:
-	RequestHandler *requestHandler;
+	vector<RequestHandler *> requestHandlers;
 	ApplicationPool2::PoolPtr appPool;
 	EventFd *exitEvent;
 	vector<Authorization> authorizations;
 
 	AdminServer(ServerKit::Context *context)
 		: ParentClass(context),
-		  requestHandler(NULL),
 		  exitEvent(NULL)
 		{ }
 

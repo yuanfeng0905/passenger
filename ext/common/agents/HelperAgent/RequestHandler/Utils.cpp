@@ -9,11 +9,32 @@
 
 // This file is included inside the RequestHandler class.
 
+#define RH_BENCHMARK_POINT(client, req, value) \
+	do { \
+		if (OXT_UNLIKELY(benchmarkMode == value)) { \
+			writeBenchmarkResponse(&client, &req); \
+			return; \
+		} \
+	} while (false)
+
 private:
 
-struct ev_loop *
-getLoop() {
-	return getContext()->libev->getLoop();
+static TurboCaching<Request>::State
+getTurboCachingInitialState(const VariantMap *agentsOptions) {
+	string value = agentsOptions->get("turbocaching", false);
+	if (value == "user_enabled") {
+		return TurboCaching<Request>::USER_ENABLED;
+	} else if (value == "user_disabled") {
+		return TurboCaching<Request>::USER_DISABLED;
+	} else {
+		return TurboCaching<Request>::DISABLED;
+	}
+}
+
+void
+generateServerLogName(unsigned int number) {
+	string name = "ServerThr." + toString(number);
+	serverLogName = psg_pstrdup(stringPool, name);
 }
 
 void
@@ -84,13 +105,42 @@ endRequestWithSimpleResponse(Client **c, Request **r, const StaticString &body, 
 	endRequest(c, r);
 }
 
-void endRequestAsBadGateway(Client **client, Request **req) {
+void
+endRequestAsBadGateway(Client **client, Request **req) {
 	if ((*req)->responseBegun) {
 		disconnectWithError(client, "bad gateway");
 	} else {
 		ServerKit::HeaderTable headers;
 		headers.insert((*req)->pool, "cache-control", "no-cache, no-store, must-revalidate");
 		writeSimpleResponse(*client, 502, &headers, "<h1>Bad Gateway</h1>");
+		endRequest(client, req);
+	}
+}
+
+void
+writeBenchmarkResponse(Client **client, Request **req) {
+	if (canKeepAlive(*req)) {
+		writeResponse(*client, P_STATIC_STRING(
+			"HTTP/1.1 200 OK\r\n"
+			"Status: 200 OK\r\n"
+			"Date: Wed, 15 Nov 1995 06:25:24 GMT\r\n"
+			"Content-Type: text/plain\r\n"
+			"Content-Length: 3\r\n"
+			"Connection: keep-alive\r\n"
+			"\r\n"
+			"ok\n"));
+	} else {
+		writeResponse(*client, P_STATIC_STRING(
+			"HTTP/1.1 200 OK\r\n"
+			"Status: 200 OK\r\n"
+			"Date: Wed, 15 Nov 1995 06:25:24 GMT\r\n"
+			"Content-Type: text/plain\r\n"
+			"Content-Length: 3\r\n"
+			"Connection: close\r\n"
+			"\r\n"
+			"ok\n"));
+	}
+	if (!(*req)->ended()) {
 		endRequest(client, req);
 	}
 }

@@ -51,7 +51,8 @@ public:
 
 	// Range: 0..MAX_SESSION_CHECKOUT_TRY
 	boost::uint8_t sessionCheckoutTry;
-	bool strip100ContinueHeader;
+	bool strip100ContinueHeader: 1;
+	bool hasPragmaHeader: 1;
 
 	Options options;
 	SessionPtr session;
@@ -70,6 +71,9 @@ public:
 		UnionStation::ScopeLog *getFromPool;
 		UnionStation::ScopeLog *requestProxying;
 	} scopeLogs;
+
+	HashedStaticString cacheKey;
+	LString *cacheControl;
 
 	unsigned int maxRequestTime;
 	struct ev_timer timeoutTimer;
@@ -116,7 +120,7 @@ public:
 		options.transaction->message(message);
 	}
 
-	DEFINE_SERVER_KIT_BASE_HTTP_REQUEST_FOOTER(Request);
+	DEFINE_SERVER_KIT_BASE_HTTP_REQUEST_FOOTER(Passenger::Request);
 };
 
 

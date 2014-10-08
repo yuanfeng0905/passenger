@@ -16,6 +16,7 @@ checkoutSession(Client *client, Request *req) {
 	GetCallback callback;
 	Options &options = req->options;
 
+	RH_BENCHMARK_POINT(client, req, BM_BEFORE_CHECKOUT);
 	SKC_TRACE(client, 2, "Checking out session: appRoot=" << options.appRoot);
 	req->state = Request::CHECKING_OUT_SESSION;
 	req->beginScopeLog(&req->scopeLogs.getFromPool, "get from pool");
@@ -70,6 +71,7 @@ sessionCheckedOutFromEventLoopThread(Client *client, Request *req,
 	}
 
 	TRACE_POINT();
+	RH_BENCHMARK_POINT(client, req, BM_AFTER_CHECKOUT);
 	if (e == NULL) {
 		SKC_DEBUG(client, "Session checked out: pid=" << session->getPid() <<
 			", gupid=" << session->getGupid());
@@ -114,7 +116,7 @@ initiateSession(Client *client, Request *req) {
 	TRACE_POINT();
 	req->sessionCheckoutTry++;
 	try {
-		req->session->initiate();
+		req->session->initiate(false);
 	} catch (const SystemException &e2) {
 		if (req->sessionCheckoutTry < MAX_SESSION_CHECKOUT_TRY) {
 			SKC_DEBUG(client, "Error checking out session (" << e2.what() <<
@@ -141,7 +143,6 @@ initiateSession(Client *client, Request *req) {
 
 	UPDATE_TRACE_POINT();
 	SKC_DEBUG(client, "Session initiated: fd=" << req->session->fd());
-	setNonBlocking(req->session->fd());
 	req->appSink.reinitialize(req->session->fd());
 	req->appSource.reinitialize(req->session->fd());
 	/***************/

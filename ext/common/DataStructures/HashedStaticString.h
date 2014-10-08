@@ -26,10 +26,9 @@ private:
 
 public:
 	HashedStaticString()
-		: StaticString()
-	{
-		rehash();
-	}
+		: StaticString(),
+		  m_hash(Hasher::EMPTY_STRING_HASH)
+		{ }
 
 	HashedStaticString(const StaticString &b)
 		: StaticString(b)
@@ -38,10 +37,9 @@ public:
 	}
 
 	HashedStaticString(const HashedStaticString &b)
-		: StaticString(b)
-	{
-		m_hash = b.m_hash;
-	}
+		: StaticString(b),
+		  m_hash(b.m_hash)
+		{ }
 
 	HashedStaticString(const string &s)
 		: StaticString(s)
@@ -73,7 +71,12 @@ public:
 		m_hash = h.finalize();
 	}
 
-	OXT_FORCE_INLINE boost::uint32_t hash() const {
+	void setHash(boost::uint32_t value) {
+		m_hash = value;
+	}
+
+	OXT_FORCE_INLINE
+	boost::uint32_t hash() const {
 		return m_hash;
 	}
 };

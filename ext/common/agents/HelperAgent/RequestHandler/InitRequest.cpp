@@ -21,6 +21,8 @@ virtual void
 onRequestBegin(Client *client, Request *req) {
 	ParentClass::onRequestBegin(client, req);
 
+	RH_BENCHMARK_POINT(client, req, BM_AFTER_ACCEPT);
+
 	{
 		// Perform hash table operations as close to header parsing as possible,
 		// and localize them as much as possible, for better CPU caching.
@@ -45,6 +47,9 @@ onRequestBegin(Client *client, Request *req) {
 		req->bodyChannel.stop();
 
 		initializeFlags(client, req, analysis);
+		if (respondFromTurboCache(client, req)) {
+			return;
+		}
 		initializePoolOptions(client, req, analysis);
 		if (req->ended()) {
 			return;
@@ -117,6 +122,34 @@ initializeFlags(Client *client, Request *req, RequestAnalysis &analysis) {
 	}
 }
 
+bool
+respondFromTurboCache(Client *client, Request *req) {
+	if (!turboCaching.isEnabled() || !turboCaching.responseCache.prepareRequest(req)) {
+		return false;
+	}
+
+	SKC_TRACE(client, 2, "Turbocaching: trying to reply from cache");
+
+	if (turboCaching.responseCache.requestAllowsFetching(req)) {
+		ResponseCache<Request>::Entry entry(turboCaching.responseCache.fetch(req,
+			ev_now(getLoop())));
+		if (entry.valid()) {
+			SKC_TRACE(client, 2, "Turbocaching: cache hit (key " << req->cacheKey << ")");
+			turboCaching.writeResponse(this, client, req, entry);
+			if (!req->ended()) {
+				endRequest(&client, &req);
+			}
+			return true;
+		} else {
+			SKC_TRACE(client, 2, "Turbocaching: cache miss (key " << req->cacheKey << ")");
+			return false;
+		}
+	} else {
+		SKC_TRACE(client, 2, "Turbocaching: request not eligible for caching");
+		return false;
+	}
+}
+
 void
 initializePoolOptions(Client *client, Request *req, RequestAnalysis &analysis) {
 	boost::shared_ptr<Options> *options;
@@ -131,14 +164,15 @@ initializePoolOptions(Client *client, Request *req, RequestAnalysis &analysis) {
 			const LString *appGroupName = psg_lstr_make_contiguous(
 				&appGroupNameCell->header->val,
 				req->pool);
+			HashedStaticString hAppGroupName(appGroupName->start->data,
+				appGroupName->size);
 
-			poolOptionsCache.lookup(HashedStaticString(appGroupName->start->data,
-				appGroupName->size), &options);
+			poolOptionsCache.lookup(hAppGroupName, &options);
 
 			if (options != NULL) {
 				req->options = **options;
 			} else {
-				createNewPoolOptions(client, req, appGroupName);
+				createNewPoolOptions(client, req, hAppGroupName);
 			}
 		} else {
 			disconnectWithError(&client, "the !~PASSENGER_APP_GROUP_NAME header must be set");
@@ -223,12 +257,11 @@ fillPoolOptionSecToMsec(Request *req, unsigned int &field, const HashedStaticStr
 }
 
 void
-createNewPoolOptions(Client *client, Request *req, const LString *appGroupName) {
+createNewPoolOptions(Client *client, Request *req, const HashedStaticString &appGroupName) {
 	ServerKit::HeaderTable &secureHeaders = req->secureHeaders;
 	Options &options = req->options;
 
-	SKC_TRACE(client, 2, "Creating new pool options: app group name=" <<
-		StaticString(appGroupName->start->data, appGroupName->size));
+	SKC_TRACE(client, 2, "Creating new pool options: app group name=" << appGroupName);
 
 	options = Options();
 
@@ -249,7 +282,7 @@ createNewPoolOptions(Client *client, Request *req, const LString *appGroupName) 
 		} else {
 			appRoot = psg_lstr_make_contiguous(appRoot, req->pool);
 		}
-		options.appRoot = StaticString(appRoot->start->data, appRoot->size);
+		options.appRoot = HashedStaticString(appRoot->start->data, appRoot->size);
 	} else {
 		if (appRoot == NULL || appRoot->size == 0) {
 			const LString *documentRoot = secureHeaders.lookup("!~DOCUMENT_ROOT");
@@ -267,7 +300,7 @@ createNewPoolOptions(Client *client, Request *req, const LString *appGroupName) 
 		} else {
 			appRoot = psg_lstr_make_contiguous(appRoot, req->pool);
 		}
-		options.appRoot = StaticString(appRoot->start->data, appRoot->size);
+		options.appRoot = HashedStaticString(appRoot->start->data, appRoot->size);
 		scriptName = psg_lstr_make_contiguous(scriptName, req->pool);
 		options.baseURI = StaticString(scriptName->start->data, scriptName->size);
 	}
@@ -284,7 +317,7 @@ createNewPoolOptions(Client *client, Request *req, const LString *appGroupName) 
 		fillPoolOption(req, options.appType, "!~PASSENGER_APP_TYPE");
 	}
 
-	options.appGroupName = StaticString(appGroupName->start->data, appGroupName->size);
+	options.appGroupName = appGroupName;
 
 	fillPoolOption(req, options.appType, "!~PASSENGER_APP_TYPE");
 	fillPoolOption(req, options.environment, "!~PASSENGER_APP_ENV");

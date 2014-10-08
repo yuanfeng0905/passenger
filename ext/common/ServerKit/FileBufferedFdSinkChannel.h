@@ -47,7 +47,7 @@ private:
 			} else {
 				errcode = errno;
 				unsigned int generation = self->generation;
-				self->feedError(errcode);
+				self->feedError(errcode, __FILE__, __LINE__);
 				if (generation != self->generation) {
 					return Channel::Result(0, true);
 				}
@@ -94,20 +94,33 @@ public:
 		FileBufferedChannel::setContext(context);
 	}
 
+	OXT_FORCE_INLINE
 	void feed(const MemoryKit::mbuf &buffer) {
 		FileBufferedChannel::feed(buffer);
 	}
 
+	OXT_FORCE_INLINE
 	void feed(const char *data, unsigned int size) {
 		FileBufferedChannel::feed(data, size);
 	}
 
+	OXT_FORCE_INLINE
 	void feed(const char *data) {
 		FileBufferedChannel::feed(data);
 	}
 
-	void feedError(int errcode) {
-		FileBufferedChannel::feedError(errcode);
+	OXT_FORCE_INLINE
+	void feedWithoutRefGuard(const MemoryKit::mbuf &buffer) {
+		FileBufferedChannel::feedWithoutRefGuard(buffer);
+	}
+
+	OXT_FORCE_INLINE
+	void feedWithoutRefGuard(const char *data, unsigned int size) {
+		FileBufferedChannel::feedWithoutRefGuard(data, size);
+	}
+
+	void feedError(int errcode, const char *file = NULL, unsigned int line = 0) {
+		FileBufferedChannel::feedError(errcode, file, line);
 	}
 
 	/**

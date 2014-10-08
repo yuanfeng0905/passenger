@@ -19,6 +19,7 @@
 #include <boost/shared_ptr.hpp>
 #include <boost/make_shared.hpp>
 #include <boost/container/vector.hpp>
+#include <boost/atomic.hpp>
 #include <oxt/macros.hpp>
 #include <oxt/thread.hpp>
 #include <oxt/dynamic_thread_group.hpp>
@@ -78,23 +79,6 @@ public:
 			{ }
 	};
 
-	/**
-	 * Protects `lifeStatus`.
-	 */
-	mutable boost::mutex lifetimeSyncher;
-	/**
-	 * A Group object progresses through a life.
-	 *
-	 * Do not access directly, always use `isAlive()`/`getLifeStatus()` or
-	 * through `lifetimeSyncher`.
-	 *
-	 * Invariant:
-	 *    if lifeStatus != ALIVE:
-	 *       enabledCount == 0
-	 *       disablingCount == 0
-	 *       disabledCount == 0
-	 *       nEnabledProcessesTotallyBusy == 0
-	 */
 	enum LifeStatus {
 		/** Up and operational. */
 		ALIVE,
@@ -110,7 +94,7 @@ public:
 		 * from this Group anymore.
 		 */
 		SHUT_DOWN
-	} lifeStatus;
+	};
 
 	/**
 	 * A back reference to the containing SuperGroup. Should never
@@ -119,8 +103,6 @@ public:
 	 * Read-only; only set during initialization.
 	 */
 	SuperGroup *superGroup;
-	string restartFile;
-	string alwaysRestartFile;
 	time_t lastRestartFileMtime;
 	time_t lastRestartFileCheckTime;
 
@@ -137,6 +119,19 @@ public:
 	 */
 	short processesBeingSpawned;
 	/**
+	 * A Group object progresses through a life.
+	 *
+	 * You should not access this directly. You should use `isAlive()`/`getLifeStatus()`.
+	 *
+	 * Invariant:
+	 *    if lifeStatus != ALIVE:
+	 *       enabledCount == 0
+	 *       disablingCount == 0
+	 *       disabledCount == 0
+	 *       nEnabledProcessesTotallyBusy == 0
+	 */
+	boost::atomic<boost::uint8_t> lifeStatus;
+	/**
 	 * Whether the spawner thread is currently working. Note that even
 	 * if it's working, it doesn't necessarily mean that processes are
 	 * being spawned (i.e. that processesBeingSpawned > 0). After the
@@ -144,7 +139,7 @@ public:
 	 * the newly-spawned process to the group. During that time it's not
 	 * technically spawning anything.
 	 */
-	bool m_spawning;
+	bool m_spawning: 1;
 	/** Whether a non-rolling restart is in progress (i.e. whether spawnThreadRealMain()
 	 * is at work). While it is in progress, it is not possible to signal the desire to
 	 * spawn new process. If spawning was already in progress when the restart was initiated,
@@ -155,13 +150,15 @@ public:
 	 * Invariant:
 	 *    if m_restarting: processesBeingSpawned == 0
 	 */
-	bool m_restarting;
-	bool alwaysRestartFileExists;
-	bool hasSpawnError;
+	bool m_restarting: 1;
+	bool alwaysRestartFileExists: 1;
+	bool hasSpawnError: 1;
 
 	/** Contains the spawn loop thread and the restarter thread. */
 	dynamic_thread_group interruptableThreads;
 
+	string restartFile;
+	string alwaysRestartFile;
 	ProcessPtr nullProcess;
 
 	/** This timer scans `detachedProcesses` periodically to see
@@ -173,22 +170,12 @@ public:
 	GroupPtr selfPointer;
 
 
-	static void _onSessionInitiateFailure(Session *session) {
-		Process *process = session->getProcess();
-		assert(process != NULL);
-		process->getGroup()->onSessionInitiateFailure(process, session);
-	}
-
-	static void _onSessionClose(Session *session) {
-		Process *process = session->getProcess();
-		assert(process != NULL);
-		process->getGroup()->onSessionClose(process, session);
-	}
-
 	static void generateSecret(const SuperGroup *superGroup, char *secret);
 	static string generateUuid(const SuperGroup *superGroup);
-	void onSessionInitiateFailure(Process *process, Session *session);
-	void onSessionClose(Process *process, Session *session);
+	static void _onSessionInitiateFailure(Session *session);
+	static void _onSessionClose(Session *session);
+	OXT_FORCE_INLINE void onSessionInitiateFailure(Process *process, Session *session);
+	OXT_FORCE_INLINE void onSessionClose(Process *process, Session *session);
 
 	/** Returns whether it is allowed to perform a new OOBW in this group. */
 	bool oobwAllowed() const;
@@ -210,11 +197,13 @@ public:
 	void startCheckingDetachedProcesses(bool immediately);
 	void detachedProcessesCheckerMain(GroupPtr self);
 	void wakeUpGarbageCollector();
+	bool selfCheckingEnabled() const;
 	bool poolAtFullCapacity() const;
 	bool anotherGroupIsWaitingForCapacity() const;
 	Group *findOtherGroupWaitingForCapacity() const;
 	ProcessPtr poolForceFreeCapacity(const Group *exclude, boost::container::vector<Callback> &postLockActions);
 	bool testOverflowRequestQueue() const;
+	void callAbortLongRunningConnectionsCallback(const ProcessPtr &process);
 	psg_pool_t *getPallocPool() const;
 	const ResourceLocator &getResourceLocator() const;
 	void runAttachHooks(const ProcessPtr process) const;
@@ -224,7 +213,11 @@ public:
 	void verifyInvariants() const {
 		// !a || b: logical equivalent of a IMPLIES b.
 		#ifndef NDEBUG
-		LifeStatus lifeStatus = getLifeStatus();
+		if (!selfCheckingEnabled()) {
+			return;
+		}
+
+		LifeStatus lifeStatus = (LifeStatus) this->lifeStatus.load(boost::memory_order_relaxed);
 
 		assert(enabledCount >= 0);
 		assert(disablingCount >= 0);
@@ -266,6 +259,10 @@ public:
 	void verifyExpensiveInvariants() const {
 		#ifndef NDEBUG
 		// !a || b: logical equivalent of a IMPLIES b.
+
+		if (!selfCheckingEnabled()) {
+			return;
+		}
 
 		ProcessList::const_iterator it, end;
 
@@ -566,7 +563,7 @@ public:
 		} else if (&destination == &detachedProcesses) {
 			assert(process->isAlive());
 			process->enabled = Process::DETACHED;
-			process->abortLongRunningConnections();
+			callAbortLongRunningConnectionsCallback(process);
 		} else {
 			P_BUG("Unknown destination list");
 		}
@@ -684,7 +681,8 @@ public:
 	}
 
 	bool shutdownCanFinish() const {
-		return getLifeStatus() == SHUTTING_DOWN
+		LifeStatus lifeStatus = (LifeStatus) this->lifeStatus.load(boost::memory_order_relaxed);
+		return lifeStatus == SHUTTING_DOWN
 			&& enabledCount == 0
 			&& disablingCount == 0
 	 		&& disabledCount == 0
@@ -700,7 +698,10 @@ public:
 	 */
 	void finishShutdown(boost::container::vector<Callback> &postLockActions) {
 		TRACE_POINT();
-		assert(getLifeStatus() == SHUTTING_DOWN);
+		#ifndef NDEBUG
+			LifeStatus lifeStatus = (LifeStatus) this->lifeStatus.load(boost::memory_order_relaxed);
+			P_ASSERT_EQ(lifeStatus, SHUTTING_DOWN);
+		#endif
 		P_DEBUG("Finishing shutdown of group " << name);
 		if (shutdownCallback) {
 			postLockActions.push_back(shutdownCallback);
@@ -708,10 +709,7 @@ public:
 		}
 		postLockActions.push_back(boost::bind(interruptAndJoinAllThreads,
 			shared_from_this()));
-		{
-			boost::lock_guard<boost::mutex> l(lifetimeSyncher);
-			lifeStatus = SHUT_DOWN;
-		}
+		this->lifeStatus.store(SHUT_DOWN, boost::memory_order_release);
 		selfPointer.reset();
 	}
 
@@ -887,10 +885,7 @@ public:
 		spawner.reset();
 		selfPointer = shared_from_this();
 		assert(disableWaitlist.empty());
-		{
-			boost::lock_guard<boost::mutex> l(lifetimeSyncher);
-			lifeStatus = SHUTTING_DOWN;
-		}
+		lifeStatus.store(SHUTTING_DOWN, boost::memory_order_release);
 	}
 
 
@@ -917,18 +912,17 @@ public:
 	 * @pre getLifeState() != SHUT_DOWN
 	 * @post result != NULL
 	 */
-	Pool *getPool() const;
+	OXT_FORCE_INLINE Pool *getPool() const;
 
 	// Thread-safe.
 	bool isAlive() const {
-		boost::lock_guard<boost::mutex> lock(lifetimeSyncher);
-		return lifeStatus == ALIVE;
+		return getLifeStatus() == ALIVE;
 	}
 
 	// Thread-safe.
+	OXT_FORCE_INLINE
 	LifeStatus getLifeStatus() const {
-		boost::lock_guard<boost::mutex> lock(lifetimeSyncher);
-		return lifeStatus;
+		return (LifeStatus) lifeStatus.load(boost::memory_order_acquire);
 	}
 
 
@@ -1480,6 +1474,7 @@ public:
 		if (includeSecrets) {
 			stream << "<secret>" << escapeForXml(StaticString(secret, SECRET_SIZE)) << "</secret>";
 		}
+		LifeStatus lifeStatus = (LifeStatus) this->lifeStatus.load(boost::memory_order_relaxed);
 		switch (lifeStatus) {
 		case ALIVE:
 			stream << "<life_status>ALIVE</life_status>";
@@ -1491,7 +1486,7 @@ public:
 			stream << "<life_status>SHUT_DOWN</life_status>";
 			break;
 		default:
-			P_BUG("Unknown 'lifeStatus' state " << (int) lifeStatus);
+			P_BUG("Unknown 'lifeStatus' state " << lifeStatus);
 		}
 
 		stream << "<options>";
