@@ -195,11 +195,12 @@ shared_examples_for "an example web app" do
 			upload_data = File.read("stub/upload_data.txt")
 			size_of_first_half = upload_data.size / 2
 
-			socket.write("POST #{base_uri}/ HTTP/1.1\r\n")
+			socket.write("POST #{base_uri}/raw_upload_to_file HTTP/1.1\r\n")
 			socket.write("Host: #{uri.host}:#{uri.port}\r\n")
 			socket.write("Content-Type: multipart/form-data\r\n")
 			socket.write("Content-Length: #{upload_data.size}\r\n")
 			socket.write("Connection: close\r\n")
+			socket.write("X-Output: /dev/null\r\n")
 			socket.write("\r\n")
 
 			socket.write(upload_data[0 .. size_of_first_half - 1])
@@ -211,7 +212,7 @@ shared_examples_for "an example web app" do
 
 			socket.write(upload_data[0 .. size_of_first_half])
 			socket.flush
-			socket.read.should =~ /front page/
+			socket.read.should =~ /ok\Z/
 		ensure
 			socket.close rescue nil
 		end
@@ -227,26 +228,31 @@ shared_examples_for "an example web app" do
 
 		begin
 			5.times do |i|
+				log "Begin sending request #{i}"
 				socket = TCPSocket.new(uri.host, uri.port)
 				sockets << socket
-				socket.write("POST #{base_uri}/ HTTP/1.1\r\n")
+				socket.write("POST #{base_uri}/raw_upload_to_file HTTP/1.1\r\n")
 				socket.write("Host: #{uri.host}:#{uri.port}\r\n")
 				socket.write("Content-Type: multipart/form-data\r\n")
 				socket.write("Content-Length: #{upload_data.size}\r\n")
 				socket.write("Connection: close\r\n")
 				socket.write("X-Index: #{i}\r\n")
+				socket.write("X-Output: /dev/null\r\n")
 				socket.write("\r\n")
 				socket.write(upload_data[0 .. size_of_first_half - 1])
 				socket.flush
 			end
+			log "Reading front page"
 			Timeout.timeout(10) do
 				get('/').should == "front page"
 			end
 			sockets.each_with_index do |socket, i|
+				log "Resuming request #{i}"
 				socket.write(upload_data[size_of_first_half .. -1])
 				socket.flush
+				log "Completely sent request #{i}; reading response"
 				content = socket.read
-				if content !~ /front page/
+				if content !~ /ok\Z/
 					raise "Connection #{i} did not send a correct response:\n#{content}"
 				end
 			end

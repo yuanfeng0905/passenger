@@ -6,6 +6,7 @@
 #
 #  See LICENSE file for license information.
 
+PhusionPassenger.require_passenger_lib 'constants'
 PhusionPassenger.require_passenger_lib 'platform_info/binary_compatibility'
 PhusionPassenger.require_passenger_lib 'utils/json'
 require 'etc'
@@ -23,7 +24,7 @@ class RuntimeLocator
 	end
 
 	def self.looks_like_support_dir?(dir)
-		File.exist?("#{dir}/agents/PassengerAgent") &&
+		File.exist?("#{dir}/agents/#{AGENT_EXE}") &&
 			File.exist?("#{dir}/common/libboost_oxt.a") &&
 			File.exist?("#{dir}/common/libpassenger_common/ApplicationPool2/Implementation.o")
 	end

@@ -79,6 +79,12 @@ AGENT_OBJECTS = {
 	'SystemMetricsTool.o' => [
 		'ext/common/agents/HelperAgent/SystemMetricsTool.cpp',
 		'ext/common/Utils/SystemMetricsCollector.h'
+	],
+	'TempDirToucher.o' => [
+		'ext/common/agents/TempDirToucher/Main.cpp'
+	],
+	'SpawnPreparer.o' => [
+		'ext/common/agents/SpawnPreparer/Main.cpp'
 	]
 }
 
@@ -108,19 +114,19 @@ dependencies = agent_objects + [
 	LIBEV_TARGET,
 	LIBEIO_TARGET
 ].flatten.compact
-file AGENT_OUTPUT_DIR + 'PassengerAgent' => dependencies do
+file AGENT_OUTPUT_DIR + AGENT_EXE => dependencies do
 	agent_objects_as_string = agent_objects.join(" ")
 	sh "mkdir -p #{AGENT_OUTPUT_DIR}" if !File.directory?(AGENT_OUTPUT_DIR)
 	compile_cxx("ext/common/agents/Main.cpp",
-		"-o #{AGENT_OUTPUT_DIR}PassengerAgent.o " <<
+		"-o #{AGENT_OUTPUT_DIR}#{AGENT_EXE}.o " <<
 		"#{EXTRA_PRE_CXXFLAGS} " <<
 		"-Iext -Iext/common " <<
 		"#{AGENT_CFLAGS} #{LIBEV_CFLAGS} #{LIBEIO_CFLAGS} " <<
 		"#{PlatformInfo.curl_flags} " <<
 		"#{PlatformInfo.zlib_flags} " <<
 		"#{EXTRA_CXXFLAGS}")
-	create_executable("#{AGENT_OUTPUT_DIR}PassengerAgent",
-		"#{AGENT_OUTPUT_DIR}PassengerAgent.o",
+	create_executable("#{AGENT_OUTPUT_DIR}#{AGENT_EXE}",
+		"#{AGENT_OUTPUT_DIR}#{AGENT_EXE}.o",
 		"#{agent_libs.link_objects_as_string} " <<
 		"#{agent_objects_as_string} " <<
 		"#{LIBBOOST_OXT} " <<
@@ -132,38 +138,6 @@ file AGENT_OUTPUT_DIR + 'PassengerAgent' => dependencies do
 		"#{PlatformInfo.portability_cxx_ldflags} " <<
 		"#{AGENT_LDFLAGS} " <<
 		"#{EXTRA_CXX_LDFLAGS}")
-end
-
-spawn_preparer_libs = COMMON_LIBRARY.only('Utils/Base64.o', 'Utils/SystemTime.o',
-	'Utils/StrIntUtils.o', 'Utils/IOUtils.o')
-dependencies = [
-	'ext/common/agents/SpawnPreparer.cpp',
-	spawn_preparer_libs.link_objects,
-	LIBBOOST_OXT
-].flatten
-file AGENT_OUTPUT_DIR + 'SpawnPreparer' => dependencies do
-	sh "mkdir -p #{AGENT_OUTPUT_DIR}" if !File.directory?(AGENT_OUTPUT_DIR)
-	create_executable(AGENT_OUTPUT_DIR + 'SpawnPreparer',
-		'ext/common/agents/SpawnPreparer.cpp',
-		"#{EXTRA_PRE_CXXFLAGS} #{EXTRA_PRE_CXX_LDFLAGS} " <<
-		"-Iext -Iext/common " <<
-		"#{AGENT_CFLAGS} #{EXTRA_CXXFLAGS} " <<
-		"#{spawn_preparer_libs.link_objects_as_string} " <<
-		"#{LIBBOOST_OXT} " <<
-		"#{PlatformInfo.portability_cxx_ldflags} " <<
-		"#{EXTRA_CXX_LDFLAGS}")
-end
-
-file AGENT_OUTPUT_DIR + 'EnvPrinter' => 'ext/common/agents/EnvPrinter.c' do
-	sh "mkdir -p #{AGENT_OUTPUT_DIR}" if !File.directory?(AGENT_OUTPUT_DIR)
-	create_c_executable(AGENT_OUTPUT_DIR + 'EnvPrinter',
-		'ext/common/agents/EnvPrinter.c')
-end
-
-file AGENT_OUTPUT_DIR + 'TempDirToucher' => 'ext/common/agents/TempDirToucher.c' do
-	sh "mkdir -p #{AGENT_OUTPUT_DIR}" if !File.directory?(AGENT_OUTPUT_DIR)
-	create_c_executable(AGENT_OUTPUT_DIR + 'TempDirToucher',
-		'ext/common/agents/TempDirToucher.c')
 end
 
 task 'common:clean' do

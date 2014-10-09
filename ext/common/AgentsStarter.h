@@ -296,7 +296,7 @@ public:
 		this_thread::disable_interruption di;
 		this_thread::disable_syscall_interruption dsi;
 		ResourceLocator locator(passengerRoot);
-		string agentFilename = locator.getAgentsDir() + "/PassengerAgent";
+		string agentFilename = locator.getAgentsDir() + "/" AGENT_EXE;
 		SocketPair fds;
 		int e;
 		pid_t pid;
@@ -342,7 +342,7 @@ public:
 				afterFork();
 			}
 
-			execl(agentFilename.c_str(), "PassengerAgent", "watchdog",
+			execl(agentFilename.c_str(), AGENT_EXE, "watchdog",
 				// Some extra space to allow the child process to change its process title.
 				"                                                ",
 				(char *) 0);

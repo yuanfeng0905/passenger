@@ -234,9 +234,7 @@ dependencies = [
 	'test/cxx/CxxTestMain',
 	'test/support/allocate_memory',
 	NATIVE_SUPPORT_TARGET,
-	AGENT_OUTPUT_DIR + 'SpawnPreparer',
-	AGENT_OUTPUT_DIR + 'TempDirToucher',
-	AGENT_OUTPUT_DIR + 'EnvPrinter'
+	AGENT_OUTPUT_DIR + AGENT_EXE
 ].compact
 desc "Run unit tests for the Apache 2 and Nginx C++ components"
 task 'test:cxx' => dependencies do

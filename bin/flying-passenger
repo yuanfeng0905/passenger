@@ -15,10 +15,10 @@ require 'optparse'
 require 'socket'
 require 'logger'
 require 'base64'
-require 'phusion_passenger/constants'
-require 'phusion_passenger/message_channel'
-require 'phusion_passenger/message_client'
-require 'phusion_passenger/platform_info/ruby'
+PhusionPassenger.require_passenger_lib 'constants'
+PhusionPassenger.require_passenger_lib 'message_channel'
+PhusionPassenger.require_passenger_lib 'message_client'
+PhusionPassenger.require_passenger_lib 'platform_info/ruby'
 
 
 module PhusionPassenger
@@ -209,9 +209,9 @@ private
 
 	def spawn
 		ENV['PASSENGER_USE_FEEDBACK_FD'] = '1'
-		args = ["#{PhusionPassenger.agents_dir}/PassengerAgent", "watchdog"]
+		args = ["#{PhusionPassenger.agents_dir}/#{AGENT_EXE}", "watchdog"]
 
-		@logger.info("Starting PassengerAgent...")
+		@logger.info("Starting #{AGENT_EXE}...")
 		a, b = UNIXSocket.pair
 		channel = MessageChannel.new(a)
 		args << {
@@ -228,17 +228,17 @@ private
 			raise SpawnError, e.message
 		end
 		b.close
-		@logger.info("PassengerAgent started on PID #{pid}")
+		@logger.info("#{AGENT_EXE} started on PID #{pid}")
 		
-		@logger.debug { "Sending arguments to PassengerAgent: " + create_arguments.inspect }
+		@logger.debug { "Sending arguments to #{AGENT_EXE}: " + create_arguments.inspect }
 		channel.write("VariantMap", *create_arguments)
 		result = channel.read
 		result_name, *result_args = result
-		@logger.debug { "PassengerAgent response: " + result.inspect }
+		@logger.debug { "#{AGENT_EXE} response: " + result.inspect }
 
 		case result_name
 		when "Agents information"
-			@logger.info("PassengerAgent initialized properly")
+			@logger.info("#{AGENT_EXE} initialized properly")
 		when "Watchdog startup error"
 			raise SpawnError, "Unable to start the Phusion Passenger agent " +
 				"because it encountered the following error during startup: " +
