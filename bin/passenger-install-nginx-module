@@ -192,7 +192,8 @@ private
 	end
 
 	def check_nginx_module_sources_available
-		if PhusionPassenger.natively_packaged? && !File.exist?(PhusionPassenger.nginx_module_source_dir)
+		if PhusionPassenger.custom_packaged? &&
+		   (!PhusionPassenger.nginx_module_source_dir || !File.exist?(PhusionPassenger.nginx_module_source_dir))
 			new_screen
 			render_template 'nginx/nginx_module_sources_not_available'
 			return false
@@ -202,7 +203,7 @@ private
 	end
 
 	def needs_compiling_support_files?
-		return PhusionPassenger.originally_packaged?
+		return !PhusionPassenger.build_system_dir.nil?
 	end
 	
 	def compile_passenger_support_files
@@ -472,7 +473,7 @@ private
 		new_screen
 		render_template 'nginx/config_snippets',
 			:config_file => locate_nginx_config_file(prefix),
-			:passenger_root => PhusionPassenger.source_root,
+			:passenger_root => PhusionPassenger.install_spec,
 			:ruby => PlatformInfo.ruby_command
 		wait
 	end
@@ -510,7 +511,7 @@ private
 		contents = File.read(config_file)
 		contents.sub!(/^http \{/,
 			"http {\n" <<
-			"    passenger_root #{PhusionPassenger.source_root};\n" <<
+			"    passenger_root #{PhusionPassenger.install_spec};\n" <<
 			"    passenger_ruby #{PlatformInfo.ruby_command};\n")
 		File.open(config_file, 'w') do |f|
 			f.write(contents)
@@ -519,7 +520,7 @@ private
 		new_screen
 		render_template 'nginx/config_snippets_inserted',
 			:config_file => config_file,
-			:passenger_root => PhusionPassenger.source_root,
+			:passenger_root => PhusionPassenger.install_spec,
 			:ruby => PlatformInfo.ruby_command
 		wait
 	end

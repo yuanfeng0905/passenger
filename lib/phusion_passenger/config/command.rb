@@ -28,6 +28,7 @@ private
 		begin
 			@parser.parse!(@argv)
 		rescue OptionParser::ParseError => e
+			STDERR.puts "*** ERROR: #{e}"
 			abort @parser.to_s
 		end
 		if @options[:help]

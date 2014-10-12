@@ -1,9 +1,11 @@
 #  Phusion Passenger - https://www.phusionpassenger.com/
-#  Copyright (c) 2010-2013 Phusion
+#  Copyright (c) 2010-2014 Phusion
 #
 #  "Phusion Passenger" is a trademark of Hongli Lai & Ninh Bui.
 #
 #  See LICENSE file for license information.
+
+PhusionPassenger.require_passenger_lib 'constants'
 
 module PhusionPassenger
 
@@ -54,13 +56,6 @@ private
 		end
 	end
 
-	def home
-		@home ||= begin
-			require 'etc' if !defined?(Etc)
-			home = Etc.getpwuid(Process.uid).dir
-		end
-	end
-
 	def library_name
 		return "passenger_native_support.#{libext}"
 	end
@@ -85,9 +80,9 @@ private
 	end
 
 	def load_from_buildout_dir
-		if PhusionPassenger.buildout_dir
+		if PhusionPassenger.build_system_dir
 			begin
-				return load_native_extension("#{PhusionPassenger.buildout_dir}/ruby/#{archdir}/#{library_name}")
+				return load_native_extension("#{PhusionPassenger.build_system_dir}/buildout/ruby/#{archdir}/#{library_name}")
 			rescue LoadError
 				return false
 			end
@@ -104,7 +99,7 @@ private
 
 	def load_from_home_dir
 		begin
-			return load_native_extension("#{home}/#{USER_NAMESPACE_DIRNAME}/native_support/#{VERSION_STRING}/#{archdir}/#{library_name}")
+			return load_native_extension("#{PhusionPassenger.home_dir}/#{USER_NAMESPACE_DIRNAME}/native_support/#{VERSION_STRING}/#{archdir}/#{library_name}")
 		rescue LoadError
 			return false
 		end
@@ -176,10 +171,10 @@ private
 			return false
 		end
 
-		if PhusionPassenger.natively_packaged? && !File.exist?(PhusionPassenger.ruby_extension_source_dir)
+		if PhusionPassenger.custom_packaged? && !File.exist?(PhusionPassenger.ruby_extension_source_dir)
 			PhusionPassenger.require_passenger_lib 'constants'
 			STDERR.puts " --> No #{library_name} found for current Ruby interpreter."
-			case PhusionPassenger.native_packaging_method
+			case PhusionPassenger.packaging_method
 			when 'deb'
 				STDERR.puts "     This library provides various optimized routines that make"
 				STDERR.puts "     #{PhusionPassenger::PROGRAM_NAME} faster. Please run 'sudo apt-get install #{PhusionPassenger::DEB_DEV_PACKAGE}'"
@@ -190,7 +185,7 @@ private
 				STDERR.puts "     so that #{PhusionPassenger::PROGRAM_NAME} can compile one on the next run."
 			else
 				STDERR.puts "     #{PhusionPassenger::PROGRAM_NAME} can compile one, but an extra package must be installed"
-				STDERR.puts "     first. Please ask your operating system vendor for instructions."
+				STDERR.puts "     first. Please ask your packager or operating system vendor for instructions."
 			end
 			return false
 		end
@@ -215,10 +210,10 @@ private
 		if (output_dir = ENV['PASSENGER_NATIVE_SUPPORT_OUTPUT_DIR']) && !output_dir.empty?
 			target_dirs << "#{output_dir}/#{VERSION_STRING}/#{archdir}"
 		end
-		if PhusionPassenger.buildout_dir
-			target_dirs << "#{PhusionPassenger.buildout_dir}/ruby/#{archdir}"
+		if PhusionPassenger.build_system_dir
+			target_dirs << "#{PhusionPassenger.build_system_dir}/buildout/ruby/#{archdir}"
 		end
-		target_dirs << "#{home}/#{USER_NAMESPACE_DIRNAME}/native_support/#{VERSION_STRING}/#{archdir}"
+		target_dirs << "#{PhusionPassenger.home_dir}/#{USER_NAMESPACE_DIRNAME}/native_support/#{VERSION_STRING}/#{archdir}"
 		return target_dirs
 	end
 
@@ -346,7 +341,7 @@ private
 					log("-------------------------------", options)
 				end
 			rescue Errno::ENOTDIR
-				# This can occur when locations.ini set buildout_dir
+				# This can occur when locations.ini set build_system_dir
 				# to an invalid path. Just ignore this error.
 				if i == dirs.size - 1
 					log("Not a valid directory, " +

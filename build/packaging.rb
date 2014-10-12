@@ -488,7 +488,7 @@ task :fakeroot => [:apache2, :nginx, :doc] do
 	psg_nodelibdir = "#{fs_datadir}/#{GLOBAL_NAMESPACE_DIRNAME}/node"
 	psg_libdir     = "#{fs_libdir}/#{GLOBAL_NAMESPACE_DIRNAME}"
 	psg_native_support_dir = ENV["RUBYARCHDIR"] || "#{fs_libdir}/ruby/#{CONFIG['ruby_version']}/#{CONFIG['arch']}"
-	psg_agents_dir = "#{fs_libdir}/#{GLOBAL_NAMESPACE_DIRNAME}/agents"
+	psg_support_binaries_dir = "#{fs_libdir}/#{GLOBAL_NAMESPACE_DIRNAME}/support-binaries"
 	psg_helper_scripts_dir = "#{fs_datadir}/#{GLOBAL_NAMESPACE_DIRNAME}/helper-scripts"
 	psg_resources_dir      = "#{fs_datadir}/#{GLOBAL_NAMESPACE_DIRNAME}"
 	psg_include_dir        = "#{fs_datadir}/#{GLOBAL_NAMESPACE_DIRNAME}/include"
@@ -504,7 +504,7 @@ task :fakeroot => [:apache2, :nginx, :doc] do
 	fake_nodelibdir = "#{fakeroot}#{psg_nodelibdir}"
 	fake_libdir     = "#{fakeroot}#{psg_libdir}"
 	fake_native_support_dir = "#{fakeroot}#{psg_native_support_dir}"
-	fake_agents_dir = "#{fakeroot}#{psg_agents_dir}"
+	fake_support_binaries_dir = "#{fakeroot}#{psg_support_binaries_dir}"
 	fake_helper_scripts_dir = "#{fakeroot}#{psg_helper_scripts_dir}"
 	fake_resources_dir = "#{fakeroot}#{psg_resources_dir}"
 	fake_include_dir   = "#{fakeroot}#{psg_include_dir}"
@@ -515,7 +515,7 @@ task :fakeroot => [:apache2, :nginx, :doc] do
 	fake_ruby_extension_source_dir = "#{fakeroot}#{psg_ruby_extension_source_dir}"
 	fake_nginx_module_source_dir   = "#{fakeroot}#{psg_nginx_module_source_dir}"
 
-	native_packaging_method = ENV['NATIVE_PACKAGING_METHOD'] || "deb"
+	packaging_method = ENV['NATIVE_PACKAGING_METHOD'] || ENV['PACKAGING_METHOD'] || "deb"
 
 	sh "rm -rf #{fakeroot}"
 	sh "mkdir -p #{fakeroot}"
@@ -540,12 +540,12 @@ task :fakeroot => [:apache2, :nginx, :doc] do
 	sh "mkdir -p #{fake_native_support_dir}"
 	sh "cp -R buildout/ruby/#{native_support_archdir}/*.#{LIBEXT} #{fake_native_support_dir}/"
 
-	# Agents
-	sh "mkdir -p #{fake_agents_dir}"
-	sh "cp -R #{PhusionPassenger.agents_dir}/* #{fake_agents_dir}/"
-	sh "rm -rf #{fake_agents_dir}/*.dSYM"
-	sh "rm -rf #{fake_agents_dir}/*/*.dSYM"
-	sh "rm -rf #{fake_agents_dir}/*.o"
+	# Support binaries
+	sh "mkdir -p #{fake_support_binaries_dir}"
+	sh "cp -R #{PhusionPassenger.support_binaries_dir}/* #{fake_support_binaries_dir}/"
+	sh "rm -rf #{fake_support_binaries_dir}/*.dSYM"
+	sh "rm -rf #{fake_support_binaries_dir}/*/*.dSYM"
+	sh "rm -rf #{fake_support_binaries_dir}/*.o"
 
 	# Helper scripts
 	sh "mkdir -p #{fake_helper_scripts_dir}"
@@ -621,10 +621,9 @@ task :fakeroot => [:apache2, :nginx, :doc] do
 	puts "Creating #{fake_rubylibdir}/phusion_passenger/locations.ini"
 	File.open("#{fake_rubylibdir}/phusion_passenger/locations.ini", "w") do |f|
 		f.puts "[locations]"
-		f.puts "natively_packaged=true"
-		f.puts "native_packaging_method=#{native_packaging_method}"
+		f.puts "packaging_method=#{packaging_method}"
 		f.puts "bin_dir=#{psg_bindir}"
-		f.puts "agents_dir=#{psg_agents_dir}"
+		f.puts "support_binaries_dir=#{psg_support_binaries_dir}"
 		f.puts "lib_dir=#{psg_libdir}"
 		f.puts "helper_scripts_dir=#{psg_helper_scripts_dir}"
 		f.puts "resources_dir=#{psg_resources_dir}"

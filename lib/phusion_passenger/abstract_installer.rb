@@ -167,7 +167,7 @@ protected
 	end
 
 	def check_gem_install_permission_problems
-		return true if PhusionPassenger.natively_packaged?
+		return true if PhusionPassenger.custom_packaged?
 		begin
 			require 'rubygems'
 		rescue LoadError
@@ -187,7 +187,7 @@ protected
 	end
 
 	def check_directory_accessible_by_web_server
-		return true if PhusionPassenger.natively_packaged?
+		return true if PhusionPassenger.custom_packaged?
 		inaccessible_directories = []
 		list_parent_directories(PhusionPassenger.build_system_dir).each do |path|
 			if !world_executable?(path)
@@ -364,7 +364,7 @@ protected
 	end
 
 	def home_dir
-		Etc.getpwuid(Process.uid).dir
+		return PhusionPassenger.home_dir
 	end
 
 

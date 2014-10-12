@@ -96,7 +96,7 @@ private:
 		shared_array<const char *> &args) const
 	{
 		vector<string> startCommandArgs;
-		string agentsDir = config->resourceLocator->getAgentsDir();
+		string agentFilename = config->resourceLocator->findSupportBinary(AGENT_EXE);
 		vector<string> command;
 
 		split(options.getStartCommand(*config->resourceLocator), '\t', startCommandArgs);
@@ -111,9 +111,9 @@ private:
 			command.push_back("exec \"$@\"");
 			command.push_back("SpawnPreparerShell");
 		} else {
-			command.push_back(agentsDir + "/" AGENT_EXE);
+			command.push_back(agentFilename);
 		}
-		command.push_back(agentsDir + "/" AGENT_EXE);
+		command.push_back(agentFilename);
 		command.push_back("spawn-preparer");
 		command.push_back(preparation.appRoot);
 		command.push_back(serializeEnvvarsFromPoolOptions(options));

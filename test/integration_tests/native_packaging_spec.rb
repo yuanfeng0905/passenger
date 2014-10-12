@@ -25,9 +25,9 @@
 LOCATIONS_INI = ENV['LOCATIONS_INI']
 abort "Please set the LOCATIONS_INI environment variable to the right locations.ini" if !LOCATIONS_INI
 
-NATIVE_PACKAGING_METHOD = ENV['NATIVE_PACKAGING_METHOD']
-if !["deb", "rpm", "homebrew"].include?(NATIVE_PACKAGING_METHOD)
-	abort "Please set NATIVE_PACKAGING_METHOD to either 'deb', 'rpm' or 'homebrew'"
+PACKAGING_METHOD = ENV['NATIVE_PACKAGING_METHOD'] || ENV['PACKAGING_METHOD']
+if !["deb", "rpm", "homebrew"].include?(PACKAGING_METHOD)
+	abort "Please set PACKAGING_METHOD to either 'deb', 'rpm' or 'homebrew'"
 end
 
 # Clean Bundler environment variables. We don't want to start Passenger Standalone
@@ -60,7 +60,7 @@ ENV['STDERR_TO_STDOUT'] = '1'
 
 module PhusionPassenger
 
-case NATIVE_PACKAGING_METHOD
+case PACKAGING_METHOD
 when "deb"
 	BINDIR = "/usr/bin"
 	SBINDIR = "/usr/sbin"
@@ -69,7 +69,7 @@ when "deb"
 	DOCDIR = "/usr/share/doc/passenger-enterprise"
 	HELPER_SCRIPTS_DIR = "/usr/share/#{GLOBAL_NAMESPACE_DIRNAME}/helper-scripts"
 	RUBY_EXTENSION_SOURCE_DIR = "/usr/share/#{GLOBAL_NAMESPACE_DIRNAME}/ruby_extension_source"
-	AGENTS_DIR = "/usr/lib/#{GLOBAL_NAMESPACE_DIRNAME}/agents"
+	SUPPORT_BINARIES_DIR = "/usr/lib/#{GLOBAL_NAMESPACE_DIRNAME}/support-binaries"
 	APACHE2_MODULE_PATH = "/usr/lib/apache2/modules/mod_passenger.so"
 	SUPPORTS_COMPILING_APACHE_MODULE = false
 
@@ -90,7 +90,7 @@ when "rpm"
 	DOCDIR = "/usr/share/doc/passenger-enterprise"
 	HELPER_SCRIPTS_DIR = "/usr/share/#{GLOBAL_NAMESPACE_DIRNAME}/helper-scripts"
 	RUBY_EXTENSION_SOURCE_DIR = "/usr/share/#{GLOBAL_NAMESPACE_DIRNAME}/ruby_extension_source"
-	AGENTS_DIR = "/usr/lib64/#{GLOBAL_NAMESPACE_DIRNAME}/agents"
+	SUPPORT_BINARIES_DIR = "/usr/lib64/#{GLOBAL_NAMESPACE_DIRNAME}/support-binaries"
 	APACHE2_MODULE_PATH = "/usr/lib64/httpd/modules/mod_passenger.so"
 	SUPPORTS_COMPILING_APACHE_MODULE = false
 
@@ -111,7 +111,7 @@ when "homebrew"
 	DOCDIR = "#{root}/doc"
 	HELPER_SCRIPTS_DIR = "#{root}/helper-scripts"
 	RUBY_EXTENSION_SOURCE_DIR = "#{root}/ext/ruby"
-	AGENTS_DIR = "#{root}/buildout/agents"
+	SUPPORT_BINARIES_DIR = "#{root}/buildout/support-binaries"
 	APACHE2_MODULE_PATH = "#{root}/buildout/apache2/mod_passenger.so"
 	SUPPORTS_COMPILING_APACHE_MODULE = true
 
@@ -182,8 +182,8 @@ describe "A natively packaged Phusion Passenger" do
 		end
 	end
 
-	specify "locations.ini sets native_packaging_method to #{NATIVE_PACKAGING_METHOD}" do
-		File.read(LOCATIONS_INI).should =~ /^native_packaging_method=#{NATIVE_PACKAGING_METHOD}$/
+	specify "locations.ini sets packaging_method to #{PACKAGING_METHOD}" do
+		File.read(LOCATIONS_INI).should =~ /^packaging_method=#{PACKAGING_METHOD}$/
 	end
 
 	specify "passenger-status is in #{SBINDIR}" do
@@ -215,10 +215,10 @@ describe "A natively packaged Phusion Passenger" do
 		File.file?("#{RUBY_EXTENSION_SOURCE_DIR}/extconf.rb").should be_true
 	end
 
-	specify "the agents directory exists" do
-		File.directory?(AGENTS_DIR).should be_true
-		File.file?("#{AGENTS_DIR}/#{AGENT_EXE}").should be_true
-		File.executable?("#{AGENTS_DIR}/#{AGENT_EXE}").should be_true
+	specify "the support-binaries directory exists" do
+		File.directory?(SUPPORT_BINARIES_DIR).should be_true
+		File.file?("#{SUPPORT_BINARIES_DIR}/#{AGENT_EXE}").should be_true
+		File.executable?("#{SUPPORT_BINARIES_DIR}/#{AGENT_EXE}").should be_true
 	end
 
 	specify "the Apache 2 module exists" do
@@ -238,8 +238,8 @@ describe "A natively packaged Phusion Passenger" do
 			system("passenger-config --compiled").should be_true
 		end
 
-		it "recognizes the install as natively packaged" do
-			system("passenger-config --natively-packaged").should be_true
+		it "recognizes the install as custom packaged" do
+			system("passenger-config --custom-packaged").should be_true
 		end
 
 		it "recognizes the install as coming from an official package" do
@@ -351,7 +351,7 @@ describe "A natively packaged Phusion Passenger" do
 					end
 					Dir.mkdir("public")
 					Dir.mkdir("tmp")
-					sh("passenger start --no-compile-runtime -p 4000 -d >/dev/null")
+					sh("passenger start --no-install-runtime -p 4000 -d >/dev/null")
 					begin
 						open("http://127.0.0.1:4000/") do |f|
 							f.read.should == "ok"

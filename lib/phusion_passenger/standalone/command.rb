@@ -97,7 +97,7 @@ private
 		require_etc
 		help = false
 
-		home_dir = PhusionPassenger::Utils.home_dir
+		home_dir = PhusionPassenger.home_dir
 		global_config_file = File.join(home_dir, USER_NAMESPACE_DIRNAME, "standalone", "config")
 		if File.exist?(global_config_file)
 			PhusionPassenger.require_passenger_lib 'standalone/config_file' unless defined?(ConfigFile)
@@ -193,32 +193,11 @@ private
 		@temp_dir ||= PhusionPassenger::Utils.mktmpdir(
 			"passenger-standalone.")
 		@config_filename = "#{@temp_dir}/config"
-		location_config_filename = "#{@temp_dir}/locations.ini"
 		File.chmod(0755, @temp_dir)
 		begin
 			Dir.mkdir("#{@temp_dir}/logs")
 		rescue Errno::EEXIST
 		end
-
-		locations_ini_fields =
-			PhusionPassenger::REQUIRED_LOCATIONS_INI_FIELDS +
-			PhusionPassenger::OPTIONAL_LOCATIONS_INI_FIELDS -
-			[:agents_dir, :lib_dir]
-
-		File.open(location_config_filename, 'w') do |f|
-			f.puts '[locations]'
-			f.puts "natively_packaged=#{PhusionPassenger.natively_packaged?}"
-			if PhusionPassenger.natively_packaged?
-				f.puts "native_packaging_method=#{PhusionPassenger.native_packaging_method}"
-			end
-			f.puts "lib_dir=#{@runtime_locator.find_lib_dir}"
-			f.puts "agents_dir=#{@runtime_locator.find_agents_dir}"
-			locations_ini_fields.each do |field|
-				value = PhusionPassenger.send(field)
-				f.puts "#{field}=#{value}" if value
-			end
-		end
-		puts File.read(location_config_filename) if debugging?
 
 		File.open(@config_filename, 'w') do |f|
 			f.chmod(0644)
@@ -257,12 +236,7 @@ private
 	end
 
 	def determine_nginx_start_command
-		if @options[:nginx_bin]
-			nginx_bin = @options[:nginx_bin]
-		else
-			nginx_bin = @runtime_locator.find_nginx_binary
-		end
-		return "#{nginx_bin} -c '#{@config_filename}' -p '#{@temp_dir}/'"
+		return "#{@nginx_binary} -c '#{@config_filename}' -p '#{@temp_dir}/'"
 	end
 
 	# Returns the port on which to ping Nginx.

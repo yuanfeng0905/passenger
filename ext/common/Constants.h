@@ -84,6 +84,8 @@
 
 	#define FLYING_PASSENGER_NAME "Flying Passenger"
 
+	#define GLOBAL_NAMESPACE_DIRNAME "passenger"
+
 	#define INDEX_DOC_URL "https://www.phusionpassenger.com/documentation/Users%20guide.html"
 
 	#define MESSAGE_SERVER_MAX_PASSWORD_SIZE 100
@@ -125,6 +127,8 @@
 	#define STANDALONE_NGINX_CONFIGURE_OPTIONS "--with-cc-opt='-Wno-error' --without-http_fastcgi_module --without-http_scgi_module --without-http_uwsgi_module --with-http_gzip_static_module --with-http_stub_status_module --with-http_ssl_module"
 
 	#define SUPPORT_URL "https://www.phusionpassenger.com/documentation_and_support"
+
+	#define USER_NAMESPACE_DIRNAME ".passenger"
 
 
 #endif /* _PASSENGER_CONSTANTS_H */

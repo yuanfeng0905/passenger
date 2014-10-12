@@ -20,8 +20,10 @@
 #include <ev++.h>
 
 #include <sys/socket.h>
-#include <arpa/inet.h>
 #include <sys/un.h>
+#include <netinet/in.h>
+#include <netinet/tcp.h>
+#include <arpa/inet.h>
 #include <assert.h>
 #include <errno.h>
 #include <pthread.h>
@@ -669,8 +671,17 @@ public:
 	}
 
 	void listen(int fd) {
+		TRACE_POINT();
 		assert(nEndpoints < SERVER_KIT_MAX_SERVER_ENDPOINTS);
+		int flag = 1;
 		setNonBlocking(fd);
+		if (setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &flag, sizeof(int)) == -1
+		 && errno != ENOPROTOOPT)
+		{
+			int e = errno;
+			P_WARN("Cannot disable Nagle's algorithm on a TCP socket: " <<
+				strerror(e) << " (errno=" << e << ")");
+		}
 		ev_io_init(&endpoints[nEndpoints], _onAcceptable, fd, EV_READ);
 		endpoints[nEndpoints].data = this;
 		ev_io_start(ctx->libev->getLoop(), &endpoints[nEndpoints]);

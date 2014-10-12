@@ -15,6 +15,7 @@ PhusionPassenger.require_passenger_lib 'debug_logging'
 PhusionPassenger.require_passenger_lib 'native_support'
 PhusionPassenger.require_passenger_lib 'utils'
 PhusionPassenger.require_passenger_lib 'ruby_core_enhancements'
+PhusionPassenger.require_passenger_lib 'ruby_core_io_enhancements'
 PhusionPassenger.require_passenger_lib 'request_handler/thread_handler'
 
 module PhusionPassenger
@@ -340,6 +341,7 @@ private
 		# TCPv4 instead of TCPv6.
 		socket = TCPServer.new('127.0.0.1', 0)
 		socket.listen(BACKLOG_SIZE)
+		socket.setsockopt(Socket::IPPROTO_TCP, Socket::TCP_NODELAY, 1)
 		socket.binmode
 		socket.sync = true
 		socket.close_on_exec!

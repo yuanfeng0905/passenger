@@ -27,7 +27,7 @@ require 'phusion_passenger'
 PhusionPassenger.locate_directories
 require 'fileutils'
 
-if PhusionPassenger.natively_packaged?
+if PhusionPassenger.custom_packaged?
 	puts "Binary downloading is only available when originally packaged. Stopping."
 	exit 0
 end
@@ -79,7 +79,7 @@ def really_download(site, name, logger, options)
 	url = "#{site[:url]}/#{PhusionPassenger::VERSION_STRING}/#{name}"
 	puts "Attempting to download #{url} into #{Dir.pwd}"
 	File.unlink("#{name}.tmp") rescue nil
-	
+
 	options = {
 		:cacert => site[:cert],
 		:logger => logger
@@ -94,5 +94,5 @@ def really_download(site, name, logger, options)
 end
 
 download "rubyext-#{ruby_compat_id}.tar.gz", :total_timeout => 10
-download "webhelper-#{PhusionPassenger::PREFERRED_NGINX_VERSION}-#{cxx_compat_id}.tar.gz", :total_timeout => 120
-download "support-#{cxx_compat_id}.tar.gz", :total_timeout => 900
+download "nginx-#{PhusionPassenger::PREFERRED_NGINX_VERSION}-#{cxx_compat_id}.tar.gz", :total_timeout => 120
+download "agent-#{cxx_compat_id}.tar.gz", :total_timeout => 900

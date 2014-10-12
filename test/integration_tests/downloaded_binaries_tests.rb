@@ -29,6 +29,7 @@ source_root = File.expand_path("../..", File.dirname(__FILE__))
 $LOAD_PATH.unshift("#{source_root}/lib")
 require 'phusion_passenger'
 PhusionPassenger.locate_directories
+PhusionPassenger.require_passenger_lib 'constants'
 PhusionPassenger.require_passenger_lib 'platform_info/operating_system'
 PhusionPassenger.require_passenger_lib 'platform_info/binary_compatibility'
 require 'tmpdir'
@@ -47,11 +48,34 @@ describe "Downloaded Phusion Passenger binaries" do
 	before :each do
 		@temp_dir = Dir.mktmpdir
 		File.open("#{PhusionPassenger.resources_dir}/release.txt", "w").close
+		@user_dir = File.expand_path("~/#{USER_NAMESPACE_DIRNAME}")
+		if File.exist?("buildout.old")
+			raise "buildout.old exists. Please fix this first."
+		end
+		if File.exist?("#{@user_dir}.old")
+			raise "#{@user_dir} exists. Please fix this first."
+		end
+		if PhusionPassenger.build_system_dir && File.exist?("#{PhusionPassenger.build_system_dir}/buildout")
+			FileUtils.mv("#{PhusionPassenger.build_system_dir}/buildout",
+				"#{PhusionPassenger.build_system_dir}/buildout.old")
+		end
+		if File.exist?(@user_dir)
+			FileUtils.mv(@user_dir, "#{@user_dir}.old")
+		end
 	end
 
 	after :each do
 		FileUtils.remove_entry_secure(@temp_dir)
 		File.unlink("#{PhusionPassenger.resources_dir}/release.txt")
+		FileUtils.rm_rf("#{PhusionPassenger.build_system_dir}/buildout")
+		FileUtils.rm_rf(@user_dir)
+		if PhusionPassenger.build_system_dir && File.exist?("#{PhusionPassenger.build_system_dir}/buildout.old")
+			FileUtils.mv("#{PhusionPassenger.build_system_dir}/buildout.old",
+				"#{PhusionPassenger.build_system_dir}/buildout")
+		end
+		if File.exist?("#{@user_dir}.old")
+			FileUtils.mv("#{@user_dir}.old", @user_dir)
+		end
 	end
 
 	let(:version) { VERSION_STRING }
@@ -80,9 +104,9 @@ describe "Downloaded Phusion Passenger binaries" do
 	specify "Passenger Standalone is able to use the binaries" do
 		Dir.mkdir("#{@temp_dir}/#{version}")
 		Dir.chdir("#{@temp_dir}/#{version}") do
-			tarballs = Dir["#{PhusionPassenger.download_cache_dir}/*.tar.gz"]
-			tarballs.should_not be_empty
-			
+			#tarballs = Dir["#{PhusionPassenger.download_cache_dir}/*.tar.gz"]
+			#tarballs.should_not be_empty
+
 			File.open("config.ru", "w") do |f|
 				f.write(%Q{
 					app = lambda do |env|
@@ -101,7 +125,7 @@ describe "Downloaded Phusion Passenger binaries" do
 					"-d " +
 					"--no-compile-runtime " +
 					"--binaries-url-root http://127.0.0.1:4001 " +
-					"--runtime-dir '#{@temp_dir}' >log/start.log")
+					">log/start.log 2>&1")
 			rescue Exception
 				system("cat log/start.log")
 				raise
@@ -125,7 +149,7 @@ describe "Downloaded Phusion Passenger binaries" do
 		File.rename("download_cache", "download_cache.old")
 		begin
 			FileUtils.cp_r("download_cache.old", "server_root/#{VERSION_STRING}")
-			sh "cd #{PhusionPassenger.source_root} && " +
+			sh "cd #{PhusionPassenger.build_system_dir} && " +
 				"env BINARIES_URL_ROOT=#{url_root} " +
 				"ruby helper-scripts/download_binaries/extconf.rb --abort-on-error"
 			Dir["download_cache/*"].should_not be_empty
@@ -143,7 +167,7 @@ describe "Downloaded Phusion Passenger binaries" do
 		server, url_root = start_server("server_root")
 		File.rename("download_cache", "download_cache.old")
 		begin
-			result = system "cd #{PhusionPassenger.source_root} && " +
+			result = system "cd #{PhusionPassenger.build_system_dir} && " +
 				"env BINARIES_URL_ROOT=#{url_root} " +
 				"ruby helper-scripts/download_binaries/extconf.rb --abort-on-error"
 			result.should be_false

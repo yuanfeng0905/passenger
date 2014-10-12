@@ -1,6 +1,6 @@
 /*
  *  Phusion Passenger - https://www.phusionpassenger.com/
- *  Copyright (c) 2010, 2011, 2012 Phusion
+ *  Copyright (c) 2010-2014 Phusion
  *
  *  "Phusion Passenger" is a trademark of Hongli Lai & Ninh Bui.
  *
@@ -10,7 +10,13 @@
 #define _PASSENGER_RESOURCE_LOCATOR_H_
 
 #include <boost/shared_ptr.hpp>
+#include <boost/shared_array.hpp>
+#include <sys/types.h>
+#include <unistd.h>
 #include <string>
+#include <algorithm>
+#include <pwd.h>
+#include <Constants.h>
 #include <Exceptions.h>
 #include <Utils.h>
 #include <Utils/IniFile.h>
@@ -31,7 +37,7 @@ class ResourceLocator {
 private:
 	string root;
 	string binDir;
-	string agentsDir;
+	string supportBinariesDir;
 	string helperScriptsDir;
 	string resourcesDir;
 	string docDir;
@@ -55,7 +61,7 @@ public:
 			string file = rootOrFile;
 			IniFileSectionPtr options = IniFile(file).section("locations");
 			binDir              = getOption(file, options, "bin_dir");
-			agentsDir           = getOption(file, options, "agents_dir");
+			supportBinariesDir  = getOption(file, options, "support_binaries_dir");
 			helperScriptsDir    = getOption(file, options, "helper_scripts_dir");
 			resourcesDir        = getOption(file, options, "resources_dir");
 			docDir              = getOption(file, options, "doc_dir");
@@ -64,7 +70,7 @@ public:
 		} else {
 			string root = rootOrFile;
 			binDir              = root + "/bin";
-			agentsDir           = root + "/buildout/agents";
+			supportBinariesDir  = root + "/buildout/support-binaries";
 			helperScriptsDir    = root + "/helper-scripts";
 			resourcesDir        = root + "/resources";
 			docDir              = root + "/doc";
@@ -77,8 +83,36 @@ public:
 		return root;
 	}
 
-	string getAgentsDir() const {
-		return agentsDir;
+	string getSupportBinariesDir() const {
+		return supportBinariesDir;
+	}
+
+	string getUserSupportBinariesDir() const {
+		struct passwd pwd, *user;
+		long bufSize;
+		shared_array<char> strings;
+
+		// _SC_GETPW_R_SIZE_MAX is not a maximum:
+		// http://tomlee.co/2012/10/problems-with-large-linux-unix-groups-and-getgrgid_r-getgrnam_r/
+		bufSize = std::max<long>(1024 * 128, sysconf(_SC_GETPW_R_SIZE_MAX));
+		strings.reset(new char[bufSize]);
+
+		user = (struct passwd *) NULL;
+		if (getpwuid_r(getuid(), &pwd, strings.get(), bufSize, &user) != 0) {
+			user = (struct passwd *) NULL;
+		}
+
+		if (user == (struct passwd *) NULL) {
+			int e = errno;
+			throw SystemException("Cannot lookup system user database", e);
+		}
+
+		string result(user->pw_dir);
+		result.append("/");
+		result.append(USER_NAMESPACE_DIRNAME);
+		result.append("/support-binaries/");
+		result.append(PASSENGER_VERSION);
+		return result;
 	}
 
 	string getHelperScriptsDir() const {
@@ -100,6 +134,26 @@ public:
 
 	string getNodeLibDir() const {
 		return nodeLibDir;
+	}
+
+	string findSupportBinary(const string &name) {
+		string path = getSupportBinariesDir() + "/" + name;
+		bool found;
+		try {
+			found = fileExists(path);
+		} catch (const SystemException &e) {
+			found = false;
+		}
+		if (found) {
+			return path;
+		}
+
+		path = getUserSupportBinariesDir() + "/" + name;
+		if (fileExists(path)) {
+			return path;
+		}
+
+		throw RuntimeException("Support binary " + name + " not found");
 	}
 };
 
