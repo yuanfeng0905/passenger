@@ -6,15 +6,21 @@
 #
 #  See LICENSE file for license information.
 
+## Magic comment: begin bootstrap ##
 source_root = File.expand_path("..", File.dirname(__FILE__))
 $LOAD_PATH.unshift("#{source_root}/lib")
+begin
+	require 'rubygems'
+rescue LoadError
+end
 require 'phusion_passenger'
-PhusionPassenger.locate_directories
+## Magic comment: end bootstrap ##
 
 require 'optparse'
 require 'socket'
 require 'logger'
 require 'base64'
+PhusionPassenger.locate_directories
 PhusionPassenger.require_passenger_lib 'constants'
 PhusionPassenger.require_passenger_lib 'message_channel'
 PhusionPassenger.require_passenger_lib 'message_client'
@@ -54,6 +60,7 @@ class FlyingPassenger
 	def start
 		parse_options
 		initialize_logger
+		ensure_agent_installed
 		maybe_daemonize
 		maybe_write_pidfile
 		spawn
@@ -104,7 +111,7 @@ private
 			
 			opts.separator "Options:"
 			opts.on("--socket-file FILENAME", String, "The socket to listen on") do |val|
-				@watchdog_options[:server_addresses] = Base64.encode64("unix:#{val}")
+				@watchdog_options[:server_addresses] = Base64.strict_encode64("unix:#{val}")
 			end
 			opts.on("--daemonize", "Daemonize into background") do
 				@options[:daemonize] = true
@@ -192,10 +199,26 @@ private
 		@logger.info("Welcome to Flying Passenger #{PhusionPassenger::VERSION_STRING}")
 	end
 
+	def ensure_agent_installed
+		@agent_exe = PhusionPassenger.find_support_binary(AGENT_EXE)
+		if !@agent_exe
+			args = ["--brief", "--no-force-tip"]
+			if @options[:dont_compile_runtime]
+				args << "--no-compile"
+			end
+			PhusionPassenger.require_passenger_lib 'config/install_agent_command'
+			PhusionPassenger::Config::InstallAgentCommand.new(args).run
+			puts
+			puts "--------------------------"
+			puts
+			@agent_exe = PhusionPassenger.find_support_binary(AGENT_EXE)
+		end
+	end
+
 	def create_arguments
 		args = {
 			"server_software" => "Flying Passenger #{PhusionPassenger::VERSION_STRING}",
-			"passenger_root"  => PhusionPassenger.source_root,
+			"passenger_root"  => PhusionPassenger.install_spec,
 			"ruby" => PlatformInfo.ruby_command,
 			"setsid" => "true",
 			"server_password" => "-",
@@ -209,7 +232,7 @@ private
 
 	def spawn
 		ENV['PASSENGER_USE_FEEDBACK_FD'] = '1'
-		args = ["#{PhusionPassenger.agents_dir}/#{AGENT_EXE}", "watchdog"]
+		args = [@agent_exe, "watchdog"]
 
 		@logger.info("Starting #{AGENT_EXE}...")
 		a, b = UNIXSocket.pair
