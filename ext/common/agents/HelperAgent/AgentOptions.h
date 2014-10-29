@@ -47,6 +47,7 @@ struct AgentOptions: public VariantMap {
 	string licensingBaseUrl;
 	string licensingServerCert;
 	string licensingProxy;
+	bool licensingDataPointsAutoSend;
 
 	AgentOptions() { }
 
@@ -89,6 +90,8 @@ struct AgentOptions: public VariantMap {
 		licensingServerCert = options.get("licensing_server_cert", false);
 		licensingBaseUrl = options.get("licensing_base_url", false);
 		licensingProxy   = options.get("licensing_proxy", false);
+		licensingDataPointsAutoSend = options.getBool(
+			"licensing_data_points_auto_send", false, true);
 	}
 
 	// We don't initialize the value in the constructor because the

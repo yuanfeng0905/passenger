@@ -384,15 +384,18 @@ protected:
 
 public:
 	unsigned int threshold;
+	bool autoSend;
 	boost::function<void (const string &message)> abortHandler;
 
 	CloudUsageTracker(const string &dir,
 		const string &baseUrl = string(),
 		const string &_certificate = string(),
-		const string &proxyAddress = string())
+		const string &proxyAddress = string(),
+		bool _autoSend = true)
 		: datadir(dir),
 		  certificate(_certificate),
-		  threshold(3 * 24 * 4)
+		  threshold(3 * 24 * 4),
+		  autoSend(_autoSend)
 	{
 		long size = sysconf(_SC_HOST_NAME_MAX) + 1;
 		char buf[size];
@@ -438,18 +441,22 @@ public:
 		TRACE_POINT();
 		P_DEBUG("Begin tracking usage cycle");
 		recordUsagePoint();
-		vector<string> usagePoints = listUsagePoints();
-		unsigned int sent = sendUsagePoints(usagePoints);
-		if (usagePoints.size() - sent > threshold) {
-			abortWithError("Phusion Passenger Enterprise hasn't been able to contact "
-				"the licensing server (https://www.phusionpassenger.com) for "
-				"more than 3 days.\n"
-				"- Please ensure that your network connection to https://www.phusionpassenger.com works.\n"
-				"- If you can only access https://www.phusionpassenger.com via a proxy, "
-				"please set the config option 'PassengerCtl licensing_proxy PROXY_URL' (Apache) "
-				"or 'passenger_ctl licensing_proxy PROXY_URL' (Nginx). 'PROXY_URL' takes the format of "
-				"protocol://username:password@hostname:port, where 'protocol' is either 'http' or 'socks5'.\n"
-				"If the problem persists, please contact support@phusion.nl.");
+		if (autoSend) {
+			vector<string> usagePoints = listUsagePoints();
+			unsigned int sent = sendUsagePoints(usagePoints);
+			if (usagePoints.size() - sent > threshold) {
+				abortWithError("Phusion Passenger Enterprise hasn't been able to contact "
+					"the licensing server (https://www.phusionpassenger.com) for "
+					"more than 3 days.\n"
+					"- Please ensure that your network connection to https://www.phusionpassenger.com works.\n"
+					"- If you can only access https://www.phusionpassenger.com via a proxy, "
+					"please set the config option 'PassengerCtl licensing_proxy PROXY_URL' (Apache) "
+					"or 'passenger_ctl licensing_proxy PROXY_URL' (Nginx). 'PROXY_URL' takes the format of "
+					"protocol://username:password@hostname:port, where 'protocol' is either 'http' or 'socks5'.\n"
+					"If the problem persists, please contact support@phusion.nl.");
+			}
+		} else {
+			P_DEBUG("Not auto-sending usage cycle");
 		}
 		P_DEBUG("Done tracking usage cycle");
 	}

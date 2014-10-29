@@ -593,7 +593,8 @@ public:
 				licensingDataDir,
 				options.licensingBaseUrl,
 				certificate,
-				options.licensingProxy);
+				options.licensingProxy,
+				options.licensingDataPointsAutoSend);
 			tracker->abortHandler = boost::bind(&Server::cloudTrackerAbortHandler, this, _1);
 			tracker->start();
 		}

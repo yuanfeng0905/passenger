@@ -19,8 +19,8 @@ namespace tut {
 
 		int flushResult;
 
-		TestTracker(const string &dir)
-			: CloudUsageTracker(dir),
+		TestTracker(const string &dir, bool autoSend)
+			: CloudUsageTracker(dir, string(), string(), string(), autoSend),
 			  defaultCurlCode(CURLE_OK),
 			  defaultResponseData("{\"status\": \"ok\"}"),
 			  flushResult(0)
@@ -89,8 +89,8 @@ namespace tut {
 			setLogLevel(DEFAULT_LOG_LEVEL);
 		}
 
-		void init(const string &datadir = "tmp.clouddata") {
-			tracker = boost::make_shared<TestTracker>(datadir);
+		void init(const string &datadir = "tmp.clouddata", bool autoSend = true) {
+			tracker = boost::make_shared<TestTracker>(datadir, autoSend);
 			tracker->abortHandler = abortHandler;
 		}
 
@@ -108,7 +108,7 @@ namespace tut {
 
 
 	DEFINE_TEST_GROUP(CloudUsageTrackerTest);
-	
+
 	TEST_METHOD(1) {
 		set_test_name("On every cycle, it records a usage point and sends it immediately.");
 
@@ -270,5 +270,17 @@ namespace tut {
 		ensure_equals(files[1], "101");
 		ensure_equals(files[2], "102");
 		ensure_equals(files[3], "103");
+	}
+
+	TEST_METHOD(11) {
+		set_test_name("Leaves the recorded usage point in the data directory and does "
+			"not send data points to the server if autoSend is false");
+
+		init("tmp.clouddata", false);
+		tracker->responseDataList.push_back("{\"status\": \"error\", \"message\": \"lp0 on fire\"}");
+		tracker->runOneCycle();
+		vector<string> files = listDir("tmp.clouddata");
+		ensure_equals(files.size(), 1u);
+		ensure_equals(files[0], "1000");
 	}
 }
