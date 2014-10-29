@@ -153,6 +153,7 @@ module Utils
 				if thread_name = thread[:name]
 					thread_name = "(#{thread_name})"
 				end
+				stack ||= ["(empty)"]
 				output << ("-" * 60) << "\n"
 				output << "# Thread: #{thread.inspect}#{thread_name}, "
 				if thread == Thread.main
