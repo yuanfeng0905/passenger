@@ -91,10 +91,10 @@ namespace tut {
 
 		void init(const string &datadir = "tmp.clouddata", bool autoSend = true) {
 			tracker = boost::make_shared<TestTracker>(datadir, autoSend);
-			tracker->abortHandler = abortHandler;
+			tracker->licenseErrorHandler = licenseErrorHandler;
 		}
 
-		static void abortHandler(const string &message) {
+		static void licenseErrorHandler(const string &message) {
 			P_DEBUG(message);
 			throw AbortException(message);
 		}
@@ -128,8 +128,8 @@ namespace tut {
 		chmod("tmp.clouddata", 0000);
 		try {
 			tracker->runOneCycle();
-			fail("AbortException expected");
-		} catch (const AbortException &e) {
+			fail("RuntimeException expected");
+		} catch (const RuntimeException &e) {
 			ensure(StaticString(e.what()).find("Cannot write to the Phusion Passenger Enterprise licensing data directory")
 				!= string::npos);
 		}
@@ -145,8 +145,8 @@ namespace tut {
 		tracker->flushResult = EOF;
 		try {
 			tracker->runOneCycle();
-			fail("AbortException expected");
-		} catch (const AbortException &e) {
+			fail("RuntimeException expected");
+		} catch (const RuntimeException &e) {
 			ensure(StaticString(e.what()).find("An I/O error occurred while recording a usage point")
 				!= string::npos);
 		}

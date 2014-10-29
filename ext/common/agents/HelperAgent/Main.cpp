@@ -614,22 +614,6 @@ initializeNonPrivilegedWorkingObjects() {
 }
 
 static void
-cloudTrackerAbortHandler(const string &message) {
-	WorkingObjects *wo = workingObjects;
-
-	P_CRITICAL(message);
-	for (unsigned i = 0; i < SERVER_KIT_MAX_SERVER_ENDPOINTS; i++) {
-		if (wo->serverFds[i] != -1) {
-			syscalls::close(wo->serverFds[i]);
-		}
-		if (wo->adminServerFds[i] != -1) {
-			syscalls::close(wo->adminServerFds[i]);
-		}
-	}
-	execlp("sleep", "sleep", "999", (const char * const) 0);
-}
-
-static void
 initializeCloudUsageTracker() {
 	TRACE_POINT();
 	if (passenger_enterprise_should_track_usage()) {
@@ -669,7 +653,6 @@ initializeCloudUsageTracker() {
 			certificate,
 			licensingProxy,
 			autoSend);
-		wo->tracker->abortHandler = cloudTrackerAbortHandler;
 		wo->tracker->start();
 	}
 }

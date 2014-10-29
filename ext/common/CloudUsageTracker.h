@@ -22,6 +22,7 @@
 #include <unistd.h>
 #include <dirent.h>
 #include <fcntl.h>
+#include <limits.h>
 
 #include <curl/curl.h>
 
@@ -67,12 +68,37 @@ protected:
 	oxt::thread *thr;
 	char lastErrorMessage[CURL_ERROR_SIZE];
 
-	void abortWithError(const string &message) {
-		if (abortHandler != NULL) {
-			abortHandler(message);
+	void handleLicenseError(const string &message) {
+		TRACE_POINT();
+		if (licenseErrorHandler != NULL) {
+			licenseErrorHandler(message);
 		} else {
 			P_ERROR(message);
-			abort();
+			sendEmailToRoot(message);
+		}
+	}
+
+	void sendEmailToRoot(const string &message) {
+		TRACE_POINT();
+		char path[PATH_MAX] = "/tmp/passenger-email.XXXXXXXX";
+		int fd = mkstemp(path);
+		if (fd != -1) {
+			try {
+				writeExact(fd, P_STATIC_STRING(
+					"To: root\n"
+					"Subject: Phusion Passenger Enterprise cloud licensing problem\n"
+					"\n"));
+				writeExact(fd, message);
+				writeExact(fd, P_STATIC_STRING("\n"));
+			} catch (const SystemException &e) {
+				P_ERROR("Cannot write to " << path << ": " << e.what());
+			}
+			close(fd);
+			P_NOTICE("Sending email to root about licensing problem");
+			runShellCommand("env PATH=/usr/sbin:$PATH sendmail -t < '" + string(path) + "'");
+			unlink(path);
+		} else {
+			P_WARN("Could not send email to root: unable to create a temp file");
 		}
 	}
 
@@ -88,7 +114,7 @@ protected:
 				"licensing data directory (" << datadir << "). Please " <<
 				"ensure that that directory exists and is writable by user '" <<
 				getProcessUsername() << "'.";
-			abortWithError(message.str());
+			throw RuntimeException(message.str());
 		}
 		setvbuf(f, NULL, _IOFBF, 0);
 		fprintf(f, "%lld\n", (long long) now);
@@ -99,7 +125,7 @@ protected:
 			stringstream message;
 			message << "An I/O error occurred while recording a usage point: " <<
 				strerror(errno) << " (errno=" << e << ")";
-			abortWithError(message.str());
+			throw RuntimeException(message.str());
 		} else {
 			fsync(fileno(f));
 			fclose(f);
@@ -115,7 +141,7 @@ protected:
 				"licensing data directory (" << dir << "). Please " <<
 				"ensure that that directory exists and is readable by user '" <<
 				getProcessUsername() << "'.";
-			abortWithError(message.str());
+			throw RuntimeException(message.str());
 		}
 
 		UPDATE_TRACE_POINT();
@@ -201,10 +227,8 @@ protected:
 			if (!reader.parse(responseData, response, false) || !validateResponse(response)) {
 				P_WARN("Could not contact the Phusion Passenger Enterprise licensing server "
 					"(parse error: " << reader.getFormattedErrorMessages().c_str() << "; data: \"" <<
-					cEscapeString(responseData) << "\"). This problem may be temporary, "
-					"but if it persists for more than 3 days then Phusion Passenger Enterprise "
-					"will be disabled until the licensing server could be contacted again. "
-					"To ensure proper access to the licensing server, please try these:\n"
+					cEscapeString(responseData) << "\"). To ensure proper access to the licensing " <<
+					"server, please try these:\n"
 					"- Ensure that your network connection to https://www.phusionpassenger.com works.\n"
 					"- If you can only access https://www.phusionpassenger.com via a proxy, "
 					"please set the config option 'PassengerCtl licensing_proxy PROXY_URL' (Apache) "
@@ -222,14 +246,12 @@ protected:
 					"this problem is resolved. Please contact support@phusion.nl if you "
 					"require assistance. The problem is as follows: " <<
 					response["message"].asString();
-				abortWithError(message.str());
-				return false; // Not reached; avoid compiler warning.
+				handleLicenseError(message.str());
+				return false;
 			}
 		} else {
 			P_WARN("Could not contact the Phusion Passenger Enterprise licensing server "
-				"(HTTP error: " << lastErrorMessage << "). This problem may be temporary, "
-				"but if it persists for more than 3 days then Phusion Passenger Enterprise "
-				"will be disabled until the licensing server could be contacted again. "
+				"(HTTP error: " << lastErrorMessage << "). "
 				"To ensure proper access to the licensing server, please try these:\n"
 				"- Ensure that your network connection to https://www.phusionpassenger.com works.\n"
 				"- If you can only access https://www.phusionpassenger.com via a proxy, "
@@ -376,7 +398,11 @@ protected:
 		TRACE_POINT();
 		while (!this_thread::interruption_requested()) {
 			UPDATE_TRACE_POINT();
-			runOneCycle();
+			try {
+				runOneCycle();
+			} catch (const tracable_exception &e) {
+				P_ERROR(e.what() << "\n" << e.backtrace());
+			}
 			UPDATE_TRACE_POINT();
 			syscalls::usleep(15 * 60 * 1000000);
 		}
@@ -385,7 +411,7 @@ protected:
 public:
 	unsigned int threshold;
 	bool autoSend;
-	boost::function<void (const string &message)> abortHandler;
+	boost::function<void (const string &message)> licenseErrorHandler;
 
 	CloudUsageTracker(const string &dir,
 		const string &baseUrl = string(),
@@ -446,7 +472,7 @@ public:
 			vector<string> usagePoints = listUsagePoints();
 			unsigned int sent = sendUsagePoints(usagePoints);
 			if (usagePoints.size() - sent > threshold) {
-				abortWithError("Phusion Passenger Enterprise hasn't been able to contact "
+				handleLicenseError("Phusion Passenger Enterprise hasn't been able to contact "
 					"the licensing server (https://www.phusionpassenger.com) for "
 					"more than 3 days.\n"
 					"- Please ensure that your network connection to https://www.phusionpassenger.com works.\n"
