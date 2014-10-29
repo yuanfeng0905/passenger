@@ -7,6 +7,7 @@
 
 require 'optparse'
 require 'tmpdir'
+require 'fileutils'
 PhusionPassenger.require_passenger_lib 'config/command'
 
 module PhusionPassenger
@@ -18,6 +19,7 @@ class PackageCloudUsageCommand < Command
 		data_dir = File.expand_path("~/#{USER_NAMESPACE_DIRNAME}/usage_data")
 		if File.exist?(data_dir)
 			create_archive(data_dir)
+			clear_data_dir(data_dir)
 		else
 			Dir.mktmpdir do |tmpdir|
 				create_archive(tmpdir)
@@ -66,9 +68,15 @@ private
 				f.write(hostname)
 			end
 			Dir.chdir(tmpdir) do
-				system("tar", "-czf", @output_filename, ".")
+				if !system("tar", "-czf", @output_filename, ".")
+					abort "Unable to create package: tar failed."
+				end
 			end
 		end
+	end
+
+	def clear_data_dir(data_dir)
+		FileUtils.rm(*Dir["#{data_dir}/*"])
 	end
 end
 
