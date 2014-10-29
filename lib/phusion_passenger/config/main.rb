@@ -19,6 +19,7 @@ module Config
 		["validate-install", "ValidateInstallCommand"],
 		["system-metrics", "SystemMetricsCommand"],
 		["send-cloud-usage", "SendCloudUsageCommand"],
+		["package-cloud-usage", "PackageCloudUsageCommand"],
 		["about", "AboutCommand"]
 	]
 
@@ -73,6 +74,7 @@ module Config
 		if all
 			puts "  system-metrics        Display system metrics"
 			puts "  send-cloud-usage      Send cloud license usage data"
+			puts "  package-cloud-usage   Package cloud license usage data"
 		end
 		puts
 		puts "Run 'passenger-config <COMMAND> --help' for more information about each"
