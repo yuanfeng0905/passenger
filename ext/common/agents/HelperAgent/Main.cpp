@@ -639,6 +639,8 @@ initializeCloudUsageTracker() {
 		string licensingServerCert = options.get("licensing_server_cert", false);
 		string licensingBaseUrl = options.get("licensing_base_url", false);
 		string licensingProxy   = options.get("licensing_proxy", false);
+		bool   autoSend         = options.getBool("licensing_data_points_auto_send",
+			false, true);
 
 		string certificate;
 		if (licensingServerCert.empty()) {
@@ -665,7 +667,8 @@ initializeCloudUsageTracker() {
 			licensingDataDir,
 			licensingBaseUrl,
 			certificate,
-			licensingProxy);
+			licensingProxy,
+			autoSend);
 		wo->tracker->abortHandler = cloudTrackerAbortHandler;
 		wo->tracker->start();
 	}

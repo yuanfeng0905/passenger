@@ -28,6 +28,7 @@ module Config
 		["compile-nginx-engine", "CompileNginxEngineCommand"],
 
 		["system-metrics", "SystemMetricsCommand"],
+		["send-cloud-usage", "SendCloudUsageCommand"],
 		["about", "AboutCommand"]
 	]
 
@@ -101,6 +102,7 @@ module Config
 		puts
 		puts "Miscellaneous commands:"
 		puts "  system-metrics        Display system metrics"
+		puts "  send-cloud-usage      Send cloud license usage data"
 		puts
 		puts "Run 'passenger-config <COMMAND> --help' for more information about each"
 		puts "command."

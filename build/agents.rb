@@ -81,6 +81,10 @@ AGENT_OBJECTS = {
 		'ext/common/agents/HelperAgent/SystemMetricsTool.cpp',
 		'ext/common/Utils/SystemMetricsCollector.h'
 	],
+	'SendCloudUsageTool.o' => [
+		'ext/common/agents/HelperAgent/SendCloudUsageTool.cpp',
+		'ext/common/CloudUsageTracker.h'
+	],
 	'TempDirToucher.o' => [
 		'ext/common/agents/TempDirToucher/Main.cpp'
 	],
