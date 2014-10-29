@@ -21,6 +21,10 @@ virtual unsigned int getClientName(const Client *client, char *buf, size_t size)
 	return pos - buf;
 }
 
+virtual StaticString getServerName() const {
+	return serverLogName;
+}
+
 protected:
 
 virtual void
@@ -72,6 +76,13 @@ virtual void reinitializeRequest(Client *client, Request *req) {
 	req->bodyBytesBuffered = 0;
 	req->cacheKey = HashedStaticString();
 	req->cacheControl = NULL;
+
+	#ifdef DEBUG_RH_EVENT_LOOP_BLOCKING
+		req->timedAppPoolGet = false;
+		req->timeBeforeAccessingApplicationPool = 0;
+		req->timeOnRequestHeaderSent = 0;
+		req->timeOnResponseBegun = 0;
+	#endif
 
 	/***************/
 
@@ -173,10 +184,6 @@ onRequestBody(Client *client, Request *req, const MemoryKit::mbuf &buffer,
 	}
 }
 
-virtual StaticString getServerName() const {
-	return serverLogName;
-}
-
 private:
 
 static Channel::Result
@@ -192,8 +199,21 @@ onBodyBufferData(Channel *_channel, const MemoryKit::mbuf &buffer, int errcode) 
 	return self->whenSendingRequest_onRequestBody(client, req, buffer, errcode);
 }
 
+#ifdef DEBUG_RH_EVENT_LOOP_BLOCKING
+	static void
+	onEventLoopPrepare(EV_P_ struct ev_prepare *w, int revents) {
+		RequestHandler *self = static_cast<RequestHandler *>(w->data);
+		ev_now_update(EV_A);
+		self->timeBeforeBlocking = ev_now(EV_A);
+	}
+#endif
+
 static void
 onEventLoopCheck(EV_P_ struct ev_check *w, int revents) {
 	RequestHandler *self = static_cast<RequestHandler *>(w->data);
 	self->turboCaching.updateState(ev_now(EV_A));
+	#ifdef DEBUG_RH_EVENT_LOOP_BLOCKING
+		self->reportLargeTimeDiff(NULL, "Event loop slept",
+			self->timeBeforeBlocking, ev_now(EV_A));
+	#endif
 }

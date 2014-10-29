@@ -7,6 +7,15 @@
  *  See LICENSE file for license information.
  */
 
+#ifndef _GNU_SOURCE
+	#define _GNU_SOURCE
+#endif
+#ifdef __linux__
+	#define SUPPORTS_PER_THREAD_CPU_AFFINITY
+	#include <sched.h>
+	#include <pthread.h>
+#endif
+
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
@@ -43,6 +52,7 @@
 #include <agents/Base.h>
 #include <Constants.h>
 #include <ServerKit/Server.h>
+#include <ServerKit/AcceptLoadBalancer.h>
 #include <ApplicationPool2/Pool.h>
 #include <MessageServer.h>
 #include <MessageReadersWriters.h>
@@ -107,6 +117,7 @@ namespace ServerAgent {
 		SpawnerFactoryPtr spawnerFactory;
 		PoolPtr appPool;
 
+		ServerKit::AcceptLoadBalancer<RequestHandler> loadBalancer;
 		vector<ThreadWorkingObjects> threadWorkingObjects;
 		struct ev_signal sigintWatcher;
 		struct ev_signal sigtermWatcher;
@@ -500,7 +511,7 @@ initializeNonPrivilegedWorkingObjects() {
 
 	UPDATE_TRACE_POINT();
 	unsigned int nthreads = options.getInt("server_threads");
-	BackgroundEventLoop *firstLoop;
+	BackgroundEventLoop *firstLoop = NULL; // Avoid compiler warning
 	wo->threadWorkingObjects.reserve(nthreads);
 	for (unsigned int i = 0; i < nthreads; i++) {
 		UPDATE_TRACE_POINT();
@@ -579,10 +590,22 @@ initializeNonPrivilegedWorkingObjects() {
 	 * This is especially noticeable on systems that heavily swap.
 	 */
 	for (unsigned int i = 0; i < addresses.size(); i++) {
-		for (unsigned int j = 0; j < nthreads; j++) {
-			ThreadWorkingObjects *two = &wo->threadWorkingObjects[j];
+		if (nthreads == 1) {
+			ThreadWorkingObjects *two = &wo->threadWorkingObjects[0];
 			two->requestHandler->listen(wo->serverFds[i]);
-			two->requestHandler->createSpareClients();
+		} else {
+			wo->loadBalancer.listen(wo->serverFds[i]);
+		}
+	}
+	for (unsigned int i = 0; i < nthreads; i++) {
+		ThreadWorkingObjects *two = &wo->threadWorkingObjects[i];
+		two->requestHandler->createSpareClients();
+	}
+	if (nthreads > 1) {
+		wo->loadBalancer.servers.reserve(nthreads);
+		for (unsigned int i = 0; i < nthreads; i++) {
+			ThreadWorkingObjects *two = &wo->threadWorkingObjects[i];
+			wo->loadBalancer.servers.push_back(two->requestHandler);
 		}
 	}
 	for (unsigned int i = 0; i < adminAddresses.size(); i++) {
@@ -705,13 +728,40 @@ reportInitializationInfo() {
 static void
 mainLoop() {
 	TRACE_POINT();
+	WorkingObjects *wo = workingObjects;
+	#ifdef SUPPORTS_PER_THREAD_CPU_AFFINITY
+		unsigned int maxCpus = boost::thread::hardware_concurrency();
+		bool cpuAffine = agentsOptions->getBool("server_cpu_affine")
+			&& maxCpus <= CPU_SETSIZE;
+	#endif
+
 	installDiagnosticsDumper(dumpDiagnosticsOnCrash, NULL);
-	for (unsigned int i = 0; i < workingObjects->threadWorkingObjects.size(); i++) {
-		ThreadWorkingObjects *two = &workingObjects->threadWorkingObjects[i];
+	for (unsigned int i = 0; i < wo->threadWorkingObjects.size(); i++) {
+		ThreadWorkingObjects *two = &wo->threadWorkingObjects[i];
 		two->bgloop->start("Main event loop: thread " + toString(i + 1), 0);
+		#ifdef SUPPORTS_PER_THREAD_CPU_AFFINITY
+			if (cpuAffine) {
+				cpu_set_t cpus;
+				int result;
+
+				CPU_ZERO(&cpus);
+				CPU_SET(i % maxCpus, &cpus);
+				P_DEBUG("Setting CPU affinity of server thread " << (i + 1)
+					<< " to CPU " << (i % maxCpus + 1));
+				result = pthread_setaffinity_np(two->bgloop->getNativeHandle(),
+					maxCpus, &cpus);
+				if (result != 0) {
+					P_WARN("Cannot set CPU affinity on server thread " << (i + 1)
+						<< ": " << strerror(result) << " (errno=" << result << ")");
+				}
+			}
+		#endif
 	}
-	if (workingObjects->adminWorkingObjects.adminServer != NULL) {
-		workingObjects->adminWorkingObjects.bgloop->start("Admin event loop", 0);
+	if (wo->adminWorkingObjects.adminServer != NULL) {
+		wo->adminWorkingObjects.bgloop->start("Admin event loop", 0);
+	}
+	if (wo->threadWorkingObjects.size() > 1) {
+		wo->loadBalancer.start();
 	}
 	waitForExitEvent();
 }
@@ -816,6 +866,9 @@ waitForExitEvent() {
 		for (unsigned i = 0; i < wo->threadWorkingObjects.size(); i++) {
 			ThreadWorkingObjects *two = &wo->threadWorkingObjects[i];
 			two->bgloop->safe->runLater(boost::bind(shutdownRequestHandler, two));
+		}
+		if (wo->threadWorkingObjects.size() > 1) {
+			wo->loadBalancer.shutdown();
 		}
 		if (wo->adminWorkingObjects.adminServer != NULL) {
 			wo->adminWorkingObjects.bgloop->safe->runLater(shutdownAdminServer);
@@ -935,7 +988,7 @@ preinitialize(VariantMap &options) {
 		options.setInt("log_level", options.getInt("server_log_level"));
 	}
 	if (options.has("server_log_file")) {
-		options.setInt("debug_log_file", options.getInt("server_log_file"));
+		options.set("debug_log_file", options.get("server_log_file"));
 	}
 }
 
@@ -958,6 +1011,7 @@ setAgentsOptionsDefaults() {
 	options.setDefault("data_buffer_dir", getSystemTempDir());
 	options.setDefaultBool("selfchecks", false);
 	options.setDefaultInt("server_threads", boost::thread::hardware_concurrency());
+	options.setDefaultBool("server_cpu_affine", false);
 
 	string firstAddress = options.getStrSet("server_addresses")[0];
 	if (getSocketAddressType(firstAddress) == SAT_TCP) {

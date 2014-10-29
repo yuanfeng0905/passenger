@@ -78,6 +78,13 @@ public:
 	unsigned int maxRequestTime;
 	struct ev_timer timeoutTimer;
 
+	#ifdef DEBUG_RH_EVENT_LOOP_BLOCKING
+		bool timedAppPoolGet;
+		ev_tstamp timeBeforeAccessingApplicationPool;
+		ev_tstamp timeOnRequestHeaderSent;
+		ev_tstamp timeOnResponseBegun;
+	#endif
+
 
 	const char *getStateString() const {
 		switch (state) {

@@ -93,6 +93,8 @@
 #ifndef _PASSENGER_REQUEST_HANDLER_H_
 #define _PASSENGER_REQUEST_HANDLER_H_
 
+//#define DEBUG_RH_EVENT_LOOP_BLOCKING
+
 #include <boost/shared_ptr.hpp>
 #include <boost/make_shared.hpp>
 #include <boost/cstdint.hpp>
@@ -150,6 +152,7 @@ public:
 		BM_AFTER_ACCEPT,
 		BM_BEFORE_CHECKOUT,
 		BM_AFTER_CHECKOUT,
+		BM_RESPONSE_BEGIN,
 		BM_UNKNOWN
 	};
 
@@ -208,6 +211,11 @@ private:
 	friend class TurboCaching<Request>;
 	struct ev_check checkWatcher;
 	TurboCaching<Request> turboCaching;
+
+	#ifdef DEBUG_RH_EVENT_LOOP_BLOCKING
+		struct ev_prepare prepareWatcher;
+		ev_tstamp timeBeforeBlocking;
+	#endif
 
 public:
 	ResourceLocator *resourceLocator;
@@ -301,6 +309,14 @@ public:
 		ev_set_priority(&checkWatcher, EV_MAXPRI);
 		ev_check_start(getLoop(), &checkWatcher);
 		checkWatcher.data = this;
+
+		#ifdef DEBUG_RH_EVENT_LOOP_BLOCKING
+			ev_prepare_init(&prepareWatcher, onEventLoopPrepare);
+			ev_prepare_start(getLoop(), &prepareWatcher);
+			prepareWatcher.data = this;
+
+			timeBeforeBlocking = 0;
+		#endif
 	}
 
 	~RequestHandler() {
@@ -316,6 +332,8 @@ public:
 			return BM_BEFORE_CHECKOUT;
 		} else if (mode == "after_checkout") {
 			return BM_AFTER_CHECKOUT;
+		} else if (mode == "response_begin") {
+			return BM_RESPONSE_BEGIN;
 		} else {
 			return BM_UNKNOWN;
 		}
@@ -399,6 +417,22 @@ public:
 			getContext()->defaultFileBufferedChannelConfig.bufferDir =
 				doc["data_buffer_dir"].asString();
 		}
+	}
+
+	virtual Json::Value inspectStateAsJson() const {
+		Json::Value doc = ParentClass::inspectStateAsJson();
+		Json::Value subdoc;
+		subdoc["load_average"] = turboCaching.getLoadAverage(ev_now(getLoop()));
+		if (turboCaching.isEnabled()) {
+			subdoc["fetches"] = turboCaching.responseCache.getFetches();
+			subdoc["hits"] = turboCaching.responseCache.getHits();
+			subdoc["hit_ratio"] = turboCaching.responseCache.getHitRatio();
+			subdoc["stores"] = turboCaching.responseCache.getStores();
+			subdoc["store_successes"] = turboCaching.responseCache.getStoreSuccesses();
+			subdoc["store_success_ratio"] = turboCaching.responseCache.getStoreSuccessRatio();
+		}
+		doc["turbocaching"] = subdoc;
+		return doc;
 	}
 
 	virtual Json::Value inspectClientStateAsJson(const Client *client) const {

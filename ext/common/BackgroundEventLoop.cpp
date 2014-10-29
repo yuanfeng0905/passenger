@@ -150,5 +150,10 @@ BackgroundEventLoop::isStarted() const {
 	return priv->thr != NULL;
 }
 
+pthread_t
+BackgroundEventLoop::getNativeHandle() const {
+	return priv->thr->native_handle();
+}
+
 
 } // namespace Passenger

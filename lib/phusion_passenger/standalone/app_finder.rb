@@ -4,6 +4,7 @@
 #  "Phusion Passenger" is a trademark of Hongli Lai & Ninh Bui.
 #
 #  See LICENSE file for license information.
+PhusionPassenger.require_passenger_lib 'ruby_core_enhancements'
 PhusionPassenger.require_passenger_lib 'standalone/utils'
 PhusionPassenger.require_passenger_lib 'utils/file_system_watcher'
 
@@ -164,9 +165,9 @@ private
 
 	def find_app_root
 		if @dirs.empty?
-			return absolute_path(".")
+			return absolute_path_no_resolve(".")
 		else
-			return absolute_path(@dirs[0])
+			return absolute_path_no_resolve(@dirs[0])
 		end
 	end
 

@@ -168,7 +168,11 @@ private
 			args = @options[:install_agent_args].dup
 			args << "--working-dir"
 			args << tmpdir
-			InstallAgentCommand.new(args).run
+			begin
+				InstallAgentCommand.new(args).run
+			rescue SystemExit => e
+				raise e if !e.success?
+			end
 			puts
 		end
 	end

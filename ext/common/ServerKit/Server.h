@@ -53,12 +53,15 @@ using namespace oxt;
 
 
 // We use 'this' so that the macros work in derived template classes like HttpServer<>.
+#define SKS_LOG(level, file, line, expr)  P_LOG(level, file, line, "[" << this->getServerName() << "] " << expr)
 #define SKS_ERROR(expr)  P_ERROR("[" << this->getServerName() << "] " << expr)
 #define SKS_WARN(expr)   P_WARN("[" << this->getServerName() << "] " << expr)
 #define SKS_INFO(expr)   P_INFO("[" << this->getServerName() << "] " << expr)
 #define SKS_NOTICE(expr) P_NOTICE("[" << this->getServerName() << "] " << expr)
 #define SKS_DEBUG(expr)  P_DEBUG("[" << this->getServerName() << "] " << expr)
 #define SKS_TRACE(level, expr) P_TRACE(level, "[" << this->getServerName() << "] " << expr)
+
+#define SKS_NOTICE_FROM_STATIC(server, expr) P_NOTICE("[" << server->getServerName() << "] " << expr)
 
 #define SKC_ERROR(client, expr) SKC_ERROR_FROM_STATIC(this, client, expr)
 #define SKC_WARN(client, expr) SKC_WARN_FROM_STATIC(this, client, expr)
@@ -265,6 +268,7 @@ private:
 				"Stop accepting clients for 3 seconds. " <<
 				"Current client count: " << activeClientCount);
 			serverState = TOO_MANY_FDS;
+			acceptResumptionWatcher.set(3, 0);
 			acceptResumptionWatcher.start();
 			for (uint8_t i = 0; i < nEndpoints; i++) {
 				ev_io_stop(ctx->libev->getLoop(), &endpoints[i]);
@@ -282,7 +286,6 @@ private:
 		for (uint8_t i = 0; i < nEndpoints; i++) {
 			ev_io_start(ctx->libev->getLoop(), &endpoints[i]);
 		}
-		acceptResumptionWatcher.stop();
 	}
 
 	int acceptNonBlockingSocket(int serverFd) {
@@ -646,7 +649,6 @@ public:
 		TAILQ_INIT(&activeClients);
 		TAILQ_INIT(&disconnectedClients);
 		acceptResumptionWatcher.set(context->libev->getLoop());
-		acceptResumptionWatcher.set(0, 3);
 		acceptResumptionWatcher.set<
 			BaseServer<DerivedServer, Client>,
 			&BaseServer<DerivedServer, Client>::onAcceptResumeTimeout>(this);
@@ -671,22 +673,31 @@ public:
 	}
 
 	void listen(int fd) {
+		#ifdef EOPNOTSUPP
+			#define EXTENSION_EOPNOTSUPP EOPNOTSUPP
+		#else
+			#define EXTENSION_EOPNOTSUPP ENOTSUP
+		#endif
+
 		TRACE_POINT();
 		assert(nEndpoints < SERVER_KIT_MAX_SERVER_ENDPOINTS);
 		int flag = 1;
 		setNonBlocking(fd);
 		if (setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &flag, sizeof(int)) == -1
 		 && errno != ENOPROTOOPT
-		 && errno != ENOTSUP)
+		 && errno != ENOTSUP
+		 && errno != EXTENSION_EOPNOTSUPP)
 		{
 			int e = errno;
-			P_WARN("Cannot disable Nagle's algorithm on a TCP socket: " <<
+			SKS_WARN("Cannot disable Nagle's algorithm on a TCP socket: " <<
 				strerror(e) << " (errno=" << e << ")");
 		}
 		ev_io_init(&endpoints[nEndpoints], _onAcceptable, fd, EV_READ);
 		endpoints[nEndpoints].data = this;
 		ev_io_start(ctx->libev->getLoop(), &endpoints[nEndpoints]);
 		nEndpoints++;
+
+		#undef EXTENSION_EOPNOTSUPP
 	}
 
 	void shutdown(bool forceDisconnect = false) {
@@ -734,6 +745,52 @@ public:
 
 		// When all active and disconnected clients are gone,
 		// finishShutdown() will be called to set state to FINISHED_SHUTDOWN.
+	}
+
+
+	void feedNewClients(const int *fds, unsigned int size) {
+		Client *client;
+		Client *acceptedClients[MAX_ACCEPT_BURST_COUNT];
+
+		assert(size > 0);
+		assert(size <= MAX_ACCEPT_BURST_COUNT);
+		P_ASSERT_EQ(serverState, ACTIVE);
+
+		activeClientCount += size;
+		totalClientsAccepted += size;
+
+		for (unsigned int i = 0; i < size; i++) {
+			client = checkoutClientObject();
+			TAILQ_INSERT_HEAD(&activeClients, client, nextClient.activeOrDisconnectedClient);
+			acceptedClients[i] = client;
+			client->number = getNextClientNumber();
+			reinitializeClient(client, fds[i]);
+		}
+
+		SKS_DEBUG(size << " new client(s) accepted; there are now " <<
+			activeClientCount << " active client(s)");
+
+		onClientsAccepted(acceptedClients, size);
+	}
+
+
+	/***** Server management *****/
+
+	virtual void compact(int logLevel = LVL_NOTICE) {
+		unsigned int count = freeClientCount;
+
+		while (!STAILQ_EMPTY(&freeClients)) {
+			Client *client = STAILQ_FIRST(&freeClients);
+			P_ASSERT_EQ(client->getConnState(), Client::IN_FREELIST);
+			client->refcount.store(2, boost::memory_order_relaxed);
+			freeClientCount--;
+			STAILQ_REMOVE_HEAD(&freeClients, nextClient.freeClient);
+			delete client;
+		}
+		assert(freeClientCount == 0);
+
+		SKS_LOG(logLevel, __FILE__, __LINE__,
+			"Freed " << count << " spare client objects");
 	}
 
 
@@ -867,7 +924,7 @@ public:
 	}
 
 	virtual Json::Value inspectStateAsJson() const {
-		Json::Value doc;
+		Json::Value doc = ctx->inspectStateAsJson();
 		const Client *client;
 
 		doc["pid"] = (unsigned int) getpid();

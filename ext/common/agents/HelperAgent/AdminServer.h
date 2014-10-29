@@ -23,7 +23,7 @@
 #include <Logging.h>
 #include <Constants.h>
 #include <Utils/StrIntUtils.h>
-#include <Utils/Base64.h>
+#include <Utils/modp_b64.h>
 #include <Utils/json.h>
 
 namespace Passenger {
@@ -69,8 +69,8 @@ private:
 		}
 
 		auth = psg_lstr_make_contiguous(auth, req->pool);
-		string authData = Base64::decode(
-			(const unsigned char *) auth->start->data + sizeof("Basic ") - 1,
+		string authData = modp::b64_decode(
+			auth->start->data + sizeof("Basic ") - 1,
 			auth->size - (sizeof("Basic ") - 1));
 		string::size_type pos = authData.find(':');
 		if (pos == string::npos) {
@@ -143,7 +143,7 @@ private:
 		*json = rh->inspectStateAsJson();
 	}
 
-	void processConnectionsStatus(Client *client, Request *req) {
+	void processServerStatus(Client *client, Request *req) {
 		if (authorize(client, req, READONLY)) {
 			HeaderTable headers;
 			headers.insert(req->pool, "content-type", "application/json");
@@ -339,6 +339,35 @@ private:
 		}
 	}
 
+	static void garbageCollect(RequestHandler *rh) {
+		ServerKit::Context *ctx = rh->getContext();
+		unsigned int count;
+
+		count = mbuf_pool_compact(&ctx->mbuf_pool);
+		SKS_NOTICE_FROM_STATIC(rh, "Freed " << count << " mbufs");
+
+		rh->compact(LVL_NOTICE);
+	}
+
+	void processGc(Client *client, Request *req) {
+		if (req->method != HTTP_PUT) {
+			respondWith405(client, req);
+		} else if (authorize(client, req, FULL)) {
+			HeaderTable headers;
+			headers.insert(req->pool, "content-type", "application/json");
+			for (unsigned int i = 0; i < requestHandlers.size(); i++) {
+				requestHandlers[i]->getContext()->libev->runLater(boost::bind(
+					garbageCollect, requestHandlers[i]));
+			}
+			writeSimpleResponse(client, 200, &headers, "{ \"status\": \"ok\" }");
+			if (!req->ended()) {
+				endRequest(&client, &req);
+			}
+		} else {
+			respondWith401(client, req);
+		}
+	}
+
 	static void getRequestHandlerConfig(RequestHandler *rh, Json::Value *json) {
 		*json = rh->getConfigAsJson();
 	}
@@ -505,6 +534,7 @@ private:
 	void respondWith422(Client *client, Request *req, const StaticString &body) {
 		HeaderTable headers;
 		headers.insert(req->pool, "cache-control", "no-cache, no-store, must-revalidate");
+		headers.insert(req->pool, "content-type", "text/plain; charset=utf-8");
 		writeSimpleResponse(client, 422, &headers, body);
 		if (!req->ended()) {
 			endRequest(&client, &req);
@@ -520,8 +550,8 @@ protected:
 			" " << StaticString(req->path.start->data, req->path.size));
 
 		try {
-			if (path == P_STATIC_STRING("/connections.json")) {
-				processConnectionsStatus(client, req);
+			if (path == P_STATIC_STRING("/server.json")) {
+				processServerStatus(client, req);
 			} else if (path == P_STATIC_STRING("/pool.xml")) {
 				processPoolStatusXml(client, req);
 			} else if (path == P_STATIC_STRING("/pool.txt")) {
@@ -536,6 +566,8 @@ protected:
 				processPing(client, req);
 			} else if (path == P_STATIC_STRING("/shutdown.json")) {
 				processShutdown(client, req);
+			} else if (path == P_STATIC_STRING("/gc.json")) {
+				processGc(client, req);
 			} else if (path == P_STATIC_STRING("/config.json")) {
 				processConfig(client, req);
 			} else if (path == P_STATIC_STRING("/reopen_logs.json")) {

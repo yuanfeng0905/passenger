@@ -98,6 +98,7 @@ psg_lstr_append_part(LString *str, LString::Part *part) {
 		str->end = part;
 	}
 	str->size += part->size;
+	part->next = NULL;
 }
 
 inline void
@@ -108,7 +109,6 @@ psg_lstr_append(LString *str, psg_pool_t *pool, const MemoryKit::mbuf &buffer,
 		return;
 	}
 	LString::Part *part = (LString::Part *) psg_palloc(pool, sizeof(LString::Part));
-	part->next = NULL;
 	part->mbuf_block = buffer.mbuf_block;
 	part->data = data;
 	part->size = size;

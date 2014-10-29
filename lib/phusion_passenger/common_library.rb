@@ -364,18 +364,10 @@ COMMON_LIBRARY = CommonLibraryBuilder.new do
 		:category => :base,
 		:deps     => %w(
 			Utils.h
-			Utils/Base64.h
 			Utils/StrIntUtils.h
 			ResourceLocator.h
 		)
 
-	define_component 'Utils/Base64.o',
-		:source   => 'Utils/Base64.cpp',
-		:category => :other,
-		:optimize => true,
-		:deps     => %w(
-			Utils/Base64.h
-		)
 	define_component 'Utils/modp_b64.o',
 		:source   => 'Utils/modp_b64.cpp',
 		:category => :other,
@@ -513,4 +505,4 @@ end
 
 # Objects that must be linked into the Nginx binary.
 NGINX_LIBS_SELECTOR = [:base, 'AgentsStarter.o', 'ApplicationPool2/AppTypes.o',
-	'Utils/CachedFileStat.o', 'Utils/Base64.o', 'agents/LoggingAgent/FilterSupport.o']
+	'Utils/CachedFileStat.o', 'agents/LoggingAgent/FilterSupport.o']

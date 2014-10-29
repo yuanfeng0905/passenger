@@ -14,6 +14,7 @@
 #include <cassert>
 #include <cstring>
 #include <DataStructures/HashedStaticString.h>
+#include <ServerKit/http_parser.h>
 #include <StaticString.h>
 #include <Utils/DateParsing.h>
 #include <Utils/StrIntUtils.h>
@@ -82,18 +83,20 @@ private:
 	HashedStaticString VARY;
 	HashedStaticString EXPIRES;
 	HashedStaticString LAST_MODIFIED;
+	HashedStaticString LOCATION;
+	HashedStaticString CONTENT_LOCATION;
 
 	unsigned int fetches, hits, stores, storeSuccesses;
 
 	Header headers[MAX_ENTRIES];
 	Body bodies[MAX_ENTRIES];
 
-	unsigned int calculateKeyLength(Request *req, const LString *host) {
+	unsigned int calculateKeyLength(const LString * restrict host, const StaticString &path) {
 		unsigned int size =
 			1  // protocol flag
 			+ ((host != NULL) ? host->size : 0)
 			+ 1  // ':'
-			+ req->path.size;
+			+ path.size();
 		if (size > MAX_KEY_LENGTH) {
 			return 0;
 		} else {
@@ -101,12 +104,15 @@ private:
 		}
 	}
 
-	void generateKey(Request *req, const LString *host, char *output, unsigned int size) {
+	void generateKey(bool https, const StaticString &path,
+		const LString * restrict host, char * restrict output,
+		unsigned int size)
+	{
 		char *pos = output;
 		const char *end = output + size;
 		const LString::Part *part;
 
-		if (req->https) {
+		if (https) {
 			pos = appendData(pos, end, "S", 1);
 		} else {
 			pos = appendData(pos, end, "H", 1);
@@ -121,7 +127,7 @@ private:
 		}
 
 		pos = appendData(pos, end, ":", 1);
-		pos = appendData(pos, end, req->path.start->data, req->path.size);
+		pos = appendData(pos, end, path);
 	}
 
 	bool statusCodeIsCacheableByDefault(unsigned int code) const {
@@ -211,9 +217,9 @@ private:
 		if (value != NULL) {
 			StaticString cacheControl(value->start->data, value->size);
 			string::size_type pos = cacheControl.find(P_STATIC_STRING("max-age"));
-			if (pos != string::npos) {
+			if (pos != string::npos && cacheControl.size() > pos + 1) {
 				unsigned int maxAge = stringToUint(cacheControl.substr(
-					pos + sizeof("max-age") - 1));
+					pos + (sizeof("max-age") - 1) + 1));
 				if (maxAge == 0) {
 					// Parse error or max-age=0
 					return (time_t) - 1;
@@ -246,14 +252,106 @@ private:
 		return entry.body->expiryDate > now;
 	}
 
+	StaticString extractHostNameWithPortFromParsedUrl(struct http_parser_url &url,
+		const LString *value) const
+	{
+		assert(url.field_set & (1 << UF_HOST));
+		if (url.field_set & (1 << UF_PORT)) {
+			unsigned int portEnd = url.field_data[UF_PORT].off + url.field_data[UF_PORT].len;
+			return StaticString(value->start->data + url.field_data[UF_HOST].off,
+				portEnd - url.field_data[UF_HOST].off);
+		} else {
+			return StaticString(value->start->data + url.field_data[UF_HOST].off,
+				url.field_data[UF_HOST].len);
+		}
+	}
+
+	void invalidateLocation(Request *req, const HashedStaticString &header) {
+		const LString *value = req->appResponse.headers.lookup(header);
+		if (value == NULL) {
+			return;
+		}
+
+		StaticString path;
+		bool https;
+		value = psg_lstr_make_contiguous(value, req->pool);
+
+		if (psg_lstr_first_byte(value) != '/') {
+			// Maybe it is a full URL. Parse the host name.
+			struct http_parser_url url;
+			int ret = http_parser_parse_url(value->start->data, value->size,
+				0, &url);
+			if (ret != 0) {
+				// Invalid URL.
+				return;
+			}
+			if (!(url.field_set & (1 << UF_HOST))) {
+				// Invalid URL.
+				return;
+			}
+
+			StaticString host = extractHostNameWithPortFromParsedUrl(url, value);
+			if (host.size() != req->host->size) {
+				// The host names don't match.
+				return;
+			}
+
+			char *hostData = (char *) psg_pnalloc(req->pool, host.size());
+			memcpy(hostData, host.data(), host.size());
+			convertLowerCase((unsigned char *) hostData, host.size());
+			host = StaticString(hostData, host.size());
+
+			char *reqHost = (char *) psg_pnalloc(req->pool, req->host->size);
+			memcpy(reqHost, req->host->start->data, req->host->size);
+			convertLowerCase((unsigned char *) reqHost, req->host->size);
+
+			if (memcmp(host.data(), reqHost, req->host->size) != 0) {
+				// The host names don't match.
+				return;
+			}
+
+			if (url.field_set & (1 << UF_PATH)) {
+				path = StaticString(value->start->data + url.field_data[UF_PATH].off,
+					url.field_data[UF_PATH].len);
+			} else {
+				path = P_STATIC_STRING("/");
+			}
+
+			if (url.field_set & (1 << UF_SCHEMA)) {
+				StaticString schema(value->start->data + url.field_data[UF_SCHEMA].off,
+					url.field_data[UF_SCHEMA].len);
+				https = schema == "https";
+			} else {
+				https = req->https;
+			}
+		} else {
+			path = StaticString(value->start->data, value->size);
+			https = req->https;
+		}
+
+		unsigned int keySize = calculateKeyLength(req->host, path);
+		if (keySize == 0) {
+			return;
+		}
+
+		char *key = (char *) psg_pnalloc(req->pool, keySize);
+		generateKey(https, path, req->host, key, keySize);
+
+		Entry entry(lookup(StaticString(key, keySize)));
+		if (entry.valid()) {
+			entry.header->valid = false;
+		}
+	}
+
 public:
 	ResponseCache()
-		: HOST("host"),
-		  CACHE_CONTROL("cache-control"),
+		: CACHE_CONTROL("cache-control"),
 		  PRAGMA_CONST("pragma"),
 		  VARY("vary"),
 		  EXPIRES("expires"),
 		  LAST_MODIFIED("last-modified"),
+		  LOCATION("location"),
+		  CONTENT_LOCATION("content-location"),
 		  fetches(0),
 		  hits(0),
 		  stores(0),
@@ -317,12 +415,12 @@ public:
 	 * @post result == !req->cacheKey.empty()
 	 */
 	bool prepareRequest(Request *req) {
-		if (req->upgraded()) {
+		if (req->upgraded() || req->host == NULL) {
 			return false;
 		}
 
-		const LString *host = req->headers.lookup(HOST);
-		unsigned int size = calculateKeyLength(req, host);
+		unsigned int size = calculateKeyLength(req->host,
+			StaticString(req->path.start->data, req->path.size));
 		if (size == 0) {
 			req->cacheKey = HashedStaticString();
 			return false;
@@ -337,7 +435,8 @@ public:
 		}
 
 		char *key = (char *) psg_pnalloc(req->pool, size);
-		generateKey(req, host, key, size);
+		generateKey(req->https, StaticString(req->path.start->data, req->path.size),
+			req->host, key, size);
 		req->cacheKey = HashedStaticString(key, size);
 		return true;
 	}
@@ -481,11 +580,13 @@ public:
 
 	// @pre requestAllowsInvalidating()
 	void invalidate(Request *req) {
-		// TODO: invalidate Location and Content-Location too
 		Entry entry(lookup(req->cacheKey));
 		if (entry.valid()) {
 			entry.header->valid = false;
 		}
+
+		invalidateLocation(req, LOCATION);
+		invalidateLocation(req, CONTENT_LOCATION);
 	}
 
 

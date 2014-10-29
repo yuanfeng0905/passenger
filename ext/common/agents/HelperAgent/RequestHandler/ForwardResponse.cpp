@@ -273,6 +273,14 @@ onAppResponseBegin(Client *client, Request *req) {
 	ssize_t bytesWritten;
 	bool oobw;
 
+	#ifdef DEBUG_RH_EVENT_LOOP_BLOCKING
+		req->timeOnRequestHeaderSent = ev_now(getLoop());
+		reportLargeTimeDiff(client,
+			"Headers sent until response begun",
+			req->timeOnRequestHeaderSent,
+			ev_now(getLoop()));
+	#endif
+
 	// Localize hash table operations for better CPU caching.
 	oobw = resp->secureHeaders.lookup(PASSENGER_REQUEST_OOB_WORK) != NULL;
 	resp->date = resp->headers.lookup(HTTP_DATE);
@@ -320,6 +328,7 @@ void prepareAppResponseCaching(Client *client, Request *req) {
 	if (turboCaching.isEnabled() && !req->cacheKey.empty()) {
 		TRACE_POINT();
 		AppResponse *resp = &req->appResponse;
+		SKC_TRACE(client, 2, "Preparing response caching");
 		if (turboCaching.responseCache.requestAllowsStoring(req)
 		 && turboCaching.responseCache.prepareRequestForStoring(req))
 		{
@@ -334,8 +343,10 @@ void prepareAppResponseCaching(Client *client, Request *req) {
 				req->cacheKey = HashedStaticString();
 			}
 		} else if (turboCaching.responseCache.requestAllowsInvalidating(req)) {
+			SKC_DEBUG(client, "Processing turbocache invalidation based on response");
 			turboCaching.responseCache.invalidate(req);
 			req->cacheKey = HashedStaticString();
+			SKC_TRACE(client, 2, "Turbocache entries:\n" << turboCaching.responseCache.inspect());
 		}
 	}
 }
@@ -614,6 +625,12 @@ constructDateHeaderBuffersForResponse(char *dateStr, unsigned int bufsize) {
 bool
 sendResponseHeaderWithWritev(Client *client, Request *req, ssize_t &bytesWritten) {
 	TRACE_POINT();
+
+	if (OXT_UNLIKELY(benchmarkMode == BM_RESPONSE_BEGIN)) {
+		writeBenchmarkResponse(&client, &req, false);
+		return true;
+	}
+
 	unsigned int maxbuffers = std::min<unsigned int>(
 		8 + req->appResponse.headers.size() * 4 + 11, IOV_MAX);
 	struct iovec *buffers = (struct iovec *) psg_palloc(req->pool,
@@ -658,8 +675,7 @@ sendResponseHeaderWithBuffering(Client *client, Request *req, unsigned int offse
 	markHeaderBuffersForTurboCaching(client, req, buffers, nCacheableBuffers);
 
 	MemoryKit::mbuf_pool &mbuf_pool = getContext()->mbuf_pool;
-	const unsigned int MBUF_MAX_SIZE = mbuf_pool.mbuf_block_chunk_size -
-		mbuf_pool.mbuf_block_offset;
+	const unsigned int MBUF_MAX_SIZE = mbuf_pool_data_size(&mbuf_pool);
 	if (dataSize <= MBUF_MAX_SIZE) {
 		MemoryKit::mbuf buffer(MemoryKit::mbuf_get(&mbuf_pool));
 		gatherBuffers(buffer.start, MBUF_MAX_SIZE, buffers, nbuffers);
@@ -728,7 +744,9 @@ void prepareAppResponseChunkedBodyParsing(Client *client, Request *req) {
 
 void
 writeResponseAndMarkForTurboCaching(Client *client, Request *req, const MemoryKit::mbuf &buffer) {
-	writeResponse(client, buffer);
+	if (OXT_LIKELY(benchmarkMode != BM_RESPONSE_BEGIN)) {
+		writeResponse(client, buffer);
+	}
 	markResponsePartForTurboCaching(client, req, buffer);
 }
 
@@ -777,6 +795,7 @@ storeAppResponseInTurboCache(Client *client, Request *req) {
 				headerSize, resp->bodyCacheBuffer.size));
 		if (entry.valid()) {
 			SKC_DEBUG(client, "Storing app response in turbocache");
+			SKC_TRACE(client, 2, "Turbocache entries:\n" << turboCaching.responseCache.inspect());
 
 			gatherBuffers(entry.body->httpHeaderData,
 				ResponseCache<Request>::MAX_HEADER_SIZE,

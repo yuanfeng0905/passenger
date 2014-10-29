@@ -19,6 +19,7 @@
 #include <cstring>
 #include <oxt/macros.hpp>
 #include <oxt/thread.hpp>
+#include <cstring>
 #include <MemoryKit/mbuf.h>
 
 namespace Passenger {
@@ -75,6 +76,12 @@ _mbuf_block_get(struct mbuf_pool *pool)
 
 done:
 	STAILQ_NEXT(mbuf_block, next) = NULL;
+	#ifdef MBUF_ENABLE_DEBUGGING
+		TAILQ_INSERT_HEAD(&pool->active_mbuf_blockq, mbuf_block, active_q);
+	#endif
+	#ifdef MBUF_ENABLE_BACKTRACES
+		mbuf_block->backtrace = strdup(oxt::thread::current_backtrace().c_str());
+	#endif
 	pool->nactive_mbuf_blockq++;
 	return mbuf_block;
 }
@@ -116,6 +123,13 @@ mbuf_block_free(struct mbuf_pool *pool, struct mbuf_block *mbuf_block)
 
 	assert(STAILQ_NEXT(mbuf_block, next) == NULL);
 	assert(mbuf_block->magic == MBUF_BLOCK_MAGIC);
+
+	#ifdef MBUF_ENABLE_DEBUGGING
+		TAILQ_REMOVE(&pool->active_mbuf_blockq, mbuf_block, active_q);
+	#endif
+	#ifdef MBUF_ENABLE_BACKTRACES
+		free(mbuf_block->backtrace);
+	#endif
 
 	buf = (char *) mbuf_block - pool->mbuf_block_offset;
 	free(buf);
@@ -269,19 +283,17 @@ mbuf_pool_init(struct mbuf_pool *pool)
 	pool->nactive_mbuf_blockq = 0;
 	STAILQ_INIT(&pool->free_mbuf_blockq);
 
+	#ifdef MBUF_ENABLE_DEBUGGING
+		TAILQ_INIT(&pool->active_mbuf_blockq);
+	#endif
+
 	pool->mbuf_block_offset = pool->mbuf_block_chunk_size - MBUF_BLOCK_HSIZE;
 }
 
 void
 mbuf_pool_deinit(struct mbuf_pool *pool)
 {
-	while (!STAILQ_EMPTY(&pool->free_mbuf_blockq)) {
-		struct mbuf_block *mbuf_block = STAILQ_FIRST(&pool->free_mbuf_blockq);
-		mbuf_block_remove(&pool->free_mbuf_blockq, mbuf_block);
-		mbuf_block_free(pool, mbuf_block);
-		pool->nfree_mbuf_blockq--;
-	}
-	assert(pool->nfree_mbuf_blockq == 0);
+	mbuf_pool_compact(pool);
 }
 
 /*
@@ -294,6 +306,22 @@ mbuf_pool_data_size(struct mbuf_pool *pool)
 	return pool->mbuf_block_offset;
 }
 
+unsigned int
+mbuf_pool_compact(struct mbuf_pool *pool)
+{
+	unsigned int count = pool->nfree_mbuf_blockq;
+
+	while (!STAILQ_EMPTY(&pool->free_mbuf_blockq)) {
+		struct mbuf_block *mbuf_block = STAILQ_FIRST(&pool->free_mbuf_blockq);
+		mbuf_block_remove(&pool->free_mbuf_blockq, mbuf_block);
+		mbuf_block_free(pool, mbuf_block);
+		pool->nfree_mbuf_blockq--;
+	}
+	assert(pool->nfree_mbuf_blockq == 0);
+
+	return count;
+}
+
 
 void
 mbuf_block_ref(struct mbuf_block *mbuf_block)
@@ -302,6 +330,9 @@ mbuf_block_ref(struct mbuf_block *mbuf_block)
 		printf("[%p] mbuf_block ref %p: %u -> %u\n",
 			oxt::thread_signature, mbuf_block,
 			mbuf_block->refcount, mbuf_block->refcount + 1);
+	#endif
+	#ifdef MBUF_ENABLE_BACKTRACES
+		mbuf_block->backtrace = strdup(oxt::thread::current_backtrace().c_str());
 	#endif
 	mbuf_block->refcount++;
 }

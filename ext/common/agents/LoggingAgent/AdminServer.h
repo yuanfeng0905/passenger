@@ -18,7 +18,7 @@
 #include <Exceptions.h>
 #include <StaticString.h>
 #include <Utils/StrIntUtils.h>
-#include <Utils/Base64.h>
+#include <Utils/modp_b64.h>
 #include <Utils/json.h>
 
 namespace Passenger {
@@ -64,8 +64,8 @@ private:
 		}
 
 		auth = psg_lstr_make_contiguous(auth, req->pool);
-		string authData = Base64::decode(
-			(const unsigned char *) auth->start->data + sizeof("Basic ") - 1,
+		string authData = modp::b64_decode(
+			auth->start->data + sizeof("Basic ") - 1,
 			auth->size - (sizeof("Basic ") - 1));
 		string::size_type pos = authData.find(':');
 		if (pos == string::npos) {
@@ -265,6 +265,7 @@ private:
 	void respondWith422(Client *client, Request *req, const StaticString &body) {
 		HeaderTable headers;
 		headers.insert(req->pool, "cache-control", "no-cache, no-store, must-revalidate");
+		headers.insert(req->pool, "content-type", "text/plain; charset=utf-8");
 		writeSimpleResponse(client, 422, &headers, body);
 		if (!req->ended()) {
 			endRequest(&client, &req);
