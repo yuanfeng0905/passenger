@@ -45,6 +45,7 @@ dependencies = [
 	'ext/common/agents/HelperAgent/RequestHandler.cpp',
 	'ext/common/agents/HelperAgent/ScgiRequestParser.h',
 	'ext/common/agents/HelperAgent/SystemMetricsTool.cpp',
+	'ext/common/agents/HelperAgent/SendCloudUsageTool.cpp',
 	'ext/common/Constants.h',
 	'ext/common/StaticString.h',
 	'ext/common/Account.h',

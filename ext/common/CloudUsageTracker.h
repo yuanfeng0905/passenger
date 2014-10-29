@@ -437,8 +437,9 @@ public:
 		);
 	}
 
-	void runOneCycle() {
+	bool runOneCycle() {
 		TRACE_POINT();
+		bool result;
 		P_DEBUG("Begin tracking usage cycle");
 		recordUsagePoint();
 		if (autoSend) {
@@ -455,10 +456,13 @@ public:
 					"protocol://username:password@hostname:port, where 'protocol' is either 'http' or 'socks5'.\n"
 					"If the problem persists, please contact support@phusion.nl.");
 			}
+			result = usagePoints.size() - sent == 0;
 		} else {
 			P_DEBUG("Not auto-sending usage cycle");
+			result = false;
 		}
 		P_DEBUG("Done tracking usage cycle");
+		return result;
 	}
 };
 

@@ -18,9 +18,10 @@ module Config
 		["build-native-support", "BuildNativeSupportCommand"],
 		["validate-install", "ValidateInstallCommand"],
 		["system-metrics", "SystemMetricsCommand"],
+		["send-cloud-usage", "SendCloudUsageCommand"],
 		["about", "AboutCommand"]
 	]
-	
+
 	ABOUT_OPTIONS = [
 		"root",
 		"includedir",
@@ -71,6 +72,7 @@ module Config
 		puts "                        Ruby interpeter is built"
 		if all
 			puts "  system-metrics        Display system metrics"
+			puts "  send-cloud-usage      Send cloud license usage data"
 		end
 		puts
 		puts "Run 'passenger-config <COMMAND> --help' for more information about each"

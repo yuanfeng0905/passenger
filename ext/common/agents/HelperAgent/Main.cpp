@@ -38,6 +38,7 @@
 #include <agents/HelperAgent/RequestHandler.cpp>
 #include <agents/HelperAgent/AgentOptions.h>
 #include <agents/HelperAgent/SystemMetricsTool.cpp>
+#include <agents/HelperAgent/SendCloudUsageTool.cpp>
 
 #include <agents/Base.h>
 #include <Constants.h>
@@ -668,6 +669,8 @@ main(int argc, char *argv[]) {
 
 	if (argc > 1 && strcmp(argv[1], "system-metrics") == 0) {
 		return SystemMetricsTool::main(argc, argv);
+	} else if (argc > 1 && strcmp(argv[1], "send-cloud-usage") == 0) {
+		return SendCloudUsageTool::main(argc, argv);
 	}
 
 	AgentOptionsPtr options;
