@@ -146,7 +146,7 @@ initialize(Options &options) {
 }
 
 static void
-abortHandler(const string &message) {
+licenseErrorHandler(const string &message) {
 	P_CRITICAL(message);
 	exit(1);
 }
@@ -157,7 +157,7 @@ main(int argc, char *argv[]) {
 	initialize(options);
 
 	CloudUsageTracker tracker(options.datadir, options.baseUrl, options.certificate);
-	tracker.abortHandler = abortHandler;
+	tracker.licenseErrorHandler = licenseErrorHandler;
 	if (tracker.runOneCycle()) {
 		return 0;
 	} else {

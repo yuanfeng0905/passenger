@@ -596,7 +596,6 @@ public:
 				certificate,
 				options.licensingProxy,
 				options.licensingDataPointsAutoSend);
-			tracker->abortHandler = boost::bind(&Server::cloudTrackerAbortHandler, this, _1);
 			tracker->start();
 		}
 
