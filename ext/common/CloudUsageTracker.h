@@ -41,6 +41,7 @@
 #include <Utils/SystemTime.h>
 #include <Utils/License.h>
 #include <Utils/Curl.h>
+#include <Utils/json.h>
 
 namespace Passenger {
 
@@ -489,6 +490,18 @@ public:
 		}
 		P_DEBUG("Done tracking usage cycle");
 		return result;
+	}
+
+	Json::Value dumpMachineProperties() {
+		const MachineProperties &properties = autodetectMachineProperties();
+		Json::Value doc(Json::objectValue);
+		MachineProperties::const_iterator it;
+
+		for (it = properties.begin(); it != properties.end(); it++) {
+			const pair<const char *, string> &p = *it;
+			doc[string(p.first)] = p.second;
+		}
+		return doc;
 	}
 };
 

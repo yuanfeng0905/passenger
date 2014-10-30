@@ -10,6 +10,7 @@ require 'tmpdir'
 require 'fileutils'
 PhusionPassenger.require_passenger_lib 'ruby_core_enhancements'
 PhusionPassenger.require_passenger_lib 'config/command'
+PhusionPassenger.require_passenger_lib 'utils/shellwords'
 
 module PhusionPassenger
 module Config
@@ -57,16 +58,14 @@ private
 	end
 
 	def create_archive(data_dir)
-		hostname = `hostname`.strip
-		if hostname.nil?
-			abort "Unable to query the current machine's host name."
-		end
-
 		Dir.mktmpdir do |tmpdir|
 			Dir.mkdir("#{tmpdir}/usage_data")
 			FileUtils.cp(Dir["#{data_dir}/*"], "#{tmpdir}/usage_data")
 			File.open("#{tmpdir}/hostname", "w") do |f|
-				f.write(hostname)
+				f.write(detect_hostname)
+			end
+			File.open("#{tmpdir}/machine-properties.json", "w") do |f|
+				f.write(collect_machine_properties)
 			end
 			Dir.chdir(tmpdir) do
 				if !system("tar", "-czf", @output_filename, ".")
@@ -77,7 +76,29 @@ private
 	end
 
 	def clear_data_dir(data_dir)
-		FileUtils.rm(*Dir["#{data_dir}/*"])
+		files = Dir["#{data_dir}/*"]
+		if !files.empty?
+			FileUtils.rm(files)
+		end
+	end
+
+	def detect_hostname
+		hostname = `hostname`.strip
+		if hostname.empty?
+			abort "Unable to query the current machine's host name."
+		end
+	end
+
+	def collect_machine_properties
+		agent_exe = "#{PhusionPassenger.agents_dir}/PassengerHelperAgent"
+		command = "#{agent_exe} send-cloud-usage " +
+			"--passenger-root #{Shellwords.escape PhusionPassenger.source_root} " +
+			"--dump-machine-properties"
+		result = `#{command}`.strip
+		if result.empty?
+			abort "The command '#{command}' failed."
+		end
+		return result
 	end
 end
 
