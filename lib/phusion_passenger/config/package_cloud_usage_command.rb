@@ -9,6 +9,7 @@ require 'optparse'
 require 'tmpdir'
 require 'fileutils'
 PhusionPassenger.require_passenger_lib 'ruby_core_enhancements'
+PhusionPassenger.require_passenger_lib 'constants'
 PhusionPassenger.require_passenger_lib 'config/command'
 PhusionPassenger.require_passenger_lib 'utils/shellwords'
 
@@ -90,9 +91,9 @@ private
 	end
 
 	def collect_machine_properties
-		agent_exe = "#{PhusionPassenger.agents_dir}/PassengerHelperAgent"
+		agent_exe = "#{PhusionPassenger.support_binaries_dir}/#{AGENT_EXE}"
 		command = "#{agent_exe} send-cloud-usage " +
-			"--passenger-root #{Shellwords.escape PhusionPassenger.source_root} " +
+			"--passenger-root #{Shellwords.escape PhusionPassenger.install_spec} " +
 			"--dump-machine-properties"
 		result = `#{command}`.strip
 		if result.empty?
