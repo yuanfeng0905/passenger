@@ -243,8 +243,7 @@ protected:
 				// response == error
 				stringstream message;
 				message << "There is a problem with your Phusion Passenger Enterprise "
-					"license. Phusion Passenger Enterprise has been disabled until "
-					"this problem is resolved. Please contact support@phusion.nl if you "
+					"license. Please contact support@phusion.nl if you "
 					"require assistance. The problem is as follows: " <<
 					response["message"].asString();
 				handleLicenseError(message.str());
