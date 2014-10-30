@@ -11,6 +11,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <string>
+#include <iostream>
 #include <oxt/initialize.hpp>
 #include <oxt/system_calls.hpp>
 #include <Logging.h>
@@ -32,10 +33,14 @@ namespace {
 		string baseUrl;
 		string certificate;
 		bool sslCertCheck;
+		bool dumpMachineProperties;
+		bool verbose;
 		bool help;
 
 		Options()
 			: sslCertCheck(true),
+			  dumpMachineProperties(false),
+			  verbose(false),
 			  help(false)
 			{ }
 	};
@@ -78,6 +83,10 @@ usage() {
 	printf("      --no-ssl-cert-check     Do not verify SSL certificate\n");
 	printf("      --base-url              Base URL to contact. Default:\n");
 	printf("                              https://www.phusionpassenger.com\n");
+	printf("      --dump-machine-properties\n");
+	printf("                              Don't send anything. Just dump machine\n");
+	printf("                              properties\n");
+	printf("  -v, --verbose               Verbose output\n");
 	printf("  -h, --help                  Show this help\n");
 }
 
@@ -96,6 +105,12 @@ parseOptions(int argc, char *argv[]) {
 		} else if (isValueFlag(argc, i, argv[i], '\0', "--base-url")) {
 			options.baseUrl = argv[i + 1];
 			i += 2;
+		} else if (isFlag(argv[i], '\0', "--dump-machine-properties")) {
+			options.dumpMachineProperties = true;
+			i++;
+		} else if (isFlag(argv[i], 'v', "--verbose")) {
+			options.verbose = true;
+			i++;
 		} else if (isFlag(argv[i], 'h', "--help")) {
 			options.help = true;
 			i++;
@@ -119,14 +134,17 @@ initialize(Options &options) {
 		exit(1);
 	}
 
-	setLogLevel(LVL_DEBUG);
+	if (options.verbose) {
+		setLogLevel(LVL_DEBUG);
+	}
 
 	passenger_enterprise_license_init();
 	char *error = passenger_enterprise_license_check();
 	if (error != NULL) {
 		string message = error;
 		free(error);
-		throw RuntimeException(message);
+		P_CRITICAL(message);
+		exit(1);
 	}
 
 	CURLcode code = curl_global_init(CURL_GLOBAL_ALL);
@@ -157,11 +175,18 @@ main(int argc, char *argv[]) {
 	initialize(options);
 
 	CloudUsageTracker tracker(options.datadir, options.baseUrl, options.certificate);
-	tracker.licenseErrorHandler = licenseErrorHandler;
-	if (tracker.runOneCycle()) {
+	if (options.dumpMachineProperties) {
+		cout << tracker.dumpMachineProperties().toStyledString();
 		return 0;
 	} else {
-		return 1;
+		tracker.licenseErrorHandler = licenseErrorHandler;
+		if (tracker.runOneCycle()) {
+			P_INFO("Success!");
+			return 0;
+		} else {
+			P_INFO("Failed!");
+			return 1;
+		}
 	}
 }
 
