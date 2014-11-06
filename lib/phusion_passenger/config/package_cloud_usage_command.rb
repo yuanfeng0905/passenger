@@ -1,3 +1,5 @@
+# encoding: utf-8
+#
 #  Phusion Passenger - https://www.phusionpassenger.com/
 #  Copyright (c) 2014 Phusion
 #
@@ -62,11 +64,18 @@ private
 		Dir.mktmpdir do |tmpdir|
 			Dir.mkdir("#{tmpdir}/usage_data")
 			FileUtils.cp(Dir["#{data_dir}/*"], "#{tmpdir}/usage_data")
-			File.open("#{tmpdir}/hostname", "w") do |f|
+			File.open("#{tmpdir}/hostname", "wb") do |f|
 				f.write(detect_hostname)
 			end
-			File.open("#{tmpdir}/machine-properties.json", "w") do |f|
+			File.open("#{tmpdir}/properties.json", "wb") do |f|
 				f.write(collect_machine_properties)
+			end
+			File.open("#{tmpdir}/license_key", "wb") do |f|
+				File.open("/etc/passenger-enterprise-license", "rb") do |f2|
+					lines = f2.read.split(force_binary("\n"))
+					lines.pop
+					f.write(lines.join(force_binary("\n")) + force_binary("\n"))
+				end
 			end
 			Dir.chdir(tmpdir) do
 				if !system("tar", "-czf", @output_filename, ".")
@@ -84,10 +93,11 @@ private
 	end
 
 	def detect_hostname
-		hostname = `hostname`.strip
+		hostname = convert_utf8(`hostname`.strip)
 		if hostname.empty?
 			abort "Unable to query the current machine's host name."
 		end
+		return hostname
 	end
 
 	def collect_machine_properties
@@ -95,11 +105,29 @@ private
 		command = "#{agent_exe} send-cloud-usage " +
 			"--passenger-root #{Shellwords.escape PhusionPassenger.install_spec} " +
 			"--dump-machine-properties"
-		result = `#{command}`.strip
+		result = convert_utf8(`#{command}`.strip)
 		if result.empty?
 			abort "The command '#{command}' failed."
 		end
 		return result
+	end
+
+	if "".respond_to?(:encode)
+		def convert_utf8(str)
+			return str.encode("utf-8")
+		end
+
+		def force_binary(str)
+			return str.force_encoding("binary")
+		end
+	else
+		def convert_utf8(str)
+			return str
+		end
+
+		def force_binary(str)
+			return str
+		end
 	end
 end
 

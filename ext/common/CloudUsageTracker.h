@@ -80,26 +80,84 @@ protected:
 	}
 
 	void sendEmailToRoot(const string &message) {
+		string recipients = "root";
+		string currentUser = getProcessUsername(false);
+		if (!currentUser.empty() && currentUser != "root") {
+			recipients.append(",");
+			recipients.append(currentUser);
+		}
+
+		P_INFO("Sending email about licensing problem to the following user(s): " + recipients);
+		try {
+			bool sent = sendEmailToRootUsingMail(recipients, message);
+			if (!sent) {
+				P_WARN("Could not send email using 'mail'. Trying again using 'sendmail'...");
+				sent = sendEmailToRootUsingSendmail(recipients, message);
+				if (!sent) {
+					P_WARN("Could not send email using 'sendmail'. Giving up");
+				}
+			}
+			if (sent) {
+				P_INFO("Email successfully sent");
+			}
+		} catch (const RuntimeException &e) {
+			P_WARN(e.what());
+		}
+	}
+
+	bool sendEmailToRootUsingMail(const string &recipients, const string &message) {
 		TRACE_POINT();
 		char path[PATH_MAX] = "/tmp/passenger-email.XXXXXXXX";
 		int fd = mkstemp(path);
 		if (fd != -1) {
 			try {
-				writeExact(fd, P_STATIC_STRING(
-					"To: root\n"
+				writeExact(fd, P_STATIC_STRING("\n"));
+				writeExact(fd, message);
+				writeExact(fd, P_STATIC_STRING("\n.\n"));
+			} catch (const SystemException &e) {
+				P_ERROR("Cannot write to " << path << ": " << e.what());
+				close(fd);
+				return false;
+			}
+			close(fd);
+
+			bool result = runShellCommand("env PATH=/usr/sbin:$PATH mail "
+				"-s 'Phusion Passenger Enterprise cloud licensing problem' "
+				"'" + recipients + "' < '" +
+				string(path) + "'") == 0;
+			unlink(path);
+			return result;
+		} else {
+			throw RuntimeException("Could not send email: unable to create a temp file");
+		}
+	}
+
+	bool sendEmailToRootUsingSendmail(const string &recipients, const string &message) {
+		TRACE_POINT();
+		char path[PATH_MAX] = "/tmp/passenger-email.XXXXXXXX";
+		int fd = mkstemp(path);
+		if (fd != -1) {
+			try {
+				writeExact(fd, P_STATIC_STRING("To: "));
+				writeExact(fd, recipients);
+				writeExact(fd, P_STATIC_STRING("\n"
 					"Subject: Phusion Passenger Enterprise cloud licensing problem\n"
 					"\n"));
 				writeExact(fd, message);
-				writeExact(fd, P_STATIC_STRING("\n"));
+				writeExact(fd, P_STATIC_STRING("\n.\n"));
 			} catch (const SystemException &e) {
 				P_ERROR("Cannot write to " << path << ": " << e.what());
+				close(fd);
+				return false;
 			}
 			close(fd);
-			P_NOTICE("Sending email to root about licensing problem");
-			runShellCommand("env PATH=/usr/sbin:$PATH sendmail -t < '" + string(path) + "'");
+
+			bool result = runShellCommand("env PATH=/usr/sbin:$PATH sendmail -t < '" +
+				string(path) + "'") == 0;
 			unlink(path);
+			return result;
 		} else {
-			P_WARN("Could not send email to root: unable to create a temp file");
+			throw RuntimeException("Could not send email: unable to create a temp file");
 		}
 	}
 
@@ -243,8 +301,7 @@ protected:
 				// response == error
 				stringstream message;
 				message << "There is a problem with your Phusion Passenger Enterprise "
-					"license. Phusion Passenger Enterprise has been disabled until "
-					"this problem is resolved. Please contact support@phusion.nl if you "
+					"license. Please contact support@phusion.nl if you "
 					"require assistance. The problem is as follows: " <<
 					response["message"].asString();
 				handleLicenseError(message.str());

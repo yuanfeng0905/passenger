@@ -112,6 +112,7 @@ passenger_enterprise_license_check() {
 			APPEAL_MESSAGE);
 	}
 
+	// Read all lines in the license key file and store them in a string array.
 	while (1) {
 		if (fgets(line, sizeof(line), f) == NULL) {
 			if (ferror(f)) {
@@ -142,6 +143,7 @@ passenger_enterprise_license_check() {
 		goto finish;
 	}
 
+	// Calculate MD5 of the license key file.
 	md5_init(&md5);
 	for (i = 0; i < count - 1; i++) {
 		md5_append(&md5, (const md5_byte_t *) lines[i], strlen(lines[i]));
@@ -149,6 +151,7 @@ passenger_enterprise_license_check() {
 	md5_append(&md5, (const md5_byte_t *) LICENSE_SECRET, sizeof(LICENSE_SECRET) - 1);
 	md5_finish(&md5, digest);
 
+	// Read the last line of the license key file as binary MD5 data.
 	readDigestCursor = readDigest;
 	data = lines[count - 1];
 	dataEnd = data + strlen(data);
@@ -161,12 +164,15 @@ passenger_enterprise_license_check() {
 		data += 2;
 	}
 
+	// Validate MD5 checksum.
 	if (memcmp(digest, readDigest, MD5_SIZE) != 0) {
 		message = strdup("The Phusion Passenger Enterprise license file is invalid.\n"
 			APPEAL_MESSAGE);
 		goto finish;
 	}
 
+	// Create null-terminated buffer containing license key file data,
+	// excluding last line.
 	licenseKey = (char *) malloc(totalSize + 1);
 	dataEnd2 = licenseKey;
 	for (i = 0; i < count - 1; i++) {
