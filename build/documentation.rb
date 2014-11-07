@@ -53,7 +53,7 @@ def create_markdown_compilation_task(target)
 			puts "Creating #{target}"
 			require 'erb'
 			template = ERB.new(File.read('doc/templates/markdown.html.erb'))
-			title    = File.basename(target, '.html')
+			title    = File.basename(target, '.html').gsub(/([A-Z])/, ' \1').strip
 			content  = File.read("#{target}.tmp")
 			css      = File.read('doc/templates/bootstrap.min.css')
 			data = template.result(binding)
@@ -75,6 +75,7 @@ def create_markdown_compilation_task(target)
 end
 
 create_markdown_compilation_task('doc/Packaging.html')
+create_markdown_compilation_task('doc/CloudLicensingConfiguration.html')
 
 desc "Upload documentation to the Phusion web server"
 task 'doc:rsync' => :doc do
