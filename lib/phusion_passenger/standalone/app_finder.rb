@@ -72,6 +72,7 @@ class AppFinder
 					}
 					watchlist << app_root
 					watchlist << "#{app_root}/config" if File.exist?("#{app_root}/config")
+					watchlist << "#{app_root}/Passengerfile.json" if File.exist?("#{app_root}/Passengerfile.json")
 					watchlist << "#{app_root}/passenger-standalone.json" if File.exist?("#{app_root}/passenger-standalone.json")
 				else
 					full_dir = absolute_path(dir)
@@ -86,6 +87,7 @@ class AppFinder
 						end
 						watchlist << subdir
 						watchlist << "#{subdir}/config" if File.exist?("#{subdir}/config")
+						watchlist << "#{subdir}/Passengerfile.json" if File.exist?("#{subdir}/Passengerfile.json")
 						watchlist << "#{subdir}/passenger-standalone.json" if File.exist?("#{subdir}/passenger-standalone.json")
 					end
 				end
@@ -122,7 +124,7 @@ class AppFinder
 			watcher.close
 			if changed
 				old_apps = @apps
-				# The change could be caused by a write to some passenger-standalone.json file.
+				# The change could be caused by a write to some Passengerfile.json file.
 				# Wait for a short period so that the write has a chance to finish.
 				if wait_on_io(termination_pipe, 0.25)
 					return
