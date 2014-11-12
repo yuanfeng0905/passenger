@@ -56,17 +56,20 @@ class StartCommand < Command
 			watch_log_files_in_background if should_watch_logs?
 			wait_until_engine_has_exited if should_wait_until_engine_has_exited?
 		rescue Interrupt
-			shutdown_and_cleanup
+			shutdown_and_cleanup(true)
 			exit 2
 		rescue SignalException => signal
-			shutdown_and_cleanup
+			shutdown_and_cleanup(true)
 			if signal.message == 'SIGINT' || signal.message == 'SIGTERM'
 				exit 2
 			else
 				raise
 			end
-		ensure
-			shutdown_and_cleanup
+		rescue Exception
+			shutdown_and_cleanup(true)
+			raise
+		else
+			shutdown_and_cleanup(false)
 		end
 	end
 
@@ -593,6 +596,7 @@ private
 			STDOUT.sync = true
 			STDERR.sync = true
 			Process.setsid
+			@threads = nil
 		end
 	end
 
@@ -690,9 +694,9 @@ private
 
 	################## Shut down and cleanup ##################
 
-	def shutdown_and_cleanup
+	def shutdown_and_cleanup(error_occurred)
 		# Stop engine
-		if @engine
+		if @engine && (error_occurred || should_wait_until_engine_has_exited?)
 			@console_mutex.synchronize do
 				STDOUT.write("Stopping web server...")
 				STDOUT.flush
