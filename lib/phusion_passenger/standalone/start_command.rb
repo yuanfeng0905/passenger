@@ -42,7 +42,7 @@ class StartCommand < Command
 		exit if @options[:runtime_check_only]
 
 		find_apps
-		find_pid_and_log_file(@app_finder, @apps, @options)
+		find_pid_and_log_file(@app_finder, @options)
 		create_working_dir
 		begin
 			initialize_vars
@@ -308,7 +308,11 @@ private
 			app_dir = @argv[0]
 		end
 		if app_dir
-			ConfigUtils.load_local_config_file!(app_dir, @options)
+			begin
+				ConfigUtils.load_local_config_file!(app_dir, @options)
+			rescue ConfigLoadError => e
+				abort "*** ERROR: #{e.message}"
+			end
 		end
 	end
 
@@ -420,34 +424,30 @@ private
 		PhusionPassenger.require_passenger_lib 'standalone/app_finder'
 		@app_finder = AppFinder.new(@argv, @options)
 		@apps = @app_finder.scan
-		if @app_finder.multi_mode? && @options[:engine] != 'gninx'
+		if @app_finder.multi_mode? && @options[:engine] != 'nginx'
 			puts "Mass deployment enabled, so forcing engine to 'nginx'."
 			@options[:engine] = 'nginx'
 		end
 	end
 
-	def find_pid_and_log_file(app_finder, apps, options)
-		if app_finder.single_mode?
-			app_root = apps[0][:root]
-			if options[:socket_file]
-				pid_basename = "passenger.pid"
-				log_basename = "passenger.log"
-			else
-				pid_basename = "passenger.#{options[:port]}.pid"
-				log_basename = "passenger.#{options[:port]}.log"
-			end
-			if File.directory?("#{app_root}/tmp/pids")
-				options[:pid_file] ||= "#{app_root}/tmp/pids/#{pid_basename}"
-			else
-				options[:pid_file] ||= "#{app_root}/#{pid_basename}"
-			end
-			if File.directory?("log")
-				options[:log_file] ||= "#{app_root}/log/#{log_basename}"
-			else
-				options[:log_file] ||= "#{app_root}/#{log_basename}"
-			end
+	def find_pid_and_log_file(app_finder, options)
+		exec_root = app_finder.execution_root
+		if options[:socket_file]
+			pid_basename = "passenger.pid"
+			log_basename = "passenger.log"
 		else
-			raise "Not implemented"
+			pid_basename = "passenger.#{options[:port]}.pid"
+			log_basename = "passenger.#{options[:port]}.log"
+		end
+		if File.directory?("#{exec_root}/tmp/pids")
+			options[:pid_file] ||= "#{exec_root}/tmp/pids/#{pid_basename}"
+		else
+			options[:pid_file] ||= "#{exec_root}/#{pid_basename}"
+		end
+		if File.directory?("log")
+			options[:log_file] ||= "#{exec_root}/log/#{log_basename}"
+		else
+			options[:log_file] ||= "#{exec_root}/#{log_basename}"
 		end
 	end
 
@@ -460,32 +460,6 @@ private
 		File.chmod(0755, @working_dir)
 		Dir.mkdir("#{@working_dir}/logs")
 		@can_remove_working_dir = true
-	end
-
-	def require_daemon_controller
-		return if defined?(DaemonController)
-		begin
-			require 'daemon_controller'
-			begin
-				require 'daemon_controller/version'
-				too_old = DaemonController::VERSION_STRING < '1.1.0'
-			rescue LoadError
-				too_old = true
-			end
-			if too_old
-				PhusionPassenger.require_passenger_lib 'platform_info/ruby'
-				gem_command = PlatformInfo.gem_command(:sudo => true)
-				abort "Your version of daemon_controller is too old. " +
-					"You must install 1.1.0 or later. Please upgrade:\n\n" +
-					" #{gem_command} uninstall FooBarWidget-daemon_controller\n" +
-					" #{gem_command} install daemon_controller"
-			end
-		rescue LoadError
-			PhusionPassenger.require_passenger_lib 'platform_info/ruby'
-			gem_command = PlatformInfo.gem_command(:sudo => true)
-			abort "Please install daemon_controller first:\n\n" +
-				" #{gem_command} install daemon_controller"
-		end
 	end
 
 	def initialize_vars
@@ -817,7 +791,6 @@ private
 					@console_mutex.synchronize do
 						show_new_app_list(apps)
 					end
-					@plugin.call_hook(:found_apps_again, apps)
 				end
 			end
 		end

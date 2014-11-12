@@ -7,7 +7,6 @@
 
 PhusionPassenger.require_passenger_lib 'ruby_core_enhancements'
 PhusionPassenger.require_passenger_lib 'standalone/config_utils'
-PhusionPassenger.require_passenger_lib 'standalone/utils'
 PhusionPassenger.require_passenger_lib 'utils/file_system_watcher'
 
 module PhusionPassenger
@@ -24,10 +23,9 @@ class AppFinder
 		"config", "Passengerfile.json", "passenger-standalone.json"
 	]
 
-	include Standalone::Utils
-
 	attr_accessor :dirs
 	attr_reader :apps
+	attr_reader :execution_root
 
 	def self.looks_like_app_directory?(dir)
 		return STARTUP_FILES.any? do |file|
@@ -38,6 +36,7 @@ class AppFinder
 	def initialize(dirs, options = {})
 		@dirs = dirs
 		@options = options.dup
+		determine_mode_and_execution_root
 	end
 
 	def scan
@@ -64,7 +63,7 @@ class AppFinder
 			dirs = @dirs.empty? ? ["."] : @dirs
 			dirs.each do |dir|
 				if looks_like_app_directory?(dir)
-					app_root = absolute_path(dir)
+					app_root = File.absolute_path_no_resolve(dir)
 					server_names = filename_to_server_names(dir)
 					apps << {
 						:server_names => server_names,
@@ -75,7 +74,7 @@ class AppFinder
 					watchlist << "#{app_root}/Passengerfile.json" if File.exist?("#{app_root}/Passengerfile.json")
 					watchlist << "#{app_root}/passenger-standalone.json" if File.exist?("#{app_root}/passenger-standalone.json")
 				else
-					full_dir = absolute_path(dir)
+					full_dir = File.absolute_path_no_resolve(dir)
 					watchlist << full_dir
 					Dir["#{full_dir}/*"].each do |subdir|
 						if looks_like_app_directory?(subdir)
@@ -97,11 +96,7 @@ class AppFinder
 				a[:root] <=> b[:root]
 			end
 			apps.map! do |app|
-				config_filename = File.join(app[:root], "passenger-standalone.json")
-				if File.exist?(config_filename)
-					local_options = load_config_file!(:local_config, config_filename)
-					app = app.merge(local_options)
-				end
+				ConfigUtils.load_local_config_file!(app[:root], app)
 				@options.merge(app)
 			end
 		end
@@ -155,8 +150,7 @@ class AppFinder
 	end
 
 	def single_mode?
-		return (@dirs.empty? && looks_like_app_directory?(".")) ||
-			(@dirs.size == 1 && looks_like_app_directory?(@dirs[0]))
+		return @mode == :single
 	end
 
 	def multi_mode?
@@ -194,6 +188,16 @@ private
 	# timeout has been reached.
 	def wait_on_io(io, timeout)
 		return !!select([io], nil, nil, timeout)
+	end
+
+	def determine_mode_and_execution_root
+		@mode = (@dirs.empty? && looks_like_app_directory?(".")) ||
+			(@dirs.size == 1 && looks_like_app_directory?(@dirs[0]))
+		if @dirs.empty?
+			@execution_root = File.absolute_path_no_resolve(".")
+		else
+			@execution_root = File.absolute_path_no_resolve(@dirs[0])
+		end
 	end
 
 	##################

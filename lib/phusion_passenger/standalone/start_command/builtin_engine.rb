@@ -22,6 +22,7 @@
 #  THE SOFTWARE.
 
 PhusionPassenger.require_passenger_lib 'constants'
+PhusionPassenger.require_passenger_lib 'standalone/control_utils'
 PhusionPassenger.require_passenger_lib 'utils/shellwords'
 
 module PhusionPassenger
@@ -31,7 +32,7 @@ class StartCommand
 module BuiltinEngine
 private
 	def start_engine_real
-		require_daemon_controller
+		Standalone::ControlUtils.require_daemon_controller
 		@engine = DaemonController.new(build_daemon_controller_options)
 		start_engine_no_create
 	end
