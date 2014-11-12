@@ -4,7 +4,9 @@
 #  "Phusion Passenger" is a trademark of Hongli Lai & Ninh Bui.
 #
 #  See LICENSE file for license information.
+
 PhusionPassenger.require_passenger_lib 'ruby_core_enhancements'
+PhusionPassenger.require_passenger_lib 'standalone/config_utils'
 PhusionPassenger.require_passenger_lib 'standalone/utils'
 PhusionPassenger.require_passenger_lib 'utils/file_system_watcher'
 
@@ -12,26 +14,30 @@ module PhusionPassenger
 module Standalone
 
 class AppFinder
+	STARTUP_FILES = [
+		"config.ru",
+		"passenger_wsgi.py",
+		"app.js",
+		".meteor"
+	]
+	WATCH_ENTRIES = [
+		"config", "Passengerfile.json", "passenger-standalone.json"
+	]
+
 	include Standalone::Utils
 
 	attr_accessor :dirs
 	attr_reader :apps
 
 	def self.looks_like_app_directory?(dir)
-		return File.exist?("#{dir}/config.ru") ||
-			File.exist?("#{dir}/config/environment.rb") ||
-			File.exist?("#{dir}/passenger_wsgi.py") ||
-			File.exist?("#{dir}/app.js") ||
-			File.exist?("#{dir}/.meteor")
+		return STARTUP_FILES.any? do |file|
+			File.exist?("#{dir}/#{file}")
+		end
 	end
 
 	def initialize(dirs, options = {})
 		@dirs = dirs
 		@options = options.dup
-	end
-
-	def global_options
-		return @options
 	end
 
 	def scan
@@ -45,13 +51,10 @@ class AppFinder
 				:root => app_root
 			}
 			watchlist << app_root
-			watchlist << "#{app_root}/config" if File.exist?("#{app_root}/config")
-			watchlist << "#{app_root}/passenger-standalone.json" if File.exist?("#{app_root}/passenger-standalone.json")
-
-			config_filename = File.join(app_root, "passenger-standalone.json")
-			if File.exist?(config_filename)
-				global_options = load_config_file!(:global_config, config_filename)
-				@options.merge!(global_options)
+			WATCH_ENTRIES.each do |entry|
+				if File.exist?("#{app_root}/#{entry}")
+					watchlist << "#{app_root}/#{entry}"
+				end
 			end
 
 			apps.map! do |app|
@@ -169,39 +172,6 @@ private
 		else
 			return File.absolute_path_no_resolve(@dirs[0])
 		end
-	end
-
-	def load_config_file!(context, filename)
-		PhusionPassenger.require_passenger_lib 'utils/json' if !defined?(PhusionPassenger::Utils::JSON)
-		begin
-			data = File.open(filename, "r:utf-8") do |f|
-				f.read
-			end
-		rescue SystemCallError => e
-			raise ConfigLoadError, "cannot load config file #{filename} (#{e})"
-		end
-
-		begin
-			config = PhusionPassenger::Utils::JSON.parse(data)
-		rescue => e
-			raise ConfigLoadError, "cannot parse config file #{filename} (#{e})"
-		end
-		if !config.is_a?(Hash)
-			raise ConfigLoadError, "cannot parse config file #{filename} (it does not contain an object)"
-		end
-
-		result = {}
-		config.each_pair do |key, val|
-			result[key.to_sym] = val
-		end
-		return result
-	end
-
-	def load_config_file(context, filename)
-		return load_config_file!(context, filename)
-	rescue ConfigLoadError => e
-		STDERR.puts "*** Warning: #{e.message}"
-		return {}
 	end
 
 	def looks_like_app_directory?(dir)

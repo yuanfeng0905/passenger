@@ -201,7 +201,14 @@ fillPoolOptionsFromAgentsOptions(Options &options) {
 	}
 	options.minProcesses = agentsOptions->getInt("min_instances");
 	options.spawnMethod = agentsOptions->get("spawn_method");
+	options.loadShellEnvvars = agentsOptions->getBool("load_shell_envvars");
 	options.statThrottleRate = statThrottleRate;
+
+	/******************************/
+
+	options.concurrencyModel = agentsOptions->get("concurrency_model");
+	options.threadCount = agentsOptions->getInt("app_thread_count");
+	options.rollingRestart = agentsOptions->getBool("rolling_restarts");
 }
 
 static void
