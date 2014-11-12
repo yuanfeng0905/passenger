@@ -60,7 +60,7 @@ class AppFinder
 				@options.merge(app)
 			end
 		else
-			dirs = @dirs.empty? ? ["."] : @dirs
+			dirs = @dirs.empty? ? [File.absolute_path_no_resolve(".")] : @dirs
 			dirs.each do |dir|
 				if looks_like_app_directory?(dir)
 					app_root = File.absolute_path_no_resolve(dir)
