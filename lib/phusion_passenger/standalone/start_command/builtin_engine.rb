@@ -67,12 +67,16 @@ private
 		command << " --passenger-root #{Shellwords.escape PhusionPassenger.install_spec}"
 		command << " --daemonize"
 		command << " --no-delete-pid-file"
+		command << " --cleanup-pidfile #{Shellwords.escape @working_dir}/temp_dir_toucher.pid"
 		add_param(command, :user, "--user")
 		add_param(command, :log_file, "--log-file")
 		add_param(command, :pid_file, "--pid-file")
 		add_param(command, :instance_registry_dir, "--instance-registry-dir")
 		add_param(command, :data_buffer_dir, "--data-buffer-dir")
 		add_param(command, :log_level, "--log-level")
+		@options[:ctls].each do |ctl|
+			command << " --ctl #{Shellwords.escape ctl}"
+		end
 
 		command << " --BS"
 		command << " --listen #{listen_address}"
@@ -88,6 +92,9 @@ private
 			else
 				command << " --disable-friendly-error-pages"
 			end
+		end
+		if @options[:turbocaching] == false
+			command << " --disable-turbocaching"
 		end
 		add_flag_param(command, :load_shell_envvars, "--load-shell-envvars")
 		add_param(command, :max_pool_size, "--max-pool-size")
@@ -105,7 +112,7 @@ private
 		command << " #{Shellwords.escape(@apps[0][:root])}"
 
 		return {
-			:identifier    => 'PassengerWatchdog',
+			:identifier    => "#{AGENT_EXE} watchdog",
 			:start_command => command,
 			:ping_command  => ping_spec,
 			:pid_file      => @options[:pid_file],
