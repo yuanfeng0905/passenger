@@ -191,8 +191,9 @@ private
 	end
 
 	def determine_mode_and_execution_root
-		@mode = (@dirs.empty? && looks_like_app_directory?(".")) ||
+		single = (@dirs.empty? && looks_like_app_directory?(".")) ||
 			(@dirs.size == 1 && looks_like_app_directory?(@dirs[0]))
+		@mode = single ? :single : :multi
 		if @dirs.empty?
 			@execution_root = File.absolute_path_no_resolve(".")
 		else
