@@ -84,7 +84,7 @@
 
 	#define FLYING_PASSENGER_NAME "Flying Passenger"
 
-	#define GLOBAL_NAMESPACE_DIRNAME "passenger"
+	#define GLOBAL_NAMESPACE_DIRNAME "passenger-enterprise"
 
 	#define INDEX_DOC_URL "https://www.phusionpassenger.com/documentation/Users%20guide.html"
 
@@ -96,7 +96,7 @@
 
 	#define PASSENGER_IS_ENTERPRISE 1
 
-	#define PASSENGER_VERSION "4.0.54"
+	#define PASSENGER_VERSION "5.0.0.beta1"
 
 	#define POOL_HELPER_THREAD_STACK_SIZE 262144
 
@@ -128,7 +128,7 @@
 
 	#define SUPPORT_URL "https://www.phusionpassenger.com/documentation_and_support"
 
-	#define USER_NAMESPACE_DIRNAME ".passenger"
+	#define USER_NAMESPACE_DIRNAME ".passenger-enterprise"
 
 
 #endif /* _PASSENGER_CONSTANTS_H */
