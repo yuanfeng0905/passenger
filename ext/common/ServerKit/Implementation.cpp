@@ -12,7 +12,9 @@ namespace Passenger {
 namespace ServerKit {
 
 
-extern const HashedStaticString TRANSFER_ENCODING;
+// Define 'extern' so that the compiler doesn't output warnings.
+extern const HashedStaticString HTTP_COOKIE;
+extern const HashedStaticString HTTP_SET_COOKIE;
 extern const char DEFAULT_INTERNAL_SERVER_ERROR_RESPONSE[];
 extern const unsigned int DEFAULT_INTERNAL_SERVER_ERROR_RESPONSE_SIZE;
 
@@ -25,6 +27,8 @@ const char DEFAULT_INTERNAL_SERVER_ERROR_RESPONSE[] =
 	"Internal server error\n";
 const unsigned int DEFAULT_INTERNAL_SERVER_ERROR_RESPONSE_SIZE =
 	sizeof(DEFAULT_INTERNAL_SERVER_ERROR_RESPONSE) - 1;
+const HashedStaticString HTTP_COOKIE("cookie");
+const HashedStaticString HTTP_SET_COOKIE("set-cookie");
 
 
 } // namespace ServerKit

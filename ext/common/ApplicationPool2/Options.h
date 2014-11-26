@@ -269,6 +269,8 @@ public:
 	 */
 	bool loadShellEnvvars;
 
+	bool userSwitching;
+
 	/** Whether Union Station logging should be enabled. Enabling this option will
 	 * result in:
 	 *
@@ -461,6 +463,7 @@ public:
 		  rights(DEFAULT_BACKEND_ACCOUNT_RIGHTS),
 		  debugger(false),
 		  loadShellEnvvars(true),
+		  userSwitching(true),
 		  analytics(false),
 		  raiseInternalError(false),
 
