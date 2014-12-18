@@ -6,7 +6,9 @@ Release 5.0.0 beta 2
  * Documentation enhancements by Igor Vuk. Closes GH-1318.
  * Fixed some crasher bugs.
  * [Standalone] User switching is now correctly disabled.
+ * [Standalone] Fixed the `--thread-count` parameter.
  * [Apache] IPs set by mod_remoteip are now respected. Closes GH-1284.
+ * [Apache] Fixed support for gzipped chunked responses. Closes GH-1309.
 
 
 Release 5.0.0 beta 1
@@ -40,6 +42,13 @@ Minor changes:
  * [Standalone] The Phusion Passenger Standalone config template has changed. Users are encouraged to update it.
  * [Standalone] `passenger-standalone.json` has been renamed to `Passengerfile.json`.
  * [Standalone] `passenger-standalone.json`/`Passengerfile.json` no longer overrides command line options. Instead, command line options now have the highest priority.
+
+
+Release 4.0.56
+--------------
+
+ * Fixed a file descriptor leak that manifests when an error page is shown. Contributed by Paul Bonaud, closes GH-1325.
+ * Improved Node.js request load balancing. Closes GH-1322. Thanks to Charles Vallières for the analysis.
 
 
 Release 4.0.55
