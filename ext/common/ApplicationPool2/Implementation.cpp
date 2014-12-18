@@ -168,7 +168,6 @@ void processAndLogNewSpawnException(SpawnException &e, const Options &options,
 
 	try {
 		int fd = -1;
-		FdGuard guard(fd, true);
 		string errorPage;
 
 		UPDATE_TRACE_POINT();
@@ -183,6 +182,7 @@ void processAndLogNewSpawnException(SpawnException &e, const Options &options,
 				getSystemTempDir());
 			fd = mkstemp(filename);
 		#endif
+		FdGuard guard(fd, true);
 		if (fd == -1) {
 			int e = errno;
 			throw SystemException("Cannot generate a temporary filename",
