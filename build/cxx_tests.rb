@@ -1,5 +1,5 @@
 #  Phusion Passenger - https://www.phusionpassenger.com/
-#  Copyright (c) 2010-2014 Phusion
+#  Copyright (c) 2010-2015 Phusion
 #
 #  "Phusion Passenger" is a trademark of Hongli Lai & Ninh Bui.
 #
@@ -107,6 +107,10 @@ TEST_CXX_OBJECTS = {
 		ext/common/ServerKit/HttpRequest.h
 		ext/common/ServerKit/HttpHeaderParser.h
 		ext/common/ServerKit/HttpChunkedBodyParser.h),
+	'test/cxx/ServerKit/CookieUtilsTest.o' => %w(
+		test/cxx/ServerKit/CookieUtilsTest.cpp
+		ext/common/ServerKit/CookieUtils.h
+		ext/common/DataStructures/LString.h),
 	'test/cxx/DataStructures/LStringTest.o' => %w(
 		test/cxx/DataStructures/LStringTest.cpp
 		ext/common/DataStructures/LString.h),
@@ -125,6 +129,12 @@ TEST_CXX_OBJECTS = {
 	'test/cxx/DechunkerTest.o' => %w(
 		test/cxx/DechunkerTest.cpp
 		ext/common/Utils/Dechunker.h),
+	'test/cxx/ResponseCacheTest.o' => %w(
+		test/cxx/ResponseCacheTest.cpp
+		ext/common/agents/HelperAgent/ResponseCache.h
+		ext/common/agents/HelperAgent/RequestHandler/Request.h
+		ext/common/agents/HelperAgent/RequestHandler/AppResponse.h
+		ext/common/ServerKit/HttpRequest.h),
 	'test/cxx/UnionStationTest.o' => %w(
 		test/cxx/UnionStationTest.cpp
 		ext/common/agents/LoggingAgent/LoggingServer.h
@@ -211,6 +221,9 @@ TEST_CXX_OBJECTS = {
 	'test/cxx/ProcessMetricsCollectorTest.o' => %w(
 		test/cxx/ProcessMetricsCollectorTest.cpp
 		ext/common/Utils/ProcessMetricsCollector.h),
+	'test/cxx/DateParsingTest.o' => %w(
+		test/cxx/DateParsingTest.cpp
+		ext/common/Utils/DateParsing.h),
 	'test/cxx/UtilsTest.o' => %w(
 		test/cxx/UtilsTest.cpp
 		ext/common/Utils.h),

@@ -80,12 +80,18 @@ private
 			command << " --ctl #{Shellwords.escape ctl}"
 		end
 		if @options[:user]
-			command << " --default-user #{Shellwords.ecape @options[:user]}"
+			command << " --default-user #{Shellwords.escape @options[:user]}"
 		else
 			user  = Etc.getpwuid(Process.uid).name
-			group = Etc.getgrgid(Process.gid).name
+			begin
+				group = Etc.getgrgid(Process.gid)
+			rescue ArgumentError
+				# Do nothing. On Heroku, it's normal that the group
+				# database is broken.
+			else
+				command << " --default-group #{Shellwords.escape group.name}"
+			end
 			command << " --default-user #{Shellwords.escape user}"
-			command << " --default-group #{Shellwords.escape group}"
 		end
 
 		command << " --BS"
@@ -114,6 +120,7 @@ private
 		add_enterprise_flag_param(command, :rolling_restarts, "--rolling-restarts")
 		add_enterprise_flag_param(command, :resist_deployment_errors, "--resist-deployment-errors")
 		add_flag_param(command, :sticky_sessions, "--sticky-sessions")
+		add_param(command, :vary_turbocache_by_cookie, "--vary-turbocache-by-cookie")
 		add_param(command, :sticky_sessions_cookie_name, "--sticky-sessions-cookie-name")
 		add_param(command, :union_station_gateway_address, "--union-station-gateway-address")
 		add_param(command, :union_station_gateway_port, "--union-station-gateway-port")

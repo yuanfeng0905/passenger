@@ -3,9 +3,9 @@
 #
 #  See LICENSE file for license information.
 require 'mkmf'
-$LIBS = ""
+
+$LIBS << " -lpthread" if $LIBS !~ /-lpthread/
 $CFLAGS << " -g"
-$LIBS << " -lpthread"
 
 if RUBY_PLATFORM =~ /solaris/
 	have_library('xnet')
@@ -21,8 +21,8 @@ have_header('ruby/version.h')
 have_header('ruby/io.h')
 have_header('ruby/thread.h')
 have_var('ruby_version')
-have_func('rb_thread_io_blocking_region')
-have_func('rb_thread_call_without_gvl')
+have_func('rb_thread_io_blocking_region', 'ruby/io.h')
+have_func('rb_thread_call_without_gvl', 'ruby/thread.h')
 
 with_cflags($CFLAGS) do
 	create_makefile('passenger_native_support')
@@ -46,3 +46,4 @@ with_cflags($CFLAGS) do
 		end
 	end
 end
+

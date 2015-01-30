@@ -1,6 +1,6 @@
 /*
  *  Phusion Passenger - https://www.phusionpassenger.com/
- *  Copyright (c) 2011-2014 Phusion
+ *  Copyright (c) 2011-2015 Phusion
  *
  *  "Phusion Passenger" is a trademark of Hongli Lai & Ninh Bui.
  *
@@ -173,6 +173,7 @@ private:
 	static const unsigned int MAX_SESSION_CHECKOUT_TRY = 10;
 
 	unsigned int statThrottleRate;
+	unsigned int responseBufferHighWatermark;
 	BenchmarkMode benchmarkMode: 3;
 	bool singleAppMode: 1;
 	bool showVersionInHeader: 1;
@@ -190,6 +191,8 @@ private:
 	StaticString defaultServerName;
 	StaticString defaultServerPort;
 	StaticString serverSoftware;
+	StaticString defaultStickySessionsCookieName;
+	StaticString defaultVaryTurbocacheByCookie;
 
 	HashedStaticString PASSENGER_APP_GROUP_NAME;
 	HashedStaticString PASSENGER_MAX_REQUESTS;
@@ -216,6 +219,7 @@ private:
 	StaticString serverLogName;
 
 	friend class TurboCaching<Request>;
+	friend class ResponseCache<Request>;
 	struct ev_check checkWatcher;
 	TurboCaching<Request> turboCaching;
 
@@ -244,6 +248,7 @@ public:
 		: ParentClass(context),
 
 		  statThrottleRate(_agentsOptions->getInt("stat_throttle_rate")),
+		  responseBufferHighWatermark(_agentsOptions->getInt("response_buffer_high_watermark")),
 		  benchmarkMode(parseBenchmarkMode(_agentsOptions->get("benchmark_mode", false))),
 		  singleAppMode(false),
 		  showVersionInHeader(_agentsOptions->getBool("show_version_in_header")),
@@ -293,6 +298,13 @@ public:
 			agentsOptions->get("default_server_port"));
 		serverSoftware = psg_pstrdup(stringPool,
 			agentsOptions->get("server_software"));
+		defaultStickySessionsCookieName = psg_pstrdup(stringPool,
+			agentsOptions->get("sticky_sessions_cookie_name"));
+
+		if (agentsOptions->has("vary_turbocache_by_cookie")) {
+			defaultVaryTurbocacheByCookie = psg_pstrdup(stringPool,
+				agentsOptions->get("vary_turbocache_by_cookie"));
+		}
 
 		generateServerLogName(_threadNumber);
 
@@ -451,6 +463,7 @@ public:
 	virtual Json::Value inspectRequestStateAsJson(const Request *req) const {
 		Json::Value doc = ParentClass::inspectRequestStateAsJson(req);
 		Json::Value flags;
+		const AppResponse *resp = &req->appResponse;
 
 		if (req->startedAt != 0) {
 			doc["started_at"] = timeToJson(req->startedAt * 1000000.0);
@@ -468,13 +481,12 @@ public:
 		doc["flags"] = flags;
 
 		if (req->requestBodyBuffering) {
-			doc["body_bytes_buffered"] = (Json::Value::UInt64) req->bodyBytesBuffered;
+			doc["body_bytes_buffered"] = byteSizeToJson(req->bodyBytesBuffered);
 		}
 
 		if (req->session != NULL) {
 			Json::Value &sessionDoc = doc["session"] = Json::Value(Json::objectValue);
 			const Session *session = req->session.get();
-			const AppResponse *resp = &req->appResponse;
 
 			if (req->session->isClosed()) {
 				sessionDoc["closed"] = true;
@@ -482,24 +494,26 @@ public:
 				sessionDoc["pid"] = session->getPid();
 				sessionDoc["gupid"] = session->getGupid().toString();
 			}
+		}
 
+		if (req->session != NULL || resp->httpState != AppResponse::PARSING_HEADERS) {
 			doc["app_response_http_state"] = resp->getHttpStateString();
 			doc["app_response_http_major"] = resp->httpMajor;
 			doc["app_response_http_minor"] = resp->httpMinor;
 			doc["app_response_want_keep_alive"] = resp->wantKeepAlive;
 			doc["app_response_body_type"] = resp->getBodyTypeString();
 			doc["app_response_body_fully_read"] = resp->bodyFullyRead();
-			doc["app_response_body_already_read"] = (Json::Value::UInt64)
-				resp->bodyAlreadyRead;
+			doc["app_response_body_already_read"] = byteSizeToJson(
+				resp->bodyAlreadyRead);
 			if (resp->httpState != AppResponse::ERROR) {
 				if (resp->bodyType == AppResponse::RBT_CONTENT_LENGTH) {
-					doc["app_response_content_length"] = (Json::Value::UInt64)
-						resp->aux.bodyInfo.contentLength;
+					doc["app_response_content_length"] = byteSizeToJson(
+						resp->aux.bodyInfo.contentLength);
 				} else if (resp->bodyType == AppResponse::RBT_CHUNKED) {
 					doc["app_response_end_chunk_reached"] = resp->aux.bodyInfo.endChunkReached;
 				}
 			} else {
-				doc["parse_error"] = ServerKit::getErrorDesc(resp->aux.parseError);
+				doc["app_response_parse_error"] = ServerKit::getErrorDesc(resp->aux.parseError);
 			}
 		}
 

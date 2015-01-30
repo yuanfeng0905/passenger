@@ -71,8 +71,8 @@ struct SessionProtocolWorkingState {
 	const LString *remoteAddr;
 	const LString *remotePort;
 	const LString *remoteUser;
-	const LString *contentLength;
 	const LString *contentType;
+	const LString *contentLength;
 	bool hasBaseURI;
 };
 
@@ -161,8 +161,12 @@ determineHeaderSizeForSessionProtocol(Request *req,
 	state.remoteAddr  = req->secureHeaders.lookup(REMOTE_ADDR);
 	state.remotePort  = req->secureHeaders.lookup(REMOTE_PORT);
 	state.remoteUser  = req->secureHeaders.lookup(REMOTE_USER);
-	state.contentLength = req->headers.lookup(HTTP_CONTENT_LENGTH);
 	state.contentType   = req->headers.lookup(HTTP_CONTENT_TYPE);
+	if (req->hasBody()) {
+		state.contentLength = req->headers.lookup(HTTP_CONTENT_LENGTH);
+	} else {
+		state.contentLength = NULL;
+	}
 
 	dataSize += sizeof("REQUEST_URI");
 	dataSize += req->path.size + 1;
@@ -230,14 +234,14 @@ determineHeaderSizeForSessionProtocol(Request *req,
 		dataSize += state.remoteUser->size + 1;
 	}
 
-	if (state.contentLength != NULL) {
-		dataSize += sizeof("CONTENT_LENGTH");
-		dataSize += state.contentLength->size + 1;
-	}
-
 	if (state.contentType != NULL) {
 		dataSize += sizeof("CONTENT_TYPE");
 		dataSize += state.contentType->size + 1;
+	}
+
+	if (state.contentLength != NULL) {
+		dataSize += sizeof("CONTENT_LENGTH");
+		dataSize += state.contentLength->size + 1;
 	}
 
 	dataSize += sizeof("PASSENGER_CONNECT_PASSWORD");
@@ -251,6 +255,11 @@ determineHeaderSizeForSessionProtocol(Request *req,
 	if (req->options.analytics) {
 		dataSize += sizeof("PASSENGER_TXN_ID");
 		dataSize += req->options.transaction->getTxnId().size() + 1;
+	}
+
+	if (req->upgraded()) {
+		dataSize += sizeof("HTTP_CONNECTION");
+		dataSize += sizeof("upgrade");
 	}
 
 	ServerKit::HeaderTable::Iterator it(req->headers);
@@ -333,15 +342,15 @@ constructHeaderForSessionProtocol(Request *req, char * restrict buffer, unsigned
 		pos = appendData(pos, end, "", 1);
 	}
 
-	if (state.contentLength != NULL) {
-		pos = appendData(pos, end, P_STATIC_STRING_WITH_NULL("CONTENT_LENGTH"));
-		pos = appendData(pos, end, state.contentLength);
-		pos = appendData(pos, end, "", 1);
-	}
-
 	if (state.contentType != NULL) {
 		pos = appendData(pos, end, P_STATIC_STRING_WITH_NULL("CONTENT_TYPE"));
 		pos = appendData(pos, end, state.contentType);
+		pos = appendData(pos, end, "", 1);
+	}
+
+	if (state.contentLength != NULL) {
+		pos = appendData(pos, end, P_STATIC_STRING_WITH_NULL("CONTENT_LENGTH"));
+		pos = appendData(pos, end, state.contentLength);
 		pos = appendData(pos, end, "", 1);
 	}
 
@@ -358,6 +367,11 @@ constructHeaderForSessionProtocol(Request *req, char * restrict buffer, unsigned
 		pos = appendData(pos, end, P_STATIC_STRING_WITH_NULL("PASSENGER_TXN_ID"));
 		pos = appendData(pos, end, req->options.transaction->getTxnId());
 		pos = appendData(pos, end, "", 1);
+	}
+
+	if (req->upgraded()) {
+		pos = appendData(pos, end, P_STATIC_STRING_WITH_NULL("HTTP_CONNECTION"));
+		pos = appendData(pos, end, P_STATIC_STRING_WITH_NULL("upgrade"));
 	}
 
 	ServerKit::HeaderTable::Iterator it(req->headers);

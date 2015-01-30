@@ -1,6 +1,6 @@
 /*
  *  Phusion Passenger - https://www.phusionpassenger.com/
- *  Copyright (c) 2011-2014 Phusion
+ *  Copyright (c) 2011-2015 Phusion
  *
  *  "Phusion Passenger" is a trademark of Hongli Lai & Ninh Bui.
  *
@@ -57,11 +57,12 @@ onAppSourceData(Client *client, Request *req, const MemoryKit::mbuf &buffer, int
 				onAppResponseBegin(client, req);
 				return Channel::Result(ret, false);
 			case AppResponse::PARSING_BODY_WITH_LENGTH:
+				SKC_TRACE(client, 2, "Expecting an app response body with fixed length");
+				onAppResponseBegin(client, req);
+				return Channel::Result(ret, false);
 			case AppResponse::PARSING_BODY_UNTIL_EOF:
-				SKC_TRACE(client, 2,
-					((resp->httpState == AppResponse::PARSING_BODY_WITH_LENGTH)
-					? "Expecting an app response body with fixed length"
-					: "Expecting app response body until end of stream"));
+				SKC_TRACE(client, 2, "Expecting app response body until end of stream");
+				req->wantKeepAlive = false;
 				onAppResponseBegin(client, req);
 				return Channel::Result(ret, false);
 			case AppResponse::PARSING_CHUNKED_BODY:
@@ -71,7 +72,7 @@ onAppSourceData(Client *client, Request *req, const MemoryKit::mbuf &buffer, int
 				return Channel::Result(ret, false);
 			case AppResponse::UPGRADED:
 				SKC_TRACE(client, 2, "Application upgraded connection");
-				assert(!req->wantKeepAlive);
+				req->wantKeepAlive = false;
 				onAppResponseBegin(client, req);
 				return Channel::Result(ret, false);
 			case AppResponse::ONEHUNDRED_CONTINUE:
@@ -122,10 +123,14 @@ onAppSourceData(Client *client, Request *req, const MemoryKit::mbuf &buffer, int
 				UPDATE_TRACE_POINT();
 				writeResponseAndMarkForTurboCaching(client, req,
 					MemoryKit::mbuf(buffer, 0, remaining));
-				if (!req->ended() && resp->bodyFullyRead()) {
-					SKC_TRACE(client, 2, "End of application response body reached");
-					handleAppResponseBodyEnd(client, req);
-					endRequest(&client, &req);
+				if (!req->ended()) {
+					if (resp->bodyFullyRead()) {
+						SKC_TRACE(client, 2, "End of application response body reached");
+						handleAppResponseBodyEnd(client, req);
+						endRequest(&client, &req);
+					} else {
+						maybeThrottleAppSource(client, req);
+					}
 				}
 			} else {
 				UPDATE_TRACE_POINT();
@@ -175,6 +180,7 @@ onAppSourceData(Client *client, Request *req, const MemoryKit::mbuf &buffer, int
 				case ServerKit::HttpChunkedEvent::DATA:
 					assert(!event.end);
 					writeResponseAndMarkForTurboCaching(client, req, event.data);
+					maybeThrottleAppSource(client, req);
 					return Channel::Result(event.consumed, false);
 				case ServerKit::HttpChunkedEvent::END:
 					assert(event.end);
@@ -200,6 +206,7 @@ onAppSourceData(Client *client, Request *req, const MemoryKit::mbuf &buffer, int
 					assert(!event.end);
 					writeResponse(client, MemoryKit::mbuf(buffer, 0, event.consumed));
 					markResponsePartForTurboCaching(client, req, event.data);
+					maybeThrottleAppSource(client, req);
 					return Channel::Result(event.consumed, false);
 				case ServerKit::HttpChunkedEvent::END:
 					assert(event.end);
@@ -245,6 +252,7 @@ onAppSourceData(Client *client, Request *req, const MemoryKit::mbuf &buffer, int
 					buffer.start, buffer.size())) << "\"");
 			resp->bodyAlreadyRead += buffer.size();
 			writeResponseAndMarkForTurboCaching(client, req, buffer);
+			maybeThrottleAppSource(client, req);
 			return Channel::Result(buffer.size(), false);
 		} else if (errcode == 0 || errcode == ECONNRESET) {
 			// EOF
@@ -344,7 +352,7 @@ void prepareAppResponseCaching(Client *client, Request *req) {
 	if (turboCaching.isEnabled() && !req->cacheKey.empty()) {
 		TRACE_POINT();
 		AppResponse *resp = &req->appResponse;
-		SKC_TRACE(client, 2, "Preparing response caching");
+		SKC_TRACE(client, 2, "Turbocache: preparing response caching");
 		if (turboCaching.responseCache.requestAllowsStoring(req)
 		 && turboCaching.responseCache.prepareRequestForStoring(req))
 		{
@@ -363,6 +371,11 @@ void prepareAppResponseCaching(Client *client, Request *req) {
 			turboCaching.responseCache.invalidate(req);
 			req->cacheKey = HashedStaticString();
 			SKC_TRACE(client, 2, "Turbocache entries:\n" << turboCaching.responseCache.inspect());
+		} else {
+			SKC_TRACE(client, 2, "Turbocache: response not eligible for turbocaching");
+			// Decrease store success ratio.
+			turboCaching.responseCache.incStores();
+			req->cacheKey = HashedStaticString();
 		}
 	}
 }
@@ -816,6 +829,74 @@ markResponsePartForTurboCaching(Client *client, Request *req, const MemoryKit::m
 			psg_lstr_append(&req->appResponse.bodyCacheBuffer, req->pool, buffer,
 				buffer.start, buffer.size());
 		}
+	}
+}
+
+void
+maybeThrottleAppSource(Client *client, Request *req) {
+	if (!req->ended()) {
+		assert(client->output.getBuffersFlushedCallback() == NULL);
+		assert(client->output.getDataFlushedCallback() == getClientOutputDataFlushedCallback());
+		if (responseBufferHighWatermark > 0
+		 && client->output.getTotalBytesBuffered() >= responseBufferHighWatermark)
+		{
+			SKC_TRACE(client, 2, "Application is sending response data quicker than the client "
+				"can keep up with. Throttling application socket");
+			client->output.setDataFlushedCallback(_outputDataFlushed);
+			req->appSource.stop();
+		} else if (client->output.passedThreshold()) {
+			SKC_TRACE(client, 2, "Application is sending response data quicker than the on-disk "
+				"buffer can keep up with (currently buffered " << client->output.getBytesBuffered() <<
+				" bytes). Throttling application socket");
+			client->output.setBuffersFlushedCallback(_outputBuffersFlushed);
+			req->appSource.stop();
+		}
+	}
+}
+
+static void
+_outputBuffersFlushed(FileBufferedChannel *_channel) {
+	FileBufferedFdSinkChannel *channel = reinterpret_cast<FileBufferedFdSinkChannel *>(_channel);
+	Client *client = static_cast<Client *>(static_cast<
+		ServerKit::BaseClient *>(channel->getHooks()->userData));
+	Request *req = static_cast<Request *>(client->currentRequest);
+	RequestHandler *self = static_cast<RequestHandler *>(getServerFromClient(client));
+	if (client->connected() && req != NULL) {
+		self->outputBuffersFlushed(client, req);
+	}
+}
+
+void
+outputBuffersFlushed(Client *client, Request *req) {
+	if (!req->ended()) {
+		assert(!req->appSource.isStarted());
+		SKC_TRACE(client, 2, "Buffered response data has been written to disk. Resuming application socket");
+		client->output.setBuffersFlushedCallback(NULL);
+		req->appSource.start();
+	}
+}
+
+static void
+_outputDataFlushed(FileBufferedChannel *_channel) {
+	FileBufferedFdSinkChannel *channel = reinterpret_cast<FileBufferedFdSinkChannel *>(_channel);
+	Client *client = static_cast<Client *>(static_cast<
+		ServerKit::BaseClient *>(channel->getHooks()->userData));
+	Request *req = static_cast<Request *>(client->currentRequest);
+	RequestHandler *self = static_cast<RequestHandler *>(getServerFromClient(client));
+
+	getClientOutputDataFlushedCallback()(_channel);
+	if (client->connected() && req != NULL) {
+		self->outputDataFlushed(client, req);
+	}
+}
+
+void
+outputDataFlushed(Client *client, Request *req) {
+	if (!req->ended()) {
+		assert(!req->appSource.isStarted());
+		SKC_TRACE(client, 2, "The client is ready to receive more data. Resuming application socket");
+		client->output.setDataFlushedCallback(getClientOutputDataFlushedCallback());
+		req->appSource.start();
 	}
 }
 

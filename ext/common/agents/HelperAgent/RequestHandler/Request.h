@@ -74,6 +74,7 @@ public:
 
 	HashedStaticString cacheKey;
 	LString *cacheControl;
+	LString *varyCookie;
 
 	unsigned int maxRequestTime;
 	struct ev_timer timeoutTimer;

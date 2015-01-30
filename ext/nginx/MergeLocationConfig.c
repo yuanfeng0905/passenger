@@ -234,6 +234,12 @@
 	
 
 	
+		ngx_conf_merge_str_value(conf->vary_turbocache_by_cookie,
+			prev->vary_turbocache_by_cookie,
+			NULL);
+	
+
+	
 		ngx_conf_merge_str_value(conf->fly_with,
 			prev->fly_with,
 			NULL);

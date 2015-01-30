@@ -226,10 +226,14 @@ private
 			opts.on("--sticky-sessions", "Enable sticky sessions") do
 				options[:sticky_sessions] = true
 			end
-			opts.on("--sticky-sessions-cookie-name", String,
+			opts.on("--sticky-sessions-cookie-name NAME", String,
 				"Cookie name to use for sticky sessions.#{nl}" +
 				"Default: #{DEFAULT_STICKY_SESSIONS_COOKIE_NAME}") do |value|
 				options[:sticky_sessions_cookie_name] = value
+			end
+			opts.on("--vary-turbocache-by-cookie NAME", String,
+				"Vary the turbocache by the cookie of the given name") do |value|
+				options[:vary_turbocache_by_cookie] = value
 			end
 			opts.on("--disable-turbocaching", "Disable turbocaching") do
 				options[:turbocaching] = false

@@ -1,6 +1,6 @@
 /*
  *  Phusion Passenger - https://www.phusionpassenger.com/
- *  Copyright (c) 2014 Phusion
+ *  Copyright (c) 2014-2015 Phusion
  *
  *  "Phusion Passenger" is a trademark of Hongli Lai & Ninh Bui.
  *
@@ -27,6 +27,8 @@
 #include <ServerKit/Context.h>
 #include <ServerKit/Errors.h>
 #include <ServerKit/Channel.h>
+#include <Utils/json.h>
+#include <Utils/JsonUtils.h>
 
 namespace Passenger {
 namespace ServerKit {
@@ -171,8 +173,10 @@ public:
 	typedef Channel::DataCallback DataCallback;
 	typedef void (*Callback)(FileBufferedChannel *channel);
 
-	// `buffered` is 25-bit. This is 2^25-1, or 32 MB.
-	static const unsigned int MAX_MEMORY_BUFFERING = 33554431;
+	// 2^32-1 bytes.
+	static const unsigned int MAX_MEMORY_BUFFERING = 4294967295u;
+	// `nbuffers` is 27-bit. This is 2^27-1.
+	static const unsigned int MAX_BUFFERS = 134217727;
 
 
 private:
@@ -181,6 +185,13 @@ private:
 		SafeLibevPtr libev;
 		eio_req *req;
 		boost::atomic<bool> canceled;
+		/**
+		 * Synchronizes access to `req`. Because all I/O callbacks call
+		 * `eioFinished()`, this mutex blocks callbacks until the main
+		 * thread is done assigning `req`.
+		 * See https://github.com/phusion/passenger/issues/1326
+		 */
+		boost::mutex syncher;
 
 		eio_ssize_t result;
 		int errcode;
@@ -197,6 +208,7 @@ private:
 		virtual ~IOContext() { }
 
 		void cancel() {
+			boost::lock_guard<boost::mutex> l(syncher);
 			if (req != NULL) {
 				eio_cancel(req);
 			}
@@ -209,6 +221,7 @@ private:
 		}
 
 		void eioFinished() {
+			boost::lock_guard<boost::mutex> l(syncher);
 			result = req->result;
 			errcode = req->errorno;
 			req = NULL;
@@ -321,10 +334,10 @@ private:
 	};
 
 	FileBufferedChannelConfig *config;
-	Mode mode;
-	ReaderState readerState;
+	Mode mode: 2;
+	ReaderState readerState: 3;
 	/** Number of buffers in `firstBuffer` + `moreBuffers`. */
-	boost::uint16_t nbuffers;
+	unsigned int nbuffers: 27;
 
 	/**
 	 * If an error is encountered, its details are stored here.
@@ -374,6 +387,7 @@ private:
 
 	void pushBuffer(const MemoryKit::mbuf &buffer) {
 		assert(bytesBuffered + buffer.size() <= MAX_MEMORY_BUFFERING);
+		assert(nbuffers < MAX_BUFFERS);
 		if (nbuffers == 0) {
 			firstBuffer = buffer;
 		} else {
@@ -590,7 +604,6 @@ private:
 	void channelHasBecomeIdle() {
 		FBC_DEBUG("Reader: underlying channel has become idle");
 		verifyInvariants();
-		//readerState = RS_INACTIVE;
 		readNext();
 	}
 
@@ -615,9 +628,9 @@ private:
 	};
 
 	void readNextChunkFromFile() {
+		assert(inFileMode->written > 0);
 		size_t size = std::min<size_t>(inFileMode->written,
-			ctx->mbuf_pool.mbuf_block_chunk_size -
-			ctx->mbuf_pool.mbuf_block_offset);
+			mbuf_pool_data_size(&ctx->mbuf_pool));
 		FBC_DEBUG("Reader: reading next chunk from file");
 		verifyInvariants();
 		ReadContext *readContext = new ReadContext(this);
@@ -625,16 +638,34 @@ private:
 		readContext->inFileMode = inFileMode;
 		readerState = RS_READING_FROM_FILE;
 		inFileMode->readRequest = readContext;
+		boost::unique_lock<boost::mutex> l(readContext->syncher);
 		readContext->req = eio_read(inFileMode->fd, readContext->buffer.start,
 			size, inFileMode->readOffset, 0, _nextChunkDoneReading, readContext);
+		l.unlock();
 		verifyInvariants();
+	}
+
+	// Since a ReadContext contains an mbuf, we may only destroy it
+	// in the event loop thread.
+	static void destroyReadContext(ReadContext *readContext) {
+		if (readContext->libev->onEventLoopThread()) {
+			destroyReadContext_onEventLoopThread(readContext);
+		} else {
+			readContext->libev->runLater(boost::bind(
+				destroyReadContext_onEventLoopThread,
+				readContext));
+		}
+	}
+
+	static void destroyReadContext_onEventLoopThread(ReadContext *readContext) {
+		delete readContext;
 	}
 
 	static int _nextChunkDoneReading(eio_req *req) {
 		ReadContext *readContext = (ReadContext *) req->data;
 		readContext->eioFinished();
 		if (readContext->isCanceled()) {
-			delete readContext;
+			destroyReadContext(readContext);
 			return 0;
 		}
 
@@ -650,7 +681,7 @@ private:
 
 	static void _nextChunkDoneReading_onEventLoopThread(ReadContext *readContext) {
 		if (readContext->isCanceled()) {
-			delete readContext;
+			destroyReadContext(readContext);
 			return;
 		}
 
@@ -667,7 +698,7 @@ private:
 		int fd = readContext->result;
 		int errcode = readContext->errcode;
 		MemoryKit::mbuf buffer(boost::move(readContext->buffer));
-		delete readContext;
+		destroyReadContext(readContext);
 		inFileMode->readRequest = NULL;
 
 		if (fd != -1) {
@@ -786,6 +817,7 @@ private:
 		inFileMode->writerState = WS_CREATING_FILE;
 		inFileMode->writerRequest = fcContext;
 
+		boost::lock_guard<boost::mutex> l(fcContext->syncher);
 		if (config->delayInFileModeSwitching == 0) {
 			FBC_DEBUG("Writer: creating file " << fcContext->path);
 			fcContext->req = eio_open(fcContext->path.c_str(),
@@ -829,6 +861,7 @@ private:
 	}
 
 	void bufferFileDoneDelaying(FileCreationContext *fcContext) {
+		boost::lock_guard<boost::mutex> l(fcContext->syncher);
 		FBC_DEBUG("Writer: done delaying in-file mode switching. "
 			"Creating file: " << fcContext->path);
 		fcContext->req = eio_open(fcContext->path.c_str(),
@@ -965,19 +998,37 @@ private:
 
 		inFileMode->writerState = WS_MOVING;
 		inFileMode->writerRequest = moveContext;
+		boost::unique_lock<boost::mutex> l(moveContext->syncher);
 		moveContext->req = eio_write(inFileMode->fd,
 			moveContext->buffer.start,
 			moveContext->buffer.size(),
 			inFileMode->readOffset + inFileMode->written,
 			0, _bufferWrittenToFile, moveContext);
+		l.unlock();
 		verifyInvariants();
+	}
+
+	// Since a MoveContext contains an mbuf, we may only destroy it
+	// in the event loop thread.
+	static void destroyMoveContext(MoveContext *moveContext) {
+		if (moveContext->libev->onEventLoopThread()) {
+			destroyMoveContext_onEventLoopThread(moveContext);
+		} else {
+			moveContext->libev->runLater(boost::bind(
+				destroyMoveContext_onEventLoopThread,
+				moveContext));
+		}
+	}
+
+	static void destroyMoveContext_onEventLoopThread(MoveContext *moveContext) {
+		delete moveContext;
 	}
 
 	static int _bufferWrittenToFile(eio_req *req) {
 		MoveContext *moveContext = static_cast<MoveContext *>(req->data);
 		moveContext->eioFinished();
 		if (moveContext->isCanceled()) {
-			delete moveContext;
+			destroyMoveContext(moveContext);
 			return 0;
 		}
 
@@ -993,7 +1044,7 @@ private:
 
 	static void _bufferWrittenToFile_onEventLoopThread(MoveContext *moveContext) {
 		if (moveContext->isCanceled()) {
-			delete moveContext;
+			destroyMoveContext(moveContext);
 			return;
 		}
 
@@ -1024,27 +1075,29 @@ private:
 				if (generation != this->generation || mode >= ERROR) {
 					// buffersFlushedCallback deinitialized this object, or callback
 					// called a method that encountered an error.
-					delete moveContext;
+					destroyMoveContext(moveContext);
 					return;
 				}
 
 				inFileMode->writerRequest = NULL;
-				delete moveContext;
+				destroyMoveContext(moveContext);
 				moveNextBufferToFile();
 			} else {
 				FBC_DEBUG("Writer: move incomplete, proceeding " <<
 					"with writing rest of buffer");
+				boost::unique_lock<boost::mutex> l(moveContext->syncher);
 				moveContext->req = eio_write(inFileMode->fd,
 					moveContext->buffer.start + moveContext->written,
 					moveContext->buffer.size() - moveContext->written,
 					inFileMode->readOffset + inFileMode->written,
 					0, _bufferWrittenToFile, moveContext);
+				l.unlock();
 				verifyInvariants();
 			}
 		} else {
 			FBC_DEBUG("Writer: file write failed");
 			int errcode = moveContext->errcode;
-			delete moveContext;
+			destroyMoveContext(moveContext);
 			inFileMode->writerRequest = NULL;
 			inFileMode->writerState = WS_TERMINATED;
 			setError(errcode, __FILE__, __LINE__);
@@ -1123,6 +1176,42 @@ private:
 			return;
 		}
 		inFileMode->writerState = WS_INACTIVE;
+	}
+
+	const char *getReaderStateString() const {
+		switch (readerState) {
+		case RS_INACTIVE:
+			return "RS_INACTIVE";
+		case RS_FEEDING:
+			return "RS_FEEDING";
+		case RS_FEEDING_EOF:
+			return "RS_FEEDING_EOF";
+		case RS_WAITING_FOR_CHANNEL_IDLE:
+			return "RS_WAITING_FOR_CHANNEL_IDLE";
+		case RS_READING_FROM_FILE:
+			return "RS_READING_FROM_FILE";
+		case RS_TERMINATED:
+			return "RS_TERMINATED";
+		default:
+			P_BUG("Unknown readerState");
+			return NULL;
+		}
+	}
+
+	const char *getWriterStateString() const {
+		switch (inFileMode->writerState) {
+		case WS_INACTIVE:
+			return "WS_INACTIVE";
+		case WS_CREATING_FILE:
+			return "WS_CREATING_FILE";
+		case WS_MOVING:
+			return "WS_MOVING";
+		case WS_TERMINATED:
+			return "WS_TERMINATED";
+		default:
+			P_BUG("Unknown writerState");
+			return NULL;
+		}
 	}
 
 	void verifyInvariants() const {
@@ -1337,8 +1426,30 @@ public:
 		return inFileMode->writerState;
 	}
 
+	/**
+	 * Returns the number of bytes buffered in memory.
+	 */
 	unsigned int getBytesBuffered() const {
 		return bytesBuffered;
+	}
+
+	/**
+	 * Returns the number of bytes that are buffered on disk
+	 * and have not yet been read.
+	 */
+	boost::uint64_t getBytesBufferedOnDisk() const {
+		if (mode == IN_FILE_MODE && inFileMode->written >= 0) {
+			return inFileMode->written;
+		} else {
+			return 0;
+		}
+	}
+
+	/**
+	 * Returns the total bytes buffered, both in-memory and on disk.
+	 */
+	boost::uint64_t getTotalBytesBuffered() const {
+		return bytesBuffered + getBytesBufferedOnDisk();
 	}
 
 	bool ended() const {
@@ -1354,14 +1465,27 @@ public:
 		return bytesBuffered >= config->threshold;
 	}
 
+	OXT_FORCE_INLINE
 	void setDataCallback(DataCallback callback) {
 		Channel::dataCallback = callback;
 	}
 
+	OXT_FORCE_INLINE
+	Callback getBuffersFlushedCallback() const {
+		return buffersFlushedCallback;
+	}
+
+	OXT_FORCE_INLINE
 	void setBuffersFlushedCallback(Callback callback) {
 		buffersFlushedCallback = callback;
 	}
 
+	OXT_FORCE_INLINE
+	Callback getDataFlushedCallback() const {
+		return dataFlushedCallback;
+	}
+
+	OXT_FORCE_INLINE
 	void setDataFlushedCallback(Callback callback) {
 		dataFlushedCallback = callback;
 	}
@@ -1371,8 +1495,40 @@ public:
 		return Channel::hooks;
 	}
 
+	OXT_FORCE_INLINE
 	void setHooks(Hooks *hooks) {
 		Channel::hooks = hooks;
+	}
+
+	Json::Value inspectAsJson() const {
+		Json::Value doc;
+
+		switch (mode) {
+		case IN_MEMORY_MODE:
+			doc["mode"] = "IN_MEMORY_MODE";
+			break;
+		case IN_FILE_MODE:
+			doc["mode"] = "IN_FILE_MODE";
+			doc["writer_state"] = getWriterStateString();
+			doc["read_offset"] = byteSizeToJson(inFileMode->readOffset);
+			doc["written"] = signedByteSizeToJson(inFileMode->written);
+			break;
+		case ERROR:
+			doc["mode"] = "ERROR";
+			break;
+		case ERROR_WAITING:
+			doc["mode"] = "ERROR_WAITING";
+			break;
+		default:
+			break;
+		}
+
+		doc["reader_state"] = getReaderStateString();
+		doc["nbuffers"] = nbuffers;
+		doc["bytes_buffered"] = byteSizeToJson(getBytesBuffered());
+		doc["callback_in_progress"] = !acceptingInput();
+
+		return doc;
 	}
 };
 

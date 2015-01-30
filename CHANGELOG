@@ -1,3 +1,18 @@
+Release 5.0.0 beta 3
+--------------------
+
+ * The turbocache has received major updates and fixes based on excellent feedback Chris Heald and the community. First, several bugs w.r.t. the handling of caching headers have been fixed. Second, the turbocache has become slightly more conservative for security reasons. In previous versions, default cacheable responses (as defined by RFC 7234) were cached unless caching headers tell us not to. Now, default cacheable responses are only cached if caching headers explicitly tell us to. This change was introduced because there are many applications that set incorrect caching headers on private responses. This new behavior is currently not configurable, but there are plans to make it configurable in 5.0.0 release candidate 1.
+ * Fixed more cookie handling issues. Closes GH-1310.
+ * Fixed various WebSocket issues. Closes GH-1306.
+ * Fixed some crashes caused by race conditions. Closes GH-1326.
+ * Fixed issues with handling POST data. Closes GH-1331.
+ * Fixed some issues on Heroku. Closes GH-1329.
+ * Fixed some integer overflows. Fix contributed by Go Maeda. Closes GH-1357.
+ * Nginx versions earlier than 1.6 are no longer supported.
+ * Introduced a new configuration option, `passenger_response_buffer_high_watermark` (Nginx) and `PassengerResponseBufferHighWatermark` (Apache), for configuring the behavior of the response buffering system. Closes GH-1300.
+ * Improved state introspection.
+
+
 Release 5.0.0 beta 2
 --------------------
 
@@ -42,6 +57,20 @@ Minor changes:
  * [Standalone] The Phusion Passenger Standalone config template has changed. Users are encouraged to update it.
  * [Standalone] `passenger-standalone.json` has been renamed to `Passengerfile.json`.
  * [Standalone] `passenger-standalone.json`/`Passengerfile.json` no longer overrides command line options. Instead, command line options now have the highest priority.
+
+
+Release 4.0.58
+--------------
+
+ * [Enterprise] Fixed a bug in the Debian packages which caused Flying Passenger to break when used with non-system Rubies.
+ * The Debian packages no longer require Ruby 1.9. Closes GH-1353.
+
+
+Release 4.0.57
+--------------
+
+ * Fixed a native extension compatibility problem with Ruby 2.2. Closes [ruby-core:67152](https://bugs.ruby-lang.org/issues/10656).
+ * Fixed compatibility with Nginx 1.7.9. Closes GH-1335.
 
 
 Release 4.0.56

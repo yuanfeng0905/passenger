@@ -1,6 +1,6 @@
 /*
  *  Phusion Passenger - https://www.phusionpassenger.com/
- *  Copyright (c) 2014 Phusion
+ *  Copyright (c) 2014-2015 Phusion
  *
  *  "Phusion Passenger" is a trademark of Hongli Lai & Ninh Bui.
  *
@@ -15,13 +15,18 @@
 #include <cstring>
 #include <DataStructures/HashedStaticString.h>
 #include <ServerKit/http_parser.h>
+#include <ServerKit/CookieUtils.h>
 #include <StaticString.h>
 #include <Utils/DateParsing.h>
 #include <Utils/StrIntUtils.h>
 
 namespace Passenger {
 
-
+/**
+ * Relevant RFCs:
+ * https://tools.ietf.org/html/rfc7234    HTTP 1.1 Caching
+ * https://tools.ietf.org/html/rfc2109    HTTP State Management Mechanism
+ */
 template<typename Request>
 class ResponseCache {
 public:
@@ -57,6 +62,10 @@ public:
 		unsigned int index;
 		Header *header;
 		Body *body;
+		enum {
+			NOT_FOUND,
+			NOT_FRESH
+		} cacheMissReason;
 
 		Entry()
 			: index(0),
@@ -74,29 +83,48 @@ public:
 		bool valid() const {
 			return header != NULL;
 		}
+
+		const char *getCacheMissReasonString() const {
+			switch (cacheMissReason) {
+			case NOT_FOUND:
+				return "NOT_FOUND";
+			case NOT_FRESH:
+				return "NOT_FRESH";
+			default:
+				return "UNKNOWN";
+			}
+		}
 	};
 
 private:
 	HashedStaticString HOST;
 	HashedStaticString CACHE_CONTROL;
 	HashedStaticString PRAGMA_CONST;
+	HashedStaticString AUTHORIZATION;
 	HashedStaticString VARY;
+	HashedStaticString WWW_AUTHENTICATE;
 	HashedStaticString EXPIRES;
 	HashedStaticString LAST_MODIFIED;
 	HashedStaticString LOCATION;
 	HashedStaticString CONTENT_LOCATION;
+	HashedStaticString COOKIE;
+	HashedStaticString PASSENGER_VARY_TURBOCACHE_BY_COOKIE;
 
 	unsigned int fetches, hits, stores, storeSuccesses;
 
 	Header headers[MAX_ENTRIES];
 	Body bodies[MAX_ENTRIES];
 
-	unsigned int calculateKeyLength(const LString * restrict host, const StaticString &path) {
+	unsigned int calculateKeyLength(const LString * restrict host,
+		const LString * restrict varyCookie,
+		const StaticString &path)
+	{
 		unsigned int size =
 			1  // protocol flag
 			+ ((host != NULL) ? host->size : 0)
-			+ 1  // ':'
-			+ path.size();
+			+ 1  // '\n'
+			+ path.size()
+			+ ((varyCookie != NULL) ? (varyCookie->size + 1) : 0);
 		if (size > MAX_KEY_LENGTH) {
 			return 0;
 		} else {
@@ -105,7 +133,9 @@ private:
 	}
 
 	void generateKey(bool https, const StaticString &path,
-		const LString * restrict host, char * restrict output,
+		const LString * restrict host,
+		const LString * restrict varyCookie,
+		char * restrict output,
 		unsigned int size)
 	{
 		char *pos = output;
@@ -126,8 +156,17 @@ private:
 			}
 		}
 
-		pos = appendData(pos, end, ":", 1);
+		pos = appendData(pos, end, "\n", 1);
 		pos = appendData(pos, end, path);
+
+		if (varyCookie != NULL) {
+			pos = appendData(pos, end, "\n", 1);
+			part = varyCookie->start;
+			while (part != NULL) {
+				pos = appendData(pos, end, part->data, part->size);
+				part = part->next;
+			}
+		}
 	}
 
 	bool statusCodeIsCacheableByDefault(unsigned int code) const {
@@ -176,10 +215,6 @@ private:
 	OXT_FORCE_INLINE
 	void erase(unsigned int index) {
 		headers[index].valid = false;
-	}
-
-	time_t parsedDateToTimestamp(struct tm &tm, int zone) const {
-		return mktime(&tm) - zone / 100 * 60 * 60 - zone % 100 * 60;
 	}
 
 	time_t parseDate(psg_pool_t *pool, const LString *date, ev_tstamp now) const {
@@ -329,13 +364,13 @@ private:
 			https = req->https;
 		}
 
-		unsigned int keySize = calculateKeyLength(req->host, path);
+		unsigned int keySize = calculateKeyLength(req->host, req->varyCookie, path);
 		if (keySize == 0) {
 			return;
 		}
 
 		char *key = (char *) psg_pnalloc(req->pool, keySize);
-		generateKey(https, path, req->host, key, keySize);
+		generateKey(https, path, req->host, req->varyCookie, key, keySize);
 
 		Entry entry(lookup(StaticString(key, keySize)));
 		if (entry.valid()) {
@@ -347,11 +382,15 @@ public:
 	ResponseCache()
 		: CACHE_CONTROL("cache-control"),
 		  PRAGMA_CONST("pragma"),
+		  AUTHORIZATION("authorization"),
 		  VARY("vary"),
+		  WWW_AUTHENTICATE("www-authenticate"),
 		  EXPIRES("expires"),
 		  LAST_MODIFIED("last-modified"),
 		  LOCATION("location"),
 		  CONTENT_LOCATION("content-location"),
+		  COOKIE("cookie"),
+		  PASSENGER_VARY_TURBOCACHE_BY_COOKIE("!~PASSENGER_VARY_TURBOCACHE_COOKIE"),
 		  fetches(0),
 		  hits(0),
 		  stores(0),
@@ -414,12 +453,29 @@ public:
 	 *
 	 * @post result == !req->cacheKey.empty()
 	 */
-	bool prepareRequest(Request *req) {
+	template<typename RequestHandler>
+	bool prepareRequest(RequestHandler *requestHandler, Request *req) {
 		if (req->upgraded() || req->host == NULL) {
 			return false;
 		}
 
+		LString *varyCookieName = req->secureHeaders.lookup(PASSENGER_VARY_TURBOCACHE_BY_COOKIE);
+		if (varyCookieName == NULL && !requestHandler->defaultVaryTurbocacheByCookie.empty()) {
+			varyCookieName = (LString *) psg_palloc(req->pool, sizeof(LString));
+			psg_lstr_init(varyCookieName);
+			psg_lstr_append(varyCookieName, req->pool,
+				requestHandler->defaultVaryTurbocacheByCookie.data(),
+				requestHandler->defaultVaryTurbocacheByCookie.size());
+		}
+		if (varyCookieName != NULL) {
+			LString *cookieHeader = req->headers.lookup(COOKIE);
+			if (cookieHeader != NULL) {
+				req->varyCookie = ServerKit::findCookie(req->pool, cookieHeader, varyCookieName);
+			}
+		}
+
 		unsigned int size = calculateKeyLength(req->host,
+			req->varyCookie,
 			StaticString(req->path.start->data, req->path.size));
 		if (size == 0) {
 			req->cacheKey = HashedStaticString();
@@ -427,7 +483,7 @@ public:
 		}
 
 		req->cacheControl = req->headers.lookup(CACHE_CONTROL);
-		if (req->cacheControl != NULL) {
+		if (req->cacheControl == NULL) {
 			// hasPragmaHeader is only used by requestAllowsFetching(),
 			// so if there is no Cache-Control header then it's not
 			// necessary to check for the Pragma header.
@@ -436,7 +492,7 @@ public:
 
 		char *key = (char *) psg_pnalloc(req->pool, size);
 		generateKey(req->https, StaticString(req->path.start->data, req->path.size),
-			req->host, key, size);
+			req->host, req->varyCookie, key, size);
 		req->cacheKey = HashedStaticString(key, size);
 		return true;
 	}
@@ -465,9 +521,12 @@ public:
 				return entry;
 			} else {
 				erase(entry.index);
-				return Entry();
+				Entry result;
+				result.cacheMissReason = Entry::NOT_FRESH;
+				return result;
 			}
 		} else {
+			entry.cacheMissReason = Entry::NOT_FOUND;
 			return entry;
 		}
 	}
@@ -476,7 +535,7 @@ public:
 	// @pre prepareRequest() returned true
 	OXT_FORCE_INLINE
 	bool requestAllowsStoring(Request *req) const {
-		return requestAllowsFetching(req);
+		return req->method != HTTP_HEAD && requestAllowsFetching(req);
 	}
 
 	// @pre prepareRequest() returned true
@@ -487,16 +546,6 @@ public:
 
 		ServerKit::HeaderTable &respHeaders = req->appResponse.headers;
 
-		if (req->cacheControl != NULL) {
-			req->cacheControl = psg_lstr_make_contiguous(req->cacheControl,
-				req->pool);
-			StaticString cacheControl = StaticString(req->cacheControl->start->data,
-				req->cacheControl->size);
-			if (cacheControl.find(P_STATIC_STRING("no-store")) != string::npos) {
-				return false;
-			}
-		}
-
 		req->appResponse.cacheControl = respHeaders.lookup(CACHE_CONTROL);
 		if (req->appResponse.cacheControl != NULL) {
 			req->appResponse.cacheControl = psg_lstr_make_contiguous(
@@ -505,12 +554,17 @@ public:
 			StaticString cacheControl = StaticString(
 				req->appResponse.cacheControl->start->data,
 				req->appResponse.cacheControl->size);
-			if (cacheControl.find(P_STATIC_STRING("no-store")) != string::npos) {
+			if (cacheControl.find(P_STATIC_STRING("no-store")) != string::npos
+			 || cacheControl.find(P_STATIC_STRING("private")) != string::npos)
+			{
 				return false;
 			}
 		}
 
-		if (respHeaders.lookup(VARY) != NULL) {
+		if (req->headers.lookup(AUTHORIZATION) != NULL
+		 || respHeaders.lookup(VARY) != NULL
+		 || respHeaders.lookup(WWW_AUTHENTICATE) != NULL)
+		{
 			return false;
 		}
 
@@ -532,7 +586,8 @@ public:
 					req->pool);
 		}
 
-		return true;
+		return req->appResponse.cacheControl != NULL
+			|| req->appResponse.expiresHeader != NULL;
 	}
 
 	// @pre requestAllowsStoring()
@@ -593,10 +648,12 @@ public:
 	string inspect() const {
 		stringstream stream;
 		for (unsigned int i = 0; i < MAX_ENTRIES; i++) {
+			time_t expiryDate = bodies[i].expiryDate;
 			stream << " #" << i << ": valid=" << headers[i].valid
-				<< ", hash=" << headers[i].hash << ", keySize="
-				<< headers[i].keySize << ", key="
-				<< StaticString(bodies[i].key, headers[i].keySize) << "\n";
+				<< ", hash=" << headers[i].hash
+				<< ", expiryDate=" << expiryDate
+				<< ", keySize=" << headers[i].keySize << ", key=\""
+				<< cEscapeString(StaticString(bodies[i].key, headers[i].keySize)) << "\"\n";
 		}
 		return stream.str();
 	}

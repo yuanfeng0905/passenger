@@ -176,6 +176,11 @@
 	
 
 	
+		conf->vary_turbocache_by_cookie.data = NULL;
+		conf->vary_turbocache_by_cookie.len  = 0;
+	
+
+	
 		conf->fly_with.data = NULL;
 		conf->fly_with.len  = 0;
 	
