@@ -1,5 +1,5 @@
 #  Phusion Passenger - https://www.phusionpassenger.com/
-#  Copyright (c) 2010-2014 Phusion
+#  Copyright (c) 2010-2015 Phusion
 #
 #  "Phusion Passenger" is a trademark of Hongli Lai & Ninh Bui.
 #
@@ -27,16 +27,17 @@ class AppFinder
 	attr_reader :apps
 	attr_reader :execution_root
 
-	def self.looks_like_app_directory?(dir)
-		return STARTUP_FILES.any? do |file|
-			File.exist?("#{dir}/#{file}")
-		end
+	def self.looks_like_app_directory?(dir, options = {})
+		return options[:app_type] ||
+			STARTUP_FILES.any? do |file|
+				File.exist?("#{dir}/#{file}")
+			end
 	end
 
 	def initialize(dirs, options = {})
 		@dirs = dirs
 		@options = options.dup
-		determine_mode_and_execution_root
+		determine_mode_and_execution_root(options)
 	end
 
 	def scan
@@ -62,7 +63,7 @@ class AppFinder
 		else
 			dirs = @dirs.empty? ? [File.absolute_path_no_resolve(".")] : @dirs
 			dirs.each do |dir|
-				if looks_like_app_directory?(dir)
+				if looks_like_app_directory?(dir, @options)
 					app_root = File.absolute_path_no_resolve(dir)
 					server_names = filename_to_server_names(dir)
 					apps << {
@@ -77,7 +78,7 @@ class AppFinder
 					full_dir = File.absolute_path_no_resolve(dir)
 					watchlist << full_dir
 					Dir["#{full_dir}/*"].each do |subdir|
-						if looks_like_app_directory?(subdir)
+						if looks_like_app_directory?(subdir, @options)
 							server_names = filename_to_server_names(subdir)
 							apps << {
 								:server_names => server_names,
@@ -170,8 +171,8 @@ private
 		end
 	end
 
-	def looks_like_app_directory?(dir)
-		return AppFinder.looks_like_app_directory?(dir)
+	def looks_like_app_directory?(dir, options = {})
+		return AppFinder.looks_like_app_directory?(dir, options)
 	end
 
 	def filename_to_server_names(filename)
@@ -190,9 +191,9 @@ private
 		return !!select([io], nil, nil, timeout)
 	end
 
-	def determine_mode_and_execution_root
-		single = (@dirs.empty? && looks_like_app_directory?(".")) ||
-			(@dirs.size == 1 && looks_like_app_directory?(@dirs[0]))
+	def determine_mode_and_execution_root(options)
+		single = (@dirs.empty? && looks_like_app_directory?(".", options)) ||
+			(@dirs.size == 1 && looks_like_app_directory?(@dirs[0], options))
 		@mode = single ? :single : :multi
 		if @dirs.empty?
 			@execution_root = File.absolute_path_no_resolve(".")
