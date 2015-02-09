@@ -168,7 +168,7 @@ private
 			log_basename = "passenger.#{@options[:port]}.log"
 		end
 		if @args.empty?
-			if AppFinder.looks_like_app_directory?(".")
+			if AppFinder.looks_like_app_directory?(".", @options)
 				@options[:pid_file] ||= absolute_path("tmp/pids/#{pid_basename}")
 				@options[:log_file] ||= absolute_path("log/#{log_basename}")
 				if create_subdirs

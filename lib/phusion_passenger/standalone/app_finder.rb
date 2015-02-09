@@ -1,5 +1,5 @@
 #  Phusion Passenger - https://www.phusionpassenger.com/
-#  Copyright (c) 2010-2014 Phusion
+#  Copyright (c) 2010-2015 Phusion
 #
 #  "Phusion Passenger" is a trademark of Hongli Lai & Ninh Bui.
 #
@@ -16,8 +16,9 @@ class AppFinder
 	attr_accessor :dirs
 	attr_reader :apps
 
-	def self.looks_like_app_directory?(dir)
-		return File.exist?("#{dir}/config.ru") ||
+	def self.looks_like_app_directory?(dir, options = {})
+		return options[:app_type] ||
+			File.exist?("#{dir}/config.ru") ||
 			File.exist?("#{dir}/config/environment.rb") ||
 			File.exist?("#{dir}/passenger_wsgi.py") ||
 			File.exist?("#{dir}/app.js") ||
@@ -59,7 +60,7 @@ class AppFinder
 		else
 			dirs = @dirs.empty? ? ["."] : @dirs
 			dirs.each do |dir|
-				if looks_like_app_directory?(dir)
+				if looks_like_app_directory?(dir, @options)
 					app_root = absolute_path(dir)
 					server_names = filename_to_server_names(dir)
 					apps << {
@@ -73,7 +74,7 @@ class AppFinder
 					full_dir = absolute_path(dir)
 					watchlist << full_dir
 					Dir["#{full_dir}/*"].each do |subdir|
-						if looks_like_app_directory?(subdir)
+						if looks_like_app_directory?(subdir, @options)
 							server_names = filename_to_server_names(subdir)
 							apps << {
 								:server_names => server_names,
@@ -149,8 +150,8 @@ class AppFinder
 	end
 
 	def single_mode?
-		return (@dirs.empty? && looks_like_app_directory?(".")) ||
-			(@dirs.size == 1 && looks_like_app_directory?(@dirs[0]))
+		return (@dirs.empty? && looks_like_app_directory?(".", @options)) ||
+			(@dirs.size == 1 && looks_like_app_directory?(@dirs[0], @options))
 	end
 
 	def multi_mode?
@@ -203,8 +204,8 @@ private
 		return {}
 	end
 
-	def looks_like_app_directory?(dir)
-		return AppFinder.looks_like_app_directory?(dir)
+	def looks_like_app_directory?(dir, options = {})
+		return AppFinder.looks_like_app_directory?(dir, options)
 	end
 
 	def filename_to_server_names(filename)
