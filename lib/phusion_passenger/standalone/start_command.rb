@@ -795,7 +795,7 @@ private
 					# so that it should ignore the SIGTERM that the old Watchdog
 					# sends it.
 					begin
-						temp_dir_toucher_pid = File.open("#{@temp_dir}/temp_dir_toucher.pid", "r") do |f|
+						temp_dir_toucher_pid = File.open("#{@working_dir}/temp_dir_toucher.pid", "r") do |f|
 							f.read.to_i
 						end
 						Process.kill('HUP', temp_dir_toucher_pid)
