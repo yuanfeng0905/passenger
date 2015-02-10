@@ -28,6 +28,8 @@ class AppFinder
 	attr_reader :execution_root
 
 	def self.looks_like_app_directory?(dir, options = {})
+		options = options.dup
+		ConfigUtils.load_local_config_file!(dir, options)
 		return options[:app_type] ||
 			STARTUP_FILES.any? do |file|
 				File.exist?("#{dir}/#{file}")
@@ -71,9 +73,11 @@ class AppFinder
 						:root => app_root
 					}
 					watchlist << app_root
-					watchlist << "#{app_root}/config" if File.exist?("#{app_root}/config")
-					watchlist << "#{app_root}/Passengerfile.json" if File.exist?("#{app_root}/Passengerfile.json")
-					watchlist << "#{app_root}/passenger-standalone.json" if File.exist?("#{app_root}/passenger-standalone.json")
+					WATCH_ENTRIES.each do |entry|
+						if File.exist?("#{app_root}/#{entry}")
+							watchlist << "#{app_root}/#{entry}"
+						end
+					end
 				else
 					full_dir = File.absolute_path_no_resolve(dir)
 					watchlist << full_dir
@@ -86,9 +90,11 @@ class AppFinder
 							}
 						end
 						watchlist << subdir
-						watchlist << "#{subdir}/config" if File.exist?("#{subdir}/config")
-						watchlist << "#{subdir}/Passengerfile.json" if File.exist?("#{subdir}/Passengerfile.json")
-						watchlist << "#{subdir}/passenger-standalone.json" if File.exist?("#{subdir}/passenger-standalone.json")
+						WATCH_ENTRIES.each do |entry|
+							if File.exist?("#{subdir}/#{entry}")
+								watchlist << "#{subdir}/#{entry}"
+							end
+						end
 					end
 				end
 			end
