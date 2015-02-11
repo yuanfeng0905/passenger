@@ -215,6 +215,7 @@ fillPoolOptionsFromAgentsOptions(Options &options) {
 	options.concurrencyModel = agentsOptions->get("concurrency_model");
 	options.threadCount = agentsOptions->getInt("app_thread_count");
 	options.rollingRestart = agentsOptions->getBool("rolling_restarts");
+	options.ignoreSpawnErrors = agentsOptions->getBool("resist_deployment_errors");
 }
 
 static void
