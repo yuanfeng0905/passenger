@@ -251,9 +251,6 @@ private
 			opts.on("--union-station-key KEY", String, "Specify Union Station key") do |value|
 				options[:union_station_key] = value
 			end
-			opts.on("--debugger", "Enable debugger support") do
-				options[:debugger] = true
-			end
 
 			opts.separator ""
 			opts.separator "Nginx engine options:"
