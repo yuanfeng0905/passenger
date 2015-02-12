@@ -11,6 +11,7 @@ PhusionPassenger.require_passenger_lib 'constants'
 PhusionPassenger.require_passenger_lib 'ruby_core_enhancements'
 PhusionPassenger.require_passenger_lib 'standalone/command'
 PhusionPassenger.require_passenger_lib 'standalone/config_utils'
+PhusionPassenger.require_passenger_lib 'utils'
 PhusionPassenger.require_passenger_lib 'utils/tmpio'
 
 # We lazy load as many libraries as possible not only to improve startup performance,
@@ -25,7 +26,7 @@ class StartCommand < Command
 		:environment       => ENV['RAILS_ENV'] || ENV['RACK_ENV'] || ENV['NODE_ENV'] ||
 			ENV['PASSENGER_APP_ENV'] || 'development',
 		:spawn_method      => Kernel.respond_to?(:fork) ? DEFAULT_SPAWN_METHOD : 'direct',
-		:engine            => "builtin",
+		:engine            => "nginx",
 		:nginx_version     => PREFERRED_NGINX_VERSION,
 		:log_level         => DEFAULT_LOG_LEVEL,
 		:ctls              => []
@@ -196,6 +197,9 @@ private
 			opts.on("--max-pool-size NUMBER", Integer,
 				"Maximum number of application processes.#{nl}" +
 				"Default: #{DEFAULT_MAX_POOL_SIZE}") do |value|
+				if value < 1
+					abort "*** ERROR: you may only specify for --max-pool-size a number greater than or equal to 1"
+				end
 				options[:max_pool_size] = value
 			end
 			opts.on("--min-instances NUMBER", Integer,
@@ -677,15 +681,13 @@ private
 
 	def watch_log_files_in_background
 		@apps.each do |app|
-			thread = Thread.new do
-				Thread.current.abort_on_exception = true
+			thread = Utils.create_thread_and_abort_on_exception do
 				watch_log_file("#{app[:root]}/log/#{@options[:environment]}.log")
 			end
 			@threads << thread
 			@interruptable_threads << thread
 		end
-		thread = Thread.new do
-			Thread.current.abort_on_exception = true
+		thread = Utils.create_thread_and_abort_on_exception do
 			watch_log_file(@options[:log_file])
 		end
 		@threads << thread
