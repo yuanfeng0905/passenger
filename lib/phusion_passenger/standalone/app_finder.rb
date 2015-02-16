@@ -98,6 +98,14 @@ module PhusionPassenger
               end
             end
           end
+
+          apps.sort! do |a, b|
+            a[:root] <=> b[:root]
+          end
+          apps.map! do |app|
+            ConfigUtils.load_local_config_file!(app[:root], app)
+            @options.merge(app)
+          end
         end
 
         @apps = apps

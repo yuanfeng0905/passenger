@@ -307,13 +307,66 @@ If you cannot use the event MPM, consider putting Apache behind an Nginx reverse
 
 ### Turbocaching
 
-Phusion Passenger supports turbocaching since version 4. Turbocaching is an HTTP cache built inside Phusion Passenger. When used correctly, the cache can accelerate your app tremendously.
+Phusion Passenger supports turbocaching since version 4. Turbocaching is an HTTP cache built inside Phusion Passenger. When used correctly, the cache can accelerate your app tremendously. To utilize turbocaching, you only need to set HTTP caching headers.
 
-To utilize turbocaching, you only need to set HTTP caching headers. Please refer to [Google's HTTP caching tutorial](https://developers.google.com/web/fundamentals/performance/optimizing-content-efficiency/http-caching). Phusion Passenger takes advantage of the HTTP headers automatically.
+#### Learning about HTTP caching headers
+
+The first thing you should do is to [learn how to use HTTP caching headers](https://developers.google.com/web/fundamentals/performance/optimizing-content-efficiency/http-caching). It's pretty simple and straightforward. Since the turbocache is just a normal HTTP shared cache, it respects all the HTTP caching rules.
+
+#### Set an Expires or Cache-Control header
+
+To activate the turbocache, the response must contain either an "Expires" header or a "Cache-Control" header.
+
+The "Expires" header tells the turbocache how long to cache a response. Its value is an HTTP timestamp, e.g. "Thu, 01 Dec 1994 16:00:00 GMT".
+
+The Cache-Control header is a more advanced header that not only allows you to set the caching time, but also how the cache should behave. The easiest way to use it is to set the **max-age** flag, which has the same effect as setting "Expires". For example, this tells the turbocache that the response is cacheable for at most 60 seconds:
+
+    Cache-Control: max-age=60
+
+As you can see, a "Cache-Control" header is much easier to generate than an "Expires" header. Furthermore, "Expires" doesn't work if the visitor's computer's clock is wrongly configured, while "Cache-Control" does. This is why we recommend using "Cache-Control".
+
+Another flag to be aware of is the **private** flag. This flag tells any shared caches -- caches which are meant to store responses for many users -- not to cache the response. The turbocache is a shared cache. However, the browser's cache is not, so the browser can still cache the response. You should set the "private" flag on responses which are meant for a single user, as you will learn later in this article.
+
+And finally, there is the **no-store** flag, which tells *all* caches -- even the browser's -- not to cache the response.
+
+Here is an example of a response which is cacheable for 60 seconds by the browser's cache, but not by the turbocache:
+
+    Cache-Control: max-age=60,private
+
+The HTTP specification specifies a bunch of other flags, but they're not relevant for the turbocache. 
+
+#### Only GET requests are cacheable
+
+The turbocache currently only caches GET requests. POST, PUT, DELETE and other requests are never cached. If you want your response to be cacheable by the turbocache, be sure to use GET requests, but also be sure that your request is idempotent.
+
+#### Avoid using the "Vary" header
+
+The "Vary" header is used to tell caches that the response depends on one or more request headers. But the turbocache does not implement support for the "Vary" header, so if you output a "Vary" header then the turbocache will not cache your response at all. Avoid using the "Vary" header where possible.
 
 ### Out-of-band garbage collection
 
 Phusion Passenger supports out-of-band garbage collection for Ruby apps. With this feature enabled, Phusion Passenger can run the garbage collector in between requests, so that the garbage collector doesn't delay the app as much. Please refer to the Users Guide for more information about this feature.
+
+### Using the builtin HTTP engine
+
+In certain situations, using the builtin HTTP engine in Passenger Standalone may yield some performance benefits because it skips a layer of processing.
+
+Passenger normally works by integrating into Nginx or Apache. As described in the [Design & Architecture](Design%20and%20architecture.html) document, requests are first handled by Nginx or Apache, and then forwarded to the Passenger core process (the HelperAgent) and the application process. This architecture provides various benefits, such as security benefits (Nginx and Apache's HTTP connection handling routines are thoroughly battle-tested and secure) and feature benefits (e.g. Gzip compression, superb static file handling).
+
+This is even true if you use the Standalone mode. Although it acts standalone, it is implemented under the hood by running Passenger in a builtin Nginx engine.
+
+However, the fact that all requests go through Nginx or Apache means that there is a slight overhead, which can be avoided. This overhead is small (much smaller than typical application and network overhead), and using Nginx or Apache is very useful, but in certain special situations it may be beneficial to skip this layer.
+
+ * In **microbenchmarks**, the overhead of Nginx and Apache are very noticeable. Removing Nginx and Apache from the setup, and benchmarking against the Passenger HelperAgent directly, will yield much better results.
+ * In some **multi-server setups**, Nginx and Apache may be redundant. Recall that in typical multi-server setups there is a load balancer which forwards requests to one of the many web servers. Each web server in this setup runs Passenger. But the load balancer is sometimes already responsible for many of the tasks that Nginx and Apache perform, e.g. the secure handling of HTTP connections, buffering, slow client protection or even static file serving. In these cases, removing Nginx and Apache from the web servers and load balancing to the Passenger HelperAgent directly may have a minor improvement on performance.
+
+Nginx and Apache can be removed by using Passenger's builtin HTTP engine. By using this engine, Passenger will listen directly on a socket for HTTP requests, without using Nginx or Apache.
+
+This builtin HTTP engine can be accessed by starting Passenger Standalone using the `--engine=builtin` parameter, like this:
+
+    passenger start --engine=builtin
+
+It should be noted that the builtin HTTP engine has fewer features than the Nginx engine, by design. For example the builtin HTTP engine does not support serving static files, nor does it support gzip compression. Thus, we recommend using the Nginx engine in most situations, unless you have special needs such as documented above.
 
 ## Benchmarking recommendations
 

@@ -29,7 +29,8 @@ module PhusionPassenger
         :engine            => "nginx",
         :nginx_version     => PREFERRED_NGINX_VERSION,
         :log_level         => DEFAULT_LOG_LEVEL,
-        :ctls              => []
+        :ctls              => [],
+        :envvars           => {}
       }.freeze
 
       def run
@@ -285,7 +286,7 @@ module PhusionPassenger
           opts.separator "Advanced options:"
           opts.on("--engine NAME", String,
             "Underlying HTTP engine to use. Available#{nl}" +
-            "options: builtin (default), nginx") do |value|
+            "options: nginx (default), builtin") do |value|
             options[:engine] = value
           end
           opts.on("--log-level NUMBER", Integer, "Log level to use. Default: #{DEFAULT_LOG_LEVEL}") do |value|
@@ -424,7 +425,16 @@ module PhusionPassenger
             "because --no-install-runtime is given."
         end
 
-        args = ["--brief", "--no-force-tip"]
+        args = [
+          "--brief",
+          "--no-force-tip",
+          # Use default Utils::Download timeouts, which are short. We want short
+          # timeouts so that if the primary server is down and is not responding
+          # (as opposed to responding quickly with an error), then the system
+          # quickly switches to a mirror.
+          "--connect-timeout", "0",
+          "--idle-timeout", "0"
+        ]
         if @options[:binaries_url_root]
           args << "--url-root"
           args << @options[:binaries_url_root]
@@ -698,28 +708,6 @@ module PhusionPassenger
         return !@options[:daemonize] && @options[:log_file] != "/dev/null"
       end
 
-      def wait_until_engine_has_exited
-        # Since the engine is not our child process (it daemonizes)
-        # we cannot use Process.waitpid to wait for it. A busy-sleep-loop with
-        # Process.kill(0, pid) isn't very efficient. Instead we do this:
-        #
-        # Connect to the engine's server and wait until it disconnects the socket
-        # because of timeout. Keep doing this until we can no longer connect.
-        while true
-          if @options[:socket_file]
-            socket = UNIXSocket.new(@options[:socket_file])
-          else
-            socket = TCPSocket.new(@options[:address], @options[:port])
-          end
-          begin
-            socket.read rescue nil
-          ensure
-            socket.close rescue nil
-          end
-        end
-      rescue Errno::ECONNREFUSED, Errno::ECONNRESET
-      end
-
       def should_wait_until_engine_has_exited?
         return !@options[:daemonize] || @app_finder.multi_mode?
       end
@@ -761,110 +749,110 @@ module PhusionPassenger
           @can_remove_working_dir = false
         end
       end
-    end
 
-    #################
+      #################
 
-    def default_group_for(username)
-      user = Etc.getpwnam(username)
-      group = Etc.getgrgid(user.gid)
-      return group.name
-    end
+      def default_group_for(username)
+        user = Etc.getpwnam(username)
+        group = Etc.getgrgid(user.gid)
+        return group.name
+      end
 
-    def listening_on_unix_domain_socket?
-      return !!@options[:socket_file]
-    end
+      def listening_on_unix_domain_socket?
+        return !!@options[:socket_file]
+      end
 
-    def should_check_hosts_file?
-      require_platform_info_operating_system
-      return PlatformInfo.os_name == "macosx"
-    end
+      def should_check_hosts_file?
+        require_platform_info_operating_system
+        return PlatformInfo.os_name == "macosx"
+      end
 
-    def require_platform_info_operating_system
-      PhusionPassenger.require_passenger_lib 'platform_info/operating_system' \
-        if !defined?(PhusionPassenger::PlatformInfo) || !PlatformInfo.respond_to?(:os_name)
-    end
+      def require_platform_info_operating_system
+        PhusionPassenger.require_passenger_lib 'platform_info/operating_system' \
+          if !defined?(PhusionPassenger::PlatformInfo) || !PlatformInfo.respond_to?(:os_name)
+      end
 
-    def require_hosts_file_parser
-      PhusionPassenger.require_passenger_lib 'utils/hosts_file_parser' \
-        if !defined?(PhusionPassenger::Utils::HostsFileParser)
-    end
+      def require_hosts_file_parser
+        PhusionPassenger.require_passenger_lib 'utils/hosts_file_parser' \
+          if !defined?(PhusionPassenger::Utils::HostsFileParser)
+      end
 
-    def monitor_app_directories_in_background
-      @threads << Thread.new do
-        Thread.current.abort_on_exception = true
-        @app_finder.monitor(@termination_pipe[0]) do |apps|
-          puts "*** #{Time.now}: redeploying applications ***"
-          ok = true
-          begin
-            pid = @engine.pid
-          rescue SystemCallError, IOError => e
-            # Failing to read the PID file most likely means that the
-            # web server's no longer running, in which case we're supposed
-            # to quit anyway. Only print an error if the web server's still
-            # running.
-            if !wait_on_termination_pipe(3)
-              @console_mutex.synchronize do
-                error "Unable to retrieve the web server's PID (#{e})."
-              end
-              ok = false
-            end
-          end
-          if ok
-            # Tell the temp dir toucher that we're restarting Nginx,
-            # so that it should ignore the SIGTERM that the old Watchdog
-            # sends it.
+      def monitor_app_directories_in_background
+        @threads << Thread.new do
+          Thread.current.abort_on_exception = true
+          @app_finder.monitor(@termination_pipe[0]) do |apps|
+            puts "*** #{Time.now}: redeploying applications ***"
+            ok = true
             begin
-              temp_dir_toucher_pid = File.open("#{@working_dir}/temp_dir_toucher.pid", "r") do |f|
-                f.read.to_i
+              pid = @engine.pid
+            rescue SystemCallError, IOError => e
+              # Failing to read the PID file most likely means that the
+              # web server's no longer running, in which case we're supposed
+              # to quit anyway. Only print an error if the web server's still
+              # running.
+              if !wait_on_termination_pipe(3)
+                @console_mutex.synchronize do
+                  error "Unable to retrieve the web server's PID (#{e})."
+                end
+                ok = false
               end
-              Process.kill('HUP', temp_dir_toucher_pid)
-              sleep 0.01
-            rescue Errno::ENOENT, Errno::EACCES, Errno::ESRCH
             end
+            if ok
+              # Tell the temp dir toucher that we're restarting Nginx,
+              # so that it should ignore the SIGTERM that the old Watchdog
+              # sends it.
+              begin
+                temp_dir_toucher_pid = File.open("#{@working_dir}/temp_dir_toucher.pid", "r") do |f|
+                  f.read.to_i
+                end
+                Process.kill('HUP', temp_dir_toucher_pid)
+                sleep 0.01
+              rescue Errno::ENOENT, Errno::EACCES, Errno::ESRCH
+              end
 
-            # Now reload the engine.
-            @apps = apps
-            reload_engine(pid)
-            @console_mutex.synchronize do
-              show_new_app_list(apps)
+              # Now reload the engine.
+              @apps = apps
+              reload_engine(pid)
+              @console_mutex.synchronize do
+                show_new_app_list(apps)
+              end
             end
           end
         end
       end
-    end
 
-    def show_new_app_list(apps)
-      if apps.empty?
-        puts "No web applications detected. Waiting until you create one..."
-      else
-        require_hosts_file_parser
-        begin
-          if should_check_hosts_file?
-            hosts_file = PhusionPassenger::Utils::HostsFileParser.new
+      def show_new_app_list(apps)
+        if apps.empty?
+          puts "No web applications detected. Waiting until you create one..."
+        else
+          require_hosts_file_parser
+          begin
+            if should_check_hosts_file?
+              hosts_file = PhusionPassenger::Utils::HostsFileParser.new
+            end
+          rescue Errno::EACCES, Errno::ENOENT
+            hosts_file = nil
           end
-        rescue Errno::EACCES, Errno::ENOENT
-          hosts_file = nil
-        end
-        warnings = 0
+          warnings = 0
 
-        puts "Now serving these applications:"
-        puts " Host name                     Directory"
-        puts "------------------------------------------------------------"
-        apps.each do |app|
-          host_name = app[:server_names][0]
-          if hosts_file && !hosts_file.resolves_to_localhost?(host_name)
-            host_name += " [!]"
-            warnings += 1
+          puts "Now serving these applications:"
+          puts " Host name                     Directory"
+          puts "------------------------------------------------------------"
+          apps.each do |app|
+            host_name = app[:server_names][0]
+            if hosts_file && !hosts_file.resolves_to_localhost?(host_name)
+              host_name += " [!]"
+              warnings += 1
+            end
+            printf " %-26s    %s\n", host_name, app[:root]
           end
-          printf " %-26s    %s\n", host_name, app[:root]
+          if warnings > 0
+            puts
+            puts "[!] = This host name does not resolve to localhost. You should add it to"
+            puts "      /etc/hosts if you want to access it locally"
+          end
+          puts "------------------------------------------------------------"
         end
-        if warnings > 0
-          puts
-          puts "[!] = This host name does not resolve to localhost. You should add it to"
-          puts "      /etc/hosts if you want to access it locally"
-        end
-        puts "------------------------------------------------------------"
       end
     end
 

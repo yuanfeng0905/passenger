@@ -53,6 +53,7 @@
 #include <Hooks.h>
 #include <ResourceLocator.h>
 #include <Utils.h>
+#include <Utils/json.h>
 #include <Utils/Timer.h>
 #include <Utils/ScopeGuard.h>
 #include <Utils/StrIntUtils.h>
@@ -90,6 +91,7 @@ namespace WatchdogAgent {
 		uid_t defaultUid;
 		gid_t defaultGid;
 		InstanceDirectoryPtr instanceDir;
+		int reportFile;
 		int lockFile;
 		vector<string> cleanupPidfiles;
 		bool pidsCleanedUp;
@@ -102,7 +104,8 @@ namespace WatchdogAgent {
 		AdminServer *adminServer;
 
 		WorkingObjects()
-			: pidsCleanedUp(false),
+			: reportFile(-1),
+			  pidsCleanedUp(false),
 			  pidFileCleanedUp(false),
 			  bgloop(NULL),
 			  serverKitContext(NULL),
@@ -566,6 +569,8 @@ usage() {
 	printf("      --no-delete-pid-file    Do not delete PID file on exit\n");
 	printf("      --log-file PATH         Log to the given file.\n");
 	printf("      --log-level LEVEL       Logging level. [A] Default: %d\n", DEFAULT_LOG_LEVEL);
+	printf("      --report-file PATH      Upon successful initialization, report instance\n");
+	printf("                              information to the given file, in JSON format\n");
 	printf("      --cleanup-pidfile PATH  Upon shutdown, kill the process specified by\n");
 	printf("                              the given PID file\n");
 	printf("\n");
@@ -689,6 +694,9 @@ parseOptions(int argc, const char *argv[], VariantMap &options) {
 		} else if (p.isValueFlag(argc, i, argv[i], '\0', "--log-level")) {
 			options.setInt("log_level", atoi(argv[i + 1]));
 			i += 2;
+		} else if (p.isValueFlag(argc, i, argv[i], '\0', "--report-file")) {
+			options.set("report_file", argv[i + 1]);
+			i += 2;
 		} else if (p.isValueFlag(argc, i, argv[i], '\0', "--cleanup-pidfile")) {
 			vector<string> pidfiles = options.getStrSet("cleanup_pidfiles", false);
 			pidfiles.push_back(argv[i + 1]);
@@ -725,7 +733,7 @@ parseOptions(int argc, const char *argv[], VariantMap &options) {
 }
 
 static void
-initializeBareEssentials(int argc, char *argv[]) {
+initializeBareEssentials(int argc, char *argv[], WorkingObjectsPtr &wo) {
 	/*
 	 * Some Apache installations (like on OS X) redirect stdout to /dev/null,
 	 * so that only stderr is redirected to the log file. We therefore
@@ -751,6 +759,9 @@ initializeBareEssentials(int argc, char *argv[]) {
 
 	// Start all sub-agents with this environment variable.
 	setenv("PASSENGER_USE_FEEDBACK_FD", "true", 1);
+
+	wo = boost::make_shared<WorkingObjects>();
+	workingObjects = wo.get();
 }
 
 static void
@@ -799,7 +810,7 @@ static void
 redirectStdinToNull() {
 	int fd = open("/dev/null", O_RDONLY);
 	if (fd != -1) {
-		dup2(fd, 1);
+		dup2(fd, 0);
 		close(fd);
 	}
 }
@@ -813,10 +824,6 @@ maybeDaemonize() {
 		pid = fork();
 		if (pid == 0) {
 			setsid();
-			if (chdir("/") == -1) {
-				e = errno;
-				throw SystemException("Cannot change working directory to /", e);
-			}
 			redirectStdinToNull();
 		} else if (pid == -1) {
 			e = errno;
@@ -845,6 +852,21 @@ createPidFile() {
 		UPDATE_TRACE_POINT();
 		writeExact(fd, pidStr, strlen(pidStr));
 		syscalls::close(fd);
+	}
+}
+
+static void
+openReportFile(const WorkingObjectsPtr &wo) {
+	TRACE_POINT();
+	string reportFile = agentsOptions->get("report_file", false);
+	if (!reportFile.empty()) {
+		int fd = syscalls::open(reportFile.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0600);
+		if (fd == -1) {
+			int e = errno;
+			throw FileSystemException("Cannot open report file " + reportFile, e, reportFile);
+		}
+
+		wo->reportFile = fd;
 	}
 }
 
@@ -912,7 +934,7 @@ lookupDefaultUidGid(uid_t &uid, gid_t &gid) {
 }
 
 static void
-initializeWorkingObjects(WorkingObjectsPtr &wo, InstanceDirToucherPtr &instanceDirToucher) {
+initializeWorkingObjects(const WorkingObjectsPtr &wo, InstanceDirToucherPtr &instanceDirToucher) {
 	TRACE_POINT();
 	VariantMap &options = *agentsOptions;
 	vector<string> strset;
@@ -926,8 +948,6 @@ initializeWorkingObjects(WorkingObjectsPtr &wo, InstanceDirToucherPtr &instanceD
 			(" " SERVER_TOKEN_NAME "/" PASSENGER_VERSION));
 	}
 
-	wo = boost::make_shared<WorkingObjects>();
-	workingObjects = wo.get();
 	wo->resourceLocator = boost::make_shared<ResourceLocator>(agentsOptions->get("passenger_root"));
 
 	UPDATE_TRACE_POINT();
@@ -1155,17 +1175,30 @@ beginWatchingAgents(const WorkingObjectsPtr &wo, vector<AgentWatcherPtr> &watche
 
 static void
 reportAgentsInformation(const WorkingObjectsPtr &wo, const vector<AgentWatcherPtr> &watchers) {
+	TRACE_POINT();
+	VariantMap report;
+
+	report.set("instance_dir", wo->instanceDir->getPath());
+
+	foreach (AgentWatcherPtr watcher, watchers) {
+		watcher->reportAgentsInformation(report);
+	}
+
 	if (feedbackFdAvailable()) {
-		TRACE_POINT();
-		VariantMap report;
-
-		report.set("instance_dir", wo->instanceDir->getPath());
-
-		foreach (AgentWatcherPtr watcher, watchers) {
-			watcher->reportAgentsInformation(report);
-		}
-
 		report.writeToFd(FEEDBACK_FD, "Agents information");
+	}
+
+	if (wo->reportFile != -1) {
+		Json::Value doc;
+		VariantMap::ConstIterator it;
+		string str;
+
+		for (it = report.begin(); it != report.end(); it++) {
+			doc[it->first] = it->second;
+		}
+		str = doc.toStyledString();
+
+		writeExact(wo->reportFile, str.data(), str.size());
 	}
 }
 
@@ -1198,12 +1231,13 @@ cleanup(const WorkingObjectsPtr &wo) {
 
 int
 watchdogMain(int argc, char *argv[]) {
-	initializeBareEssentials(argc, argv);
+	WorkingObjectsPtr wo;
+
+	initializeBareEssentials(argc, argv, wo);
 	setAgentsOptionsDefaults();
 	sanityCheckOptions();
 	P_NOTICE("Starting " AGENT_EXE " watchdog...");
 	P_DEBUG("Watchdog options: " << agentsOptions->inspect());
-	WorkingObjectsPtr wo;
 	InstanceDirToucherPtr instanceDirToucher;
 	vector<AgentWatcherPtr> watchers;
 
@@ -1212,6 +1246,7 @@ watchdogMain(int argc, char *argv[]) {
 		maybeSetsid();
 		maybeDaemonize();
 		createPidFile();
+		openReportFile(wo);
 		lowerPrivilege();
 		initializeWorkingObjects(wo, instanceDirToucher);
 		initializeAgentWatchers(wo, watchers);
@@ -1264,7 +1299,7 @@ watchdogMain(int argc, char *argv[]) {
 			P_DEBUG("Web server did not exit gracefully, forcing shutdown of all agents...");
 		}
 		UPDATE_TRACE_POINT();
-		runHookScriptAndThrowOnError("after_watchdog_shutdown");
+		runHookScriptAndThrowOnError("before_watchdog_shutdown");
 		UPDATE_TRACE_POINT();
 		AgentWatcher::stopWatching(watchers);
 		if (shouldExitGracefully) {

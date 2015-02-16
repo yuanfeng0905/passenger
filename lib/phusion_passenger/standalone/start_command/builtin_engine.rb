@@ -1,3 +1,4 @@
+# encoding: utf-8
 #  Phusion Passenger - https://www.phusionpassenger.com/
 #  Copyright (c) 2014-2015 Phusion
 #
@@ -9,6 +10,7 @@ require 'etc'
 PhusionPassenger.require_passenger_lib 'constants'
 PhusionPassenger.require_passenger_lib 'standalone/control_utils'
 PhusionPassenger.require_passenger_lib 'utils/shellwords'
+PhusionPassenger.require_passenger_lib 'utils/json'
 
 module PhusionPassenger
   module Standalone
@@ -21,6 +23,14 @@ module PhusionPassenger
           @engine = DaemonController.new(build_daemon_controller_options)
           start_engine_no_create
         end
+
+        def wait_until_engine_has_exited
+          lock = DaemonController::LockFile.new(read_watchdog_lock_file_path!)
+          lock.shared_lock do
+            # Do nothing
+          end
+        end
+
 
         def start_engine_no_create
           begin
@@ -48,12 +58,24 @@ module PhusionPassenger
             ping_spec = [:tcp, @options[:address], @options[:port]]
           end
 
-          command = "#{@agent_exe} watchdog";
+          command = ""
+
+          if !@options[:envvars].empty?
+            command = "env "
+            @options[:envvars].each_pair do |name, value|
+              command << "#{Shellwords.escape name}=#{Shellwords.escape value} "
+            end
+          end
+
+          command << "#{@agent_exe} watchdog";
           command << " --passenger-root #{Shellwords.escape PhusionPassenger.install_spec}"
           command << " --daemonize"
           command << " --no-user-switching"
           command << " --no-delete-pid-file"
           command << " --cleanup-pidfile #{Shellwords.escape @working_dir}/temp_dir_toucher.pid"
+          if should_wait_until_engine_has_exited?
+            command << " --report-file #{Shellwords.escape @working_dir}/report.json"
+          end
           add_param(command, :user, "--user")
           add_param(command, :log_file, "--log-file")
           add_param(command, :pid_file, "--pid-file")
@@ -152,6 +174,21 @@ module PhusionPassenger
         def add_enterprise_flag_param(command, option_name, param_name)
           if value = @options[option_name]
             command << " #{param_name}"
+          end
+        end
+
+        def report_file_path
+          @report_file_path ||= "#{@working_dir}/report.json"
+        end
+
+        def read_watchdog_lock_file_path!
+          @watchdog_lock_file_path ||= begin
+            report = File.open(report_file_path, "r:utf-8") do |f|
+              Utils::JSON.parse(f.read)
+            end
+            # The report file may contain sensitive information, so delete it.
+            File.unlink(report_file_path)
+            report["instance_dir"] + "/lock"
           end
         end
 
