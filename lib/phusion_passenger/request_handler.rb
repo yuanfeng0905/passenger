@@ -699,7 +699,7 @@ module PhusionPassenger
       password = channel.read_scalar
       if password.nil?
         return
-      elsif password == @connect_password
+      elsif @connect_password.nil? || password == @connect_password
         channel.write("ok")
       else
         channel.write("Invalid connect password.")
