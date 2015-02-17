@@ -17,239 +17,289 @@ require 'phusion_passenger'
 ## Magic comment: end bootstrap ##
 
 PhusionPassenger.locate_directories
-PhusionPassenger.require_passenger_lib 'admin_tools/server_instance'
-PhusionPassenger.require_passenger_lib 'message_channel'
+PhusionPassenger.require_passenger_lib 'constants'
 PhusionPassenger.require_passenger_lib 'platform_info'
 PhusionPassenger.require_passenger_lib 'platform_info/ruby'
-require 'readline' rescue nil
+PhusionPassenger.require_passenger_lib 'message_channel'
+PhusionPassenger.require_passenger_lib 'admin_tools/instance_registry'
+PhusionPassenger.require_passenger_lib 'config/command'
+PhusionPassenger.require_passenger_lib 'config/utils'
+PhusionPassenger.require_passenger_lib 'utils'
 require 'optparse'
+require 'readline' rescue nil
+require 'socket'
+require 'net/http'
+require 'rexml/document'
 
-include PhusionPassenger
-include PhusionPassenger::AdminTools
+module PhusionPassenger
+  class IrbTool < PhusionPassenger::Config::Command
+    include PhusionPassenger::Config::Utils
+    include PhusionPassenger::Utils
 
-def prompt(prompt_line = ">> ")
-	if defined?(Readline)
-		line = Readline.readline(prompt_line, true)
-	else
-		begin
-			STDOUT.write(prompt_line)
-			STDOUT.flush
-			line = STDIN.readline
-		rescue EOFError
-			return nil
-		end
-	end
-	line.strip! if line
-	line = nil if line == "exit" || line == "quit"
-	return line
+    def run
+      parse_options
+      collect_instances
+      select_process
+      perform_attach
+    end
+
+  private
+    def self.create_option_parser(options)
+      OptionParser.new do |opts|
+        opts.banner = "Usage: passenger-irb [options] [PID]"
+        opts.separator ""
+        opts.separator "  Hot attach an IRB or ruby-debug console to a Ruby web application process."
+        opts.separator "  If PID is not given, then the first available Ruby web application process"
+        opts.separator "  will be chosen."
+        opts.separator ""
+
+        opts.separator "Options:"
+        opts.on("--debugger", "Attach debugger console instead of irb.") do |what|
+          options[:debugger] = true
+        end
+        opts.on("-h", "--help", "Show this help") do
+          options[:help] = true
+        end
+      end
+    end
+
+    def collect_instances
+      @instances = AdminTools::InstanceRegistry.new.list
+      if @instances.empty?
+        STDERR.puts "*** ERROR: #{PROGRAM_NAME} doesn't seem to be running. If you are sure that it"
+        STDERR.puts "is running, then the causes of this problem could be one of:"
+        STDERR.puts
+        STDERR.puts " 1. You customized the instance registry directory using Apache's"
+        STDERR.puts "    PassengerInstanceRegistryDir option, Nginx's"
+        STDERR.puts "    passenger_instance_registry_dir option, or #{PROGRAM_NAME} Standalone's"
+        STDERR.puts "    --instance-registry-dir command line argument. If so, please set the"
+        STDERR.puts "    environment variable PASSENGER_INSTANCE_REGISTRY_DIR to that directory"
+        STDERR.puts "    and run this command again."
+        STDERR.puts " 2. The instance directory has been removed by an operating system background"
+        STDERR.puts "    service. Please set a different instance registry directory using Apache's"
+        STDERR.puts "    PassengerInstanceRegistryDir option, Nginx's passenger_instance_registry_dir"
+        STDERR.puts "    option, or #{PROGRAM_NAME} Standalone's --instance-registry-dir command"
+        STDERR.puts "    line argument."
+        abort
+      end
+    end
+
+    def select_process
+      if @argv[0]
+        app_pid = @argv[0].to_i
+        @process = find_app_with_pid(app_pid)
+        if @process.nil?
+          STDERR.puts("*** ERROR: Could not find a Ruby application process with PID #{app_pid}.")
+          exit 2
+        end
+      else
+        @process = find_first_app
+        if @process.nil?
+          STDERR.puts("*** ERROR: There doesn't seem to be any Ruby application processes running.")
+          exit 2
+        end
+      end
+    end
+
+    def find_app_with_pid(pid)
+      @instances.each do |instance|
+        xml = query_and_parse_pool_xml(instance)
+        xml.each("//process") do |process|
+          if process.elements["pid"].text.to_i == pid
+            return process
+          end
+        end
+      end
+      nil
+    end
+
+    def find_first_app
+      @instances.each do |instance|
+        xml = query_and_parse_pool_xml(instance)
+        result = xml.get_elements("//process").first
+        return result if result
+      end
+      nil
+    end
+
+    def query_and_parse_pool_xml(instance)
+      request = Net::HTTP::Get.new("/pool.xml?secrets=true")
+      request.basic_auth("ro_admin", obtain_read_only_admin_password(instance))
+      response = instance.http_request("agents.s/server_admin", request)
+      if response.code.to_i / 100 == 2
+        REXML::Document.new(response.body)
+      else
+        STDERR.puts "*** An error occured while querying #{PROGRAM_NAME} instance '#{instance.name}'."
+        STDERR.puts "#{response.code}: #{response.body}"
+        exit 2
+      end
+    end
+
+    def perform_attach
+      group = @process.parent.parent
+      puts "*** Attaching to process #{@process.elements['pid'].text.to_i}: #{group.elements["name"].text}"
+      if @options[:debugger]
+        attach_debugger
+      else
+        attach_irb
+      end
+    end
+
+    def attach_irb
+      socket = connect_to_process_socket(@process, :async_irb)
+      channel = MessageChannel.new(socket)
+      begin
+        trap('INT', 'IGNORE')
+        group = @process.parent.parent
+        pid = @process.elements["pid"].text.to_i
+        group_secret = group.elements["secret"].text
+
+        channel.write_scalar(group_secret)
+        result = channel.read
+        if result.nil?
+          abort "*** ERROR: Process #{pid} closed the connection."
+        elsif result[0] != "ok"
+          abort "*** ERROR: #{result[0]}"
+        end
+
+        puts "Attached. You can now evaluate any arbitrary Ruby code in this process. " +
+          "Type 'help' for useful commands."
+
+        exit_irb = false
+        while !nonblock_check_eof(socket)
+          code = prompt
+          if code.nil?
+            exit_irb = true
+            break
+          end
+          next if code.strip.empty?
+
+          if code == "debugger"
+            attach_debugger
+            puts "*** Debugger exited; now back to normal irb prompt."
+          else
+            begin
+              channel.write_scalar(code)
+              read_responses(channel)
+            rescue Errno::EPIPE
+              break
+            end
+          end
+        end
+
+        if !exit_irb
+          STDERR.puts "**** Process #{pid} disconnected, exiting console."
+        end
+      ensure
+        channel.close
+      end
+    end
+
+    def attach_debugger
+      pid = @process.elements["pid"].text
+
+      if address = find_socket(@process, :ruby_debug_cmd)
+        cmd_host, cmd_port   = address.sub(/^tcp:\/\//, '').split(/:/, 2)
+        ctrl_address         = find_socket(@process, :ruby_debug_ctrl)
+        ctrl_host, ctrl_port = ctrl_address.sub(/^tcp:\/\//, '').split(/:/, 2)
+
+        rdebug = PlatformInfo.ruby_tool_command('rdebug')
+        puts "Using Ruby interpreter: #{PlatformInfo.ruby_command}"
+        puts "Using rdebug command  : #{rdebug || 'not found'}"
+        if !rdebug
+          abort "*** ERROR: Cannot find 'rdebug' command. Please ensure that the 'ruby-debug' " +
+            "(Ruby 1.8) or 'debugger' (Ruby 1.9) gem is installed for this Ruby interpreter."
+        end
+        puts "*** Attaching debugger to process #{pid}."
+        puts "*** Attaching will succeed as soon as process #{pid} reaches a 'debugger' call."
+        puts "*** Press Ctrl-C or Ctrl-D to exit debugger."
+        prev_int_handler = trap('INT', 'DEFAULT')
+        begin
+          # ruby-debug reversed the control port and command port!
+          # Unlikely to be fixed any time soon especially seeing that
+          # the 1.8 and 1.9 versions are seperate, better work around
+          # it by reversing it here as well...
+          command = "#{rdebug} -c -h 127.0.0.1 --port #{cmd_port} --cport #{ctrl_port}"
+          system(command)
+        ensure
+          trap('INT', prev_int_handler)
+        end
+      elsif address = find_socket(@process, :byebug)
+        host, port = address.sub(/^tcp:\/\//, '').split(/:/, 2)
+        puts "Using Ruby interpreter: #{PlatformInfo.ruby_command}"
+        begin
+          require 'byebug'
+        rescue LoadError
+          abort "*** ERROR: Cannot load the 'byebug' gem. Please ensure that this gem is installed for this Ruby interpreter."
+        end
+        puts "*** Attaching debugger to process #{pid}."
+        puts "*** Attaching will succeed as soon as process #{pid} reaches a 'byebug' call."
+        puts "*** Press Ctrl-D to exit debugger."
+        Byebug.start_client(host, port)
+      else
+        abort "*** ERROR: Debugging is not enabled for this application process."
+      end
+    end
+
+    def connect_to_process_socket(process, name)
+      address = find_socket(process, name)
+      if address.nil?
+        abort "*** ERROR: process #{process.elements["pid"].text} does not expose a '#{name}' socket."
+      else
+        connect_to_server(address)
+      end
+    end
+
+    def find_socket(process, name)
+      process.each_element("sockets/socket") do |socket|
+        if socket.elements["name"].text == name.to_s
+          return socket.elements["address"].text
+        end
+      end
+      nil
+    end
+
+    def prompt(prompt_line = ">> ")
+      if defined?(Readline)
+        line = Readline.readline(prompt_line, true)
+      else
+        begin
+          STDOUT.write(prompt_line)
+          STDOUT.flush
+          line = STDIN.readline
+        rescue EOFError
+          return nil
+        end
+      end
+      line.strip! if line
+      line = nil if line == "exit" || line == "quit"
+      return line
+    end
+
+    def nonblock_check_eof(socket)
+      return select([socket], nil, nil, 0) && socket.eof?
+    end
+
+    def read_responses(channel)
+      while true
+        header, body = channel.read
+        if !header
+          break
+        end
+        body = body.unpack('m').first
+        case header
+        when "puts"
+          STDOUT.write(body)
+          STDOUT.flush
+        when "end"
+          puts body
+          break
+        else
+          raise "Invalid header '#{header}'"
+        end
+      end
+    end
+  end
 end
 
-def nonblock_check_eof(socket)
-	return select([socket], nil, nil, 0) && socket.eof?
-end
-
-def read_responses(channel)
-	while true
-		header, body = channel.read
-		if !header
-			break
-		end
-		body = body.unpack('m').first
-		case header
-		when "puts"
-			STDOUT.write(body)
-			STDOUT.flush
-		when "end"
-			puts body
-			break
-		else
-			raise "Invalid header '#{header}'"
-		end
-	end
-end
-
-def attach_irb(process)
-	trap('INT', 'IGNORE')
-	socket = process.connect(:async_irb)
-	channel = MessageChannel.new(socket)
-	begin
-		channel.write_scalar(process.connect_password)
-		result = channel.read
-		if result.nil?
-			STDERR.puts "*** ERROR: Process #{process.pid} closed the connection."
-			exit 1
-		elsif result[0] != "ok"
-			STDERR.puts "*** ERROR: #{result[0]}"
-			exit 1
-		end
-
-		puts "Attached. You can now evaluate any arbitrary Ruby code in this process. " +
-			"Type 'help' for useful commands."
-		
-		exit_irb = false
-		while !nonblock_check_eof(socket)
-			code = prompt
-			if code.nil?
-				exit_irb = true
-				break
-			end
-			next if code.strip.empty?
-			
-			if code == "debugger"
-				if attach_debugger(process)
-					puts "*** Debugger exited; now back to normal irb prompt."
-				end
-			else
-				begin
-					channel.write_scalar(code)
-					read_responses(channel)
-				rescue Errno::EPIPE
-					break
-				end
-			end
-		end
-		
-		if !exit_irb
-			STDERR.puts "**** Process #{process.pid} disconnected, exiting console."
-		end
-	ensure
-		channel.close
-	end
-end
-
-def attach_debugger(process)
-	if process.server_sockets[:ruby_debug_cmd]
-		cmd_host, cmd_port   = process.server_sockets[:ruby_debug_cmd].address.sub(/^tcp:\/\//, '').split(/:/, 2)
-		ctrl_host, ctrl_port = process.server_sockets[:ruby_debug_ctrl].address.sub(/^tcp:\/\//, '').split(/:/, 2)
-		rdebug = PlatformInfo.locate_ruby_tool('rdebug')
-		puts "Using Ruby interpreter: #{PlatformInfo.ruby_command}"
-		puts "Using rdebug command  : #{rdebug || 'not found'}"
-		if !rdebug
-			STDERR.puts "*** ERROR: Cannot find 'rdebug' command. Please ensure that the 'ruby-debug' " +
-				"(Ruby 1.8) or 'debugger' (Ruby 1.9) gem is installed for this Ruby interpreter."
-			return false
-		end
-		puts "*** Attaching debugger to process #{process.pid}."
-		puts "*** Attaching will succeed as soon as process #{process.pid} reaches a 'debugger' call."
-		puts "*** Press Ctrl-C or Ctrl-D to exit debugger."
-		prev_int_handler = trap('INT', 'DEFAULT')
-		begin
-			# ruby-debug reversed the control port and command port!
-			# Unlikely to be fixed any time soon especially seeing that
-			# the 1.8 and 1.9 versions are seperate, better work around
-			# it by reversing it here as well...
-			command = "#{PlatformInfo.ruby_command} #{rdebug} " +
-				"-c -h 127.0.0.1 --port #{cmd_port} --cport #{ctrl_port}"
-			system(command)
-			return true
-		ensure
-			trap('INT', prev_int_handler)
-		end
-	elsif process.server_sockets[:byebug]
-		host, port = process.server_sockets[:byebug].address.sub(/^tcp:\/\//, '').split(/:/, 2)
-		begin
-			require 'byebug'
-		rescue LoadError
-			STDERR.puts "*** ERROR: Cannot load the 'byebug' gem. Please ensure that this gem is installed."
-			return false
-		end
-		puts "*** Attaching debugger to process #{process.pid}."
-		puts "*** Attaching will succeed as soon as process #{process.pid} reaches a 'byebug' call."
-		puts "*** Press Ctrl-D to exit debugger."
-		Byebug.start_client(host, port)
-		return true
-	else
-		STDERR.puts "*** ERROR: Debugging is not enabled for this application process."
-		return false
-	end
-end
-
-def find_app_with_pid(server_instances, pid)
-	server_instances.each do |instance|
-		begin
-			instance.connect(:role => :passenger_status) do |client|
-				instance.processes(client).each do |process|
-					if process.pid == pid
-						return process
-					end
-				end
-			end
-		rescue ServerInstance::RoleDeniedError
-			STDERR.puts "*** WARNING: could not query application process PIDs belonging " <<
-				"to Phusion Passenger instance #{instance.pid}."
-		end
-	end
-	return nil
-end
-
-def find_first_app(server_instances)
-	server_instances.each do |instance|
-		begin
-			instance.connect(:role => :passenger_status) do |client|
-				groups = instance.groups(client)
-				if !groups.empty?
-					group = groups[0]
-					return [group, group.processes[0]]
-				end
-			end
-		rescue ServerInstance::RoleDeniedError
-			STDERR.puts "*** WARNING: could not query application process PIDs belonging " <<
-				"to Phusion Passenger instance #{instance.pid}."
-		end
-	end
-	return nil
-end
-
-def start
-	options = {}
-	parser = OptionParser.new do |opts|
-		opts.banner = "Usage: passenger-irb [options] [PID]"
-		opts.separator ""
-		opts.separator "Hot attach an IRB or ruby-debug console to a Ruby web application process."
-		opts.separator "If PID is not given, then the first available Ruby web application process will be chosen."
-		opts.separator ""
-		
-		opts.separator "Options:"
-		opts.on("--debugger", "Attach debugger console instead of irb.") do |what|
-			options[:debugger] = true
-		end
-	end
-	begin
-		parser.parse!
-	rescue OptionParser::ParseError => e
-		puts e
-		puts
-		puts "Please see '--help' for valid options."
-		exit 1
-	end
-	
-	server_instances = ServerInstance.list
-	if server_instances.empty?
-		STDERR.puts("ERROR: Phusion Passenger doesn't seem to be running.")
-		exit 2
-	end
-	if ARGV[0]
-		app_pid = ARGV[0].to_i
-		process = find_app_with_pid(server_instances, app_pid)
-		if process.nil?
-			STDERR.puts("ERROR: Could not find a Ruby application process with PID #{app_pid}.")
-			exit 2
-		end
-	else
-		group, process = find_first_app(server_instances)
-		if process.nil?
-			STDERR.puts("ERROR: There doesn't seem to be any Ruby application processes running.")
-			exit 2
-		else
-			puts "*** Attaching to process #{process.pid}: #{group.name}"
-		end
-	end
-	
-	if options[:debugger]
-		attach_debugger(process)
-	else
-		attach_irb(process)
-	end
-end
-
-start
+PhusionPassenger::IrbTool.new(ARGV).run
