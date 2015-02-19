@@ -66,7 +66,7 @@ module PhusionPassenger
       end
       RequestHandler::ThreadHandler.send(:include, Rack::ThreadHandlerExtension)
     rescue Exception => e
-      LoaderSharedHelpers.about_to_abort(e) if defined?(LoaderSharedHelpers)
+      LoaderSharedHelpers.about_to_abort(options, e) if defined?(LoaderSharedHelpers)
       puts "!> Error"
       puts "!> html: true" if e.respond_to?(:html?) && e.html?
       puts "!> "
@@ -93,7 +93,7 @@ module PhusionPassenger
 
       LoaderSharedHelpers.after_loading_app_code(options)
     rescue Exception => e
-      LoaderSharedHelpers.about_to_abort(e)
+      LoaderSharedHelpers.about_to_abort(options, e)
       puts "!> Error"
       puts "!> html: true" if e.respond_to?(:html?) && e.html?
       puts "!> "
