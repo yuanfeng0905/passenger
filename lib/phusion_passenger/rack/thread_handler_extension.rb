@@ -113,6 +113,7 @@ module PhusionPassenger
           # Call #to_a just to be sure.
           body = body.to_a
           output_body = should_output_body?(status, env)
+          headers.delete(TRANSFER_ENCODING_HEADER)
           headers_output = generate_headers_array(status, headers)
           perform_keep_alive(env, headers_output)
           if output_body && should_add_message_length_header?(status, headers)
@@ -131,6 +132,7 @@ module PhusionPassenger
           return false
         elsif body.is_a?(String)
           output_body = should_output_body?(status, env)
+          headers.delete(TRANSFER_ENCODING_HEADER)
           headers_output = generate_headers_array(status, headers)
           perform_keep_alive(env, headers_output)
           if output_body && should_add_message_length_header?(status, headers)
@@ -148,7 +150,9 @@ module PhusionPassenger
           output_body = should_output_body?(status, env)
           headers_output = generate_headers_array(status, headers)
           perform_keep_alive(env, headers_output)
-          chunk = output_body && should_add_message_length_header?(status, headers)
+          chunk = output_body &&
+            (should_add_message_length_header?(status, headers) ||
+              headers.has_key?(TRANSFER_ENCODING_HEADER))
           if chunk
             headers_output << TRANSFER_ENCODING_HEADER_AND_VALUE_CRLF2
           else
@@ -158,8 +162,12 @@ module PhusionPassenger
           if output_body && body
             begin
               if chunk
-                body.each do |s|
-                  connection.writev(chunk_data(s))
+                body.each do |part|
+                  part = force_binary(part)
+                  size = bytesize(part)
+                  if size != 0
+                    connection.writev(chunk_data(part, size))
+                  end
                 end
                 connection.write(TERMINATION_CHUNK)
               else
@@ -174,10 +182,10 @@ module PhusionPassenger
                 # Body objects can raise exceptions in #each.
                 print_exception("Rack body object #each method", e)
               end
-              return false
+              false
             end
           end
-          return false
+          false
         end
       end
 
@@ -223,8 +231,8 @@ module PhusionPassenger
           !headers.has_key?(CONTENT_LENGTH_HEADER)
       end
 
-      def chunk_data(data)
-        [bytesize(data).to_s(16), CRLF, force_binary(data), CRLF]
+      def chunk_data(data, size)
+        [size.to_s(16), CRLF, data, CRLF]
       end
 
       if "".respond_to?(:bytesize)
