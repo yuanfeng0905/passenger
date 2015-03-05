@@ -20,6 +20,7 @@
 #include <MemoryKit/mbuf.h>
 #include <Logging.h>
 #include <Utils/StrIntUtils.h>
+#include <Utils/json.h>
 
 namespace Passenger {
 namespace ServerKit {
@@ -45,10 +46,10 @@ using namespace boost;
  *
  * The data callback can consume the buffer immediately, and tell Channel how many bytes
  * it has consumed, and whether it accepts any further data, by returning a Channel::Result.
- * If the buffer was not fully consumed the data callback, and it is still willing to accept
- * further data (by not transitioning to the end state or an error state), then Channel will
- * call the data callback again with the remainder of the buffer. This repeats
- * until:
+ * If the buffer was not fully consumed by the data callback, and the callback is still
+ * willing to accept further data (by not transitioning to the end state or an error state),
+ * then Channel will call the data callback again with the remainder of the buffer. This
+ * repeats until:
  *
  *  * the buffer is fully consumed,
  *  * or until the callback indicates that it's no longer accepting further data,
@@ -132,6 +133,8 @@ using namespace boost;
  * `read()`, then writes them to a Channel. It stops reading from the file descriptor
  * when the Channel is not accepting reads, and it starts reading from the file
  * descriptor when the channel is accepting reads again.
+ *
+ * ## Asynchronous consumption
  *
  * The data callback can also tell Channel that it wants to consume the buffer
  * *asynchronously*, by returning a Channel::Result with a negative consumption size.
@@ -721,6 +724,21 @@ public:
 	OXT_FORCE_INLINE
 	bool endAcked() const {
 		return state == EOF_REACHED;
+	}
+
+	Json::Value inspectAsJson() const {
+		Json::Value doc;
+
+		doc["callback_in_progress"] = !acceptingInput();
+		if (hasError()) {
+			doc["error"] = errcode;
+			doc["error_acked"] = endAcked();
+		} else if (ended()) {
+			doc["ended"] = true;
+			doc["end_acked"] = endAcked();
+		}
+
+		return doc;
 	}
 };
 

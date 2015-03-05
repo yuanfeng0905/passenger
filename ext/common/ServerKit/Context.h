@@ -27,6 +27,7 @@ struct FileBufferedChannelConfig {
 	string bufferDir;
 	unsigned int threshold;
 	unsigned int delayInFileModeSwitching;
+	unsigned int maxDiskChunkReadSize;
 	bool autoTruncateFile;
 	bool autoStartMover;
 
@@ -34,6 +35,7 @@ struct FileBufferedChannelConfig {
 		: bufferDir("/tmp"),
 		  threshold(1024 * 128),
 		  delayInFileModeSwitching(0),
+		  maxDiskChunkReadSize(0),
 		  autoTruncateFile(true),
 		  autoStartMover(true)
 		{ }

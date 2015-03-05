@@ -631,7 +631,10 @@ private:
 		assert(inFileMode->written > 0);
 		size_t size = std::min<size_t>(inFileMode->written,
 			mbuf_pool_data_size(&ctx->mbuf_pool));
-		FBC_DEBUG("Reader: reading next chunk from file");
+		if (config->maxDiskChunkReadSize > 0 && size > config->maxDiskChunkReadSize) {
+			size = config->maxDiskChunkReadSize;
+		}
+		FBC_DEBUG("Reader: reading next chunk from file, " << size << " bytes");
 		verifyInvariants();
 		ReadContext *readContext = new ReadContext(this);
 		readContext->buffer = MemoryKit::mbuf_get(&ctx->mbuf_pool);
@@ -720,7 +723,6 @@ private:
 			P_ASSERT_EQ(readerState, RS_FEEDING);
 			verifyInvariants();
 			if (acceptingInput()) {
-				readerState = RS_INACTIVE;
 				readNext();
 			} else if (mayAcceptInputLater()) {
 				readNextWhenChannelIdle();
@@ -1501,7 +1503,7 @@ public:
 	}
 
 	Json::Value inspectAsJson() const {
-		Json::Value doc;
+		Json::Value doc = Channel::inspectAsJson();
 
 		switch (mode) {
 		case IN_MEMORY_MODE:
@@ -1526,7 +1528,6 @@ public:
 		doc["reader_state"] = getReaderStateString();
 		doc["nbuffers"] = nbuffers;
 		doc["bytes_buffered"] = byteSizeToJson(getBytesBuffered());
-		doc["callback_in_progress"] = !acceptingInput();
 
 		return doc;
 	}

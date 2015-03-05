@@ -436,6 +436,9 @@ public:
 			}
 		}
 
+		doc["app_source_state"] = req->appSource.inspectAsJson();
+		doc["app_sink_state"] = req->appSink.inspectAsJson();
+
 		return doc;
 	}
 };

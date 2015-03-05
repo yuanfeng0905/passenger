@@ -79,6 +79,9 @@ module PhusionPassenger
       ################# Configuration loading, option parsing and initialization ###################
 
       def self.create_option_parser(options)
+        # Clear @parsed_options so that #remerge_all_options works.
+        options.clear
+
         # If you add or change an option, make sure to update the following places too:
         # lib/phusion_passenger/standalone/start_command/builtin_engine.rb, #build_daemon_controller_options
         # resources/templates/config/standalone.erb
@@ -296,6 +299,7 @@ module PhusionPassenger
             if value !~ /=.+/
               abort "*** ERROR: invalid --ctl format: #{value}"
             end
+            options[:ctls] ||= []
             options[:ctls] << value
           end
           opts.on("--binaries-url-root URL", String,
