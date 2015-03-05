@@ -43,6 +43,7 @@
 #include <DataStructures/StringKeyTable.h>
 #include <ApplicationPool2/ErrorRenderer.h>
 #include <StaticString.h>
+#include <Hooks.h>
 #include <Utils.h>
 #include <Utils/StrIntUtils.h>
 #include <Utils/IOUtils.h>
@@ -141,6 +142,8 @@ private:
 	struct ev_check checkWatcher;
 	TurboCaching<Request> turboCaching;
 
+	unsigned int defaultMaxRequestTime;
+
 	#ifdef DEBUG_RH_EVENT_LOOP_BLOCKING
 		struct ev_prepare prepareWatcher;
 		ev_tstamp timeBeforeBlocking;
@@ -199,7 +202,9 @@ public:
 		  HTTP_TRANSFER_ENCODING("transfer-encoding"),
 
 		  threadNumber(_threadNumber),
-		  turboCaching(getTurboCachingInitialState(_agentsOptions))
+		  turboCaching(getTurboCachingInitialState(_agentsOptions)),
+
+		  defaultMaxRequestTime(_agentsOptions->getInt("max_request_time", false, 0))
 	{
 		defaultRuby = psg_pstrdup(stringPool,
 			agentsOptions->get("default_ruby"));

@@ -140,6 +140,7 @@ http {
         <% if app[:min_instances] %>passenger_min_instances <%= app[:min_instances] %>;<% end %>
         <% if app[:restart_dir] %>passenger_restart_dir '<%= app[:restart_dir] %>';<% end %>
         <% if app[:debugger] %>passenger_debugger on;<% end %>
+        <% if app[:max_request_time] %>passenger_max_request_time <%= app[:max_request_time] %>;<% end %>
         <% if app[:sticky_sessions] %>passenger_sticky_sessions on;<% end %>
         <% if app[:sticky_sessions_cookie_name] %>passenger_sticky_sessions_cookie_name '<%= app[:sticky_sessions_cookie_name] %>';<% end %>
         <% if app[:vary_turbocache_by_cookie] %>passenger_vary_turbocache_by_cookie '<%= app[:vary_turbocache_by_cookie] %>';<% end %>

@@ -39,7 +39,8 @@ onRequestBegin(Client *client, Request *req) {
 
 		/***************/
 
-		req->maxRequestTime = getUIntOption(req, PASSENGER_MAX_REQUEST_TIME, false);
+		req->maxRequestTime = getUIntOption(req, PASSENGER_MAX_REQUEST_TIME,
+			defaultMaxRequestTime);
 
 		/***************/
 

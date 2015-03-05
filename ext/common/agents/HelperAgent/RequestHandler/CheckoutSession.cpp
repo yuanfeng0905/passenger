@@ -350,8 +350,16 @@ onTimeout(Client *client, Request *req) {
 	if (req->session != NULL) {
 		SKC_ERROR(client, "Maximum request time of " << req->maxRequestTime <<
 			" seconds reached, killing process " << req->session->getPid());
+
+		HookScriptOptions hOptions;
+		hOptions.name = "max_request_time_reached";
+		hOptions.spec = agentsOptions->get("hook_max_request_time_reached", false);
+		hOptions.agentsOptions = agentsOptions;
+		hOptions.environment.push_back(make_pair("PASSENGER_APP_PID", toString(req->session->getPid())));
+		runHookScripts(hOptions);
+
 		req->session->kill(SIGKILL);
+		appPool->detachProcess(req->session->getGupid());
 	}
-	appPool->detachProcess(req->session->getGupid());
 	disconnectWithError(&client, "maximum request time reached");
 }
