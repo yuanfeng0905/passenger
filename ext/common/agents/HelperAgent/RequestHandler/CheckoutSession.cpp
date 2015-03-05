@@ -356,6 +356,13 @@ onTimeout(Client *client, Request *req) {
 		hOptions.spec = agentsOptions->get("hook_max_request_time_reached", false);
 		hOptions.agentsOptions = agentsOptions;
 		hOptions.environment.push_back(make_pair("PASSENGER_APP_PID", toString(req->session->getPid())));
+		hOptions.environment.push_back(make_pair("PASSENGER_REQUEST_PATH",
+			string(req->path.start->data, req->path.size)));
+		if (req->host != NULL) {
+			const LString *host = psg_lstr_make_contiguous(req->host, req->pool);
+			hOptions.environment.push_back(make_pair("PASSENGER_REQUEST_HOST",
+				string(host->start->data, host->size)));
+		}
 		runHookScripts(hOptions);
 
 		req->session->kill(SIGKILL);
