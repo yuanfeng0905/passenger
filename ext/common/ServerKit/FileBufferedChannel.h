@@ -373,7 +373,8 @@ private:
 
 	/***** Buffer manipulation *****/
 
-	void clearBuffers() {
+	void clearBuffers(bool mayCallCallbacks) {
+		unsigned int oldNbuffers = nbuffers;
 		nbuffers = 0;
 		bytesBuffered = 0;
 		firstBuffer = MemoryKit::mbuf();
@@ -382,6 +383,9 @@ private:
 			// the deque in its clear() implementation, so adding
 			// a conditional here improves performance slightly.
 			moreBuffers.clear();
+		}
+		if (mayCallCallbacks && oldNbuffers != 0) {
+			callBuffersFlushedCallback();
 		}
 	}
 
@@ -537,6 +541,11 @@ private:
 					if (config->autoTruncateFile) {
 						FBC_DEBUG("Reader: no more buffers. Transitioning to RS_INACTIVE, truncating file");
 						switchToInMemoryMode();
+						if (generation != this->generation || mode >= ERROR) {
+							// Callback deinitialized this object, or callback
+							// called a method that encountered an error.
+							return;
+						}
 					} else {
 						FBC_DEBUG("Reader: no more buffers. Transitioning to RS_INACTIVE, "
 							"not truncating file because config->autoTruncateFile is turned off");
@@ -783,6 +792,8 @@ private:
 	 * a new one, instead of calling `ftruncate()` or something.
 	 * This way, any pending I/O operations in the background won't
 	 * affect correctness.
+	 *
+	 * This method may call callbacks.
 	 */
 	void switchToInMemoryMode() {
 		P_ASSERT_EQ(mode, IN_FILE_MODE);
@@ -790,9 +801,9 @@ private:
 
 		FBC_DEBUG("Recreating file, switching to in-memory mode");
 		cancelWriter();
-		clearBuffers();
 		mode = IN_MEMORY_MODE;
 		inFileMode.reset();
+		clearBuffers(true);
 	}
 
 
@@ -1386,7 +1397,7 @@ public:
 		if (mode == IN_FILE_MODE) {
 			cancelWriter();
 		}
-		clearBuffers();
+		clearBuffers(false);
 		mode = IN_MEMORY_MODE;
 		readerState = RS_INACTIVE;
 		errcode = 0;
