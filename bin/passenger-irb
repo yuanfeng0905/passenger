@@ -104,7 +104,7 @@ module PhusionPassenger
     def find_app_with_pid(pid)
       @instances.each do |instance|
         xml = query_and_parse_pool_xml(instance)
-        xml.each("//process") do |process|
+        xml.each_element("//process") do |process|
           if process.elements["pid"].text.to_i == pid
             return process
           end
