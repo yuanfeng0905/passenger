@@ -132,9 +132,6 @@ private
       opts.on("--pool-idle-time SECONDS", Integer, "Max process idle time (default: #{@watchdog_options[:pool_idle_time]})") do |val|
         @watchdog_options[:pool_idle_time] = val
       end
-      opts.on("--max-preloader-idle-time SECONDS", Integer, "Max preloader idle time") do |val|
-        @watchdog_options[:max_preloader_idle_time] = val
-      end
       opts.on("--instance-registry-dir PATH", String, "Use the given instance registry directory") do |val|
         @watchdog_options[:instance_registry] = val
       end
