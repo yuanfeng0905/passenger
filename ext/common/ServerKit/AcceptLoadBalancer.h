@@ -28,6 +28,7 @@
 
 #include <Constants.h>
 #include <Logging.h>
+#include <Utils.h>
 #include <Utils/IOUtils.h>
 
 namespace Passenger {
@@ -97,10 +98,21 @@ private:
 			pollers[i + 1].fd = endpoints[i];
 			pollers[i + 1].events = POLLIN;
 		}
-		if (poll(pollers, nEndpoints + 1, -1) == -1) {
+
+		int ret;
+		do {
+			ret = poll(pollers, nEndpoints + 1, -1) == -1;
+		} while (ret == -1 && pollErrnoShouldRetry(errno));
+		if (ret == -1) {
 			int e = errno;
 			throw SystemException("poll() failed", e);
 		}
+	}
+
+	bool pollErrnoShouldRetry(int e) const {
+		return e == EAGAIN
+			|| e == EWOULDBLOCK
+			|| e == EINTR;
 	}
 
 	bool acceptNewClients(int endpoint) {
@@ -277,7 +289,8 @@ public:
 	}
 
 	void start() {
-		thread = new oxt::thread(boost::bind(&AcceptLoadBalancer<Server>::mainLoop, this),
+		boost::function<void ()> func = boost::bind(&AcceptLoadBalancer<Server>::mainLoop, this);
+		thread = new oxt::thread(boost::bind(runAndPrintExceptions, func, true),
 			"Load balancer");
 	}
 

@@ -90,6 +90,7 @@ namespace {
 		for (it = options.environment.begin(); it != end; it++) {
 			envvars.push_back(*it);
 		}
+		envvars.push_back(make_pair("PASSENGER_HOOK_NAME", options.name));
 	}
 
 	inline void

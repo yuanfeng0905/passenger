@@ -68,6 +68,7 @@ module PhusionPassenger
           begin
             status, headers, body = @app.call(env)
           rescue => e
+            disable_keep_alive
             if should_reraise_app_error?(e, socket_wrapper)
               raise e
             elsif !should_swallow_app_error?(e, socket_wrapper)
@@ -85,6 +86,9 @@ module PhusionPassenger
 
           begin
             process_body(env, connection, socket_wrapper, status.to_i, headers, body)
+          rescue Exception => e
+            disable_keep_alive
+            raise
           ensure
             body.close if body && body.respond_to?(:close)
           end
@@ -159,7 +163,6 @@ module PhusionPassenger
             begin
               if chunk
                 body.each do |part|
-                  part = force_binary(part)
                   size = bytesize(part)
                   if size != 0
                     connection.writev(chunk_data(part, size))
@@ -172,6 +175,7 @@ module PhusionPassenger
                 end
               end
             rescue => e
+              disable_keep_alive
               if should_reraise_app_error?(e, socket_wrapper)
                 raise e
               elsif !should_swallow_app_error?(e, socket_wrapper)
@@ -216,6 +220,10 @@ module PhusionPassenger
         end
       end
 
+      def disable_keep_alive
+        @keepalive_performed = false
+      end
+
       def should_output_body?(status, env)
         return (status < 100 ||
           (status >= 200 && status != 204 && status != 205 && status != 304)) &&
@@ -238,18 +246,6 @@ module PhusionPassenger
       else
         def bytesize(str)
           str.size
-        end
-      end
-
-      if "".respond_to?(:force_encoding)
-        BINARY = "binary".freeze
-
-        def force_binary(str)
-          str.force_encoding(BINARY)
-        end
-      else
-        def force_binary(str)
-          str
         end
       end
     end
