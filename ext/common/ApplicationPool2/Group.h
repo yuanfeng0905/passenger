@@ -27,10 +27,9 @@
 #include <cstdlib>
 #include <cassert>
 #include <ApplicationPool2/Common.h>
-#include <ApplicationPool2/ComponentInfo.h>
-#include <ApplicationPool2/SpawnerFactory.h>
 #include <ApplicationPool2/Process.h>
 #include <ApplicationPool2/Options.h>
+#include <SpawningKit/Factory.h>
 #include <MemoryKit/palloc.h>
 #include <Hooks.h>
 #include <Utils.h>
@@ -52,7 +51,6 @@ class Group: public boost::enable_shared_from_this<Group> {
 // Actually private, but marked public so that unit tests can access the fields.
 public:
 	friend class Pool;
-	friend class SuperGroup;
 
 	struct GetAction {
 		GetCallback callback;
@@ -82,7 +80,7 @@ public:
 	enum LifeStatus {
 		/** Up and operational. */
 		ALIVE,
-		/** Being shut down. The containing SuperGroup has issued the shutdown()
+		/** Being shut down. The containing Pool has issued the shutdown()
 		 * command, and this Group is now waiting for all detached processes to
 		 * exit. You cannot call `get()`, `restart()` and other mutating methods
 		 * anymore, and all threads created by this Group will exit as soon
@@ -97,12 +95,12 @@ public:
 	};
 
 	/**
-	 * A back reference to the containing SuperGroup. Should never
-	 * be NULL because a SuperGroup should outlive all its containing
+	 * A back reference to the containing Pool. Should never
+	 * be NULL because a Pool should outlive all its containing
 	 * Groups.
 	 * Read-only; only set during initialization.
 	 */
-	SuperGroup *superGroup;
+	Pool *pool;
 	time_t lastRestartFileMtime;
 	time_t lastRestartFileCheckTime;
 
@@ -170,8 +168,8 @@ public:
 	GroupPtr selfPointer;
 
 
-	static void generateSecret(const SuperGroup *superGroup, char *secret);
-	static string generateUuid(const SuperGroup *superGroup);
+	static void generateSecret(const Pool *pool, char *secret);
+	static string generateUuid(const Pool *pool);
 	static void _onSessionInitiateFailure(Session *session);
 	static void _onSessionClose(Session *session);
 	OXT_FORCE_INLINE void onSessionInitiateFailure(Process *process, Session *session);
@@ -187,12 +185,12 @@ public:
 	void spawnThreadOOBWRequest(GroupPtr self, ProcessPtr process);
 	void initiateNextOobwRequest();
 
-	void spawnThreadMain(GroupPtr self, SpawnerPtr spawner, Options options,
+	void spawnThreadMain(GroupPtr self, SpawningKit::SpawnerPtr spawner, Options options,
 		unsigned int restartsInitiated);
-	void spawnThreadRealMain(const SpawnerPtr &spawner, const Options &options,
+	void spawnThreadRealMain(const SpawningKit::SpawnerPtr &spawner, const Options &options,
 		unsigned int restartsInitiated);
 	void finalizeRestart(GroupPtr self, Options oldOptions, Options newOptions,
-		RestartMethod method, SpawnerFactoryPtr spawnerFactory,
+		RestartMethod method, SpawningKit::FactoryPtr spawningKitFactory,
 		unsigned int restartsInitiated, boost::container::vector<Callback> postLockActions);
 	void startCheckingDetachedProcesses(bool immediately);
 	void detachedProcessesCheckerMain(GroupPtr self);
@@ -346,7 +344,7 @@ public:
 		}
 	}
 
-	static void doCleanupSpawner(SpawnerPtr spawner) {
+	static void doCleanupSpawner(SpawningKit::SpawnerPtr spawner) {
 		spawner->cleanup();
 	}
 
@@ -739,7 +737,6 @@ public:
 	 * restarts. This information is public.
 	 */
 	string uuid;
-	ComponentInfo componentInfo;
 
 	/**
 	 * Processes are categorized as enabled, disabling or disabled.
@@ -862,16 +859,16 @@ public:
 	 * Invariant:
 	 *    (lifeStatus == ALIVE) == (spawner != NULL)
 	 */
-	SpawnerPtr spawner;
+	SpawningKit::SpawnerPtr spawner;
 
 
 	/********************************************
 	 * Constructors and destructors
 	 ********************************************/
 
-	Group(SuperGroup *superGroup, const Options &options, const ComponentInfo &info);
+	Group(Pool *pool, const Options &options);
 	~Group();
-	void initialize();
+	bool initialize();
 
 	/**
 	 * Must be called before destroying a Group. You can optionally provide a
@@ -886,6 +883,7 @@ public:
 		boost::container::vector<Callback> &postLockActions)
 	{
 		assert(isAlive());
+		assert(getWaitlist.empty());
 
 		P_DEBUG("Begin shutting down group " << name);
 		shutdownCallback = callback;
@@ -903,20 +901,6 @@ public:
 	/********************************************
 	 * Life time and back-reference methods
 	 ********************************************/
-
-	/**
-	 * Thread-safe.
-	 * @pre getLifeState() != SHUT_DOWN
-	 * @post result != NULL
-	 */
-	SuperGroup *getSuperGroup() const {
-		return superGroup;
-	}
-
-	void setSuperGroup(SuperGroup *superGroup) {
-		assert(this->superGroup == NULL);
-		this->superGroup = superGroup;
-	}
 
 	/**
 	 * Thread-safe.
@@ -1035,11 +1019,10 @@ public:
 	 * function doesn't touch `getWaitlist` so be sure to fix its invariants
 	 * afterwards if necessary, e.g. by calling `assignSessionsToGetWaiters()`.
 	 */
-	AttachResult attach(const SpawnObject &spawnObject,
+	AttachResult attach(const ProcessPtr &process,
 		boost::container::vector<Callback> &postLockActions)
 	{
 		TRACE_POINT();
-		const ProcessPtr &process = spawnObject.process;
 		assert(process->getGroup() == NULL || process->getGroup() == this);
 		assert(process->isAlive());
 		assert(isAlive());
@@ -1056,10 +1039,6 @@ public:
 		process->stickySessionId = generateStickySessionId();
 		P_DEBUG("Attaching process " << process->inspect());
 		addProcessToList(process, enabledProcesses);
-
-		if (spawnObject.pool != getPallocPool()) {
-			process->recreateStrings(getPallocPool());
-		}
 
 		/* Now that there are enough resources, relevant processes in
 		 * 'disableWaitlist' can be disabled.
@@ -1461,7 +1440,7 @@ public:
 		ProcessList::const_iterator it;
 
 		stream << "<name>" << escapeForXml(name) << "</name>";
-		stream << "<component_name>" << escapeForXml(componentInfo.name) << "</component_name>";
+		stream << "<component_name>" << escapeForXml(name) << "</component_name>";
 		stream << "<app_root>" << escapeForXml(options.appRoot) << "</app_root>";
 		stream << "<app_type>" << escapeForXml(options.appType) << "</app_type>";
 		stream << "<environment>" << escapeForXml(options.environment) << "</environment>";

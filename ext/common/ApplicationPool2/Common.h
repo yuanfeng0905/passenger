@@ -1,6 +1,6 @@
 /*
  *  Phusion Passenger - https://www.phusionpassenger.com/
- *  Copyright (c) 2011-2014 Phusion
+ *  Copyright (c) 2011-2015 Phusion
  *
  *  "Phusion Passenger" is a trademark of Hongli Lai & Ninh Bui.
  *
@@ -22,6 +22,7 @@
 #include <UnionStation/Core.h>
 #include <UnionStation/Transaction.h>
 #include <ApplicationPool2/Options.h>
+#include <SpawningKit/Config.h>
 #include <Utils/VariantMap.h>
 
 namespace tut {
@@ -36,7 +37,6 @@ using namespace boost;
 using namespace oxt;
 
 class Pool;
-class SuperGroup;
 class Group;
 class Process;
 class Socket;
@@ -145,12 +145,11 @@ enum RestartMethod {
 };
 
 typedef boost::shared_ptr<Pool> PoolPtr;
-typedef boost::shared_ptr<SuperGroup> SuperGroupPtr;
 typedef boost::shared_ptr<Group> GroupPtr;
 typedef boost::shared_ptr<Process> ProcessPtr;
 typedef boost::intrusive_ptr<Session> SessionPtr;
 typedef boost::shared_ptr<tracable_exception> ExceptionPtr;
-typedef StringKeyTable<SuperGroupPtr> SuperGroupMap;
+typedef StringKeyTable<GroupPtr> GroupMap;
 typedef boost::function<void (const ProcessPtr &process, DisableResult result)> DisableCallback;
 typedef boost::function<void ()> Callback;
 
@@ -186,48 +185,10 @@ struct Ticket {
 	ExceptionPtr exception;
 };
 
-struct SpawnerConfig {
-	// Used by error pages and hooks.
-	ResourceLocator *resourceLocator;
-	const VariantMap *agentsOptions;
-
-	// Used for Union Station logging.
-	UnionStation::CorePtr unionStationCore;
-
-	// Used by SmartSpawner and DirectSpawner.
-	RandomGeneratorPtr randomGenerator;
-	string instanceDir;
-
-	// Used by DummySpawner and SpawnerFactory.
-	unsigned int concurrency;
-	unsigned int spawnerCreationSleepTime;
-	unsigned int spawnTime;
-
-	SpawnerConfig()
-		: resourceLocator(NULL),
-		  agentsOptions(NULL),
-		  concurrency(1),
-		  spawnerCreationSleepTime(0),
-		  spawnTime(0)
-		{ }
-
-	void finalize() {
-		TRACE_POINT();
-		if (resourceLocator == NULL) {
-			throw RuntimeException("ResourceLocator not initialized");
-		}
-		if (randomGenerator == NULL) {
-			randomGenerator = boost::make_shared<RandomGenerator>();
-		}
-	}
-};
-
-typedef boost::shared_ptr<SpawnerConfig> SpawnerConfigPtr;
-
 ExceptionPtr copyException(const tracable_exception &e);
 void rethrowException(const ExceptionPtr &e);
 void processAndLogNewSpawnException(SpawnException &e, const Options &options,
-	const SpawnerConfigPtr &config);
+	const SpawningKit::ConfigPtr &config);
 void recreateString(psg_pool_t *pool, StaticString &str);
 
 } // namespace ApplicationPool2

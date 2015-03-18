@@ -39,18 +39,14 @@ void startRestarterThread() {
  * or null if there is no such process.
  */
 ProcessPtr findProcessNeedingRollingRestart(const set<string> &ignoreList) const {
-	SuperGroupMap::ConstIterator sg_it(superGroups);
-	while (*sg_it != NULL) {
-		SuperGroupPtr superGroup = sg_it.getValue();
-		SuperGroup::GroupList::const_iterator g_it, g_end = superGroup->groups.end();
-		for (g_it = superGroup->groups.begin(); g_it != g_end; g_it++) {
-			const GroupPtr group = *g_it;
-			ProcessPtr process = findProcessNeedingRollingRestart(group, ignoreList);
-			if (process != NULL) {
-				return process;
-			}
+	GroupMap::ConstIterator g_it(groups);
+	while (*g_it != NULL) {
+		GroupPtr group = g_it.getValue();
+		ProcessPtr process = findProcessNeedingRollingRestart(group, ignoreList);
+		if (process != NULL) {
+			return process;
 		}
-		sg_it.next();
+		g_it.next();
 	}
 	return ProcessPtr();
 }
@@ -132,9 +128,9 @@ void restarterThreadRealMain() {
 		UPDATE_TRACE_POINT();
 		string oldProcessId = oldProcess->inspect();
 		GroupPtr group = oldProcess->getGroup()->shared_from_this();
-		SpawnerPtr spawner = group->spawner;
+		SpawningKit::SpawnerPtr spawner = group->spawner;
 		Options options = group->options.copyAndPersist();
-		SpawnObject newProcess;
+		ProcessPtr newProcess;
 		ExceptionPtr exception;
 
 		restarterThreadStatus = "Restarting process " + oldProcessId +
@@ -149,7 +145,9 @@ void restarterThreadRealMain() {
 			UPDATE_TRACE_POINT();
 			this_thread::restore_interruption ri(di);
 			this_thread::restore_syscall_interruption rsi(dsi);
-			newProcess = spawner->spawn(options);
+			newProcess = Process::createFromSpawningKitResult(
+				palloc, getSpawningKitConfig(),
+				spawner->spawn(options));
 		} catch (const thread_interrupted &) {
 			// Returning so that we don't verify invariants.
 			return;
@@ -183,7 +181,7 @@ void restarterThreadRealMain() {
 		}
 
 		ScopeGuard newProcessGuard(boost::bind(Process::forceTriggerShutdownAndCleanup,
-			newProcess.process));
+			newProcess));
 
 		if (debugSupport != NULL && debugSupport->rollingRestarting) {
 			this_thread::restore_interruption ri(di);
@@ -199,7 +197,7 @@ void restarterThreadRealMain() {
 			P_DEBUG("Group " << group->name << " was detached after process " <<
 				oldProcessId << " has been rolling restarted; " <<
 				"discarding newly spawned process " <<
-				newProcess.process->inspect());
+				newProcess->inspect());
 			continue;
 		}
 
@@ -227,12 +225,12 @@ void restarterThreadRealMain() {
 			case AR_POOL_AT_FULL_CAPACITY:
 				P_DEBUG("Process " << oldProcessId << " was detached and the resource " <<
 					"limits do not allow spawning a new process, so discarding new " <<
-					"rolling restarted process " << newProcess.process->inspect());
+					"rolling restarted process " << newProcess->inspect());
 				break;
 			case AR_ANOTHER_GROUP_IS_WAITING_FOR_CAPACITY:
 				P_DEBUG("Process " << oldProcessId << " was detached and another app " <<
 					"group is waiting for capacity, so discarding new " <<
-					"rolling restarted process " << newProcess.process->inspect());
+					"rolling restarted process " << newProcess->inspect());
 				break;
 			default:
 				P_BUG("Unknown result for Group::attach()");
@@ -249,12 +247,12 @@ void restarterThreadRealMain() {
 			case AR_POOL_AT_FULL_CAPACITY:
 				P_DEBUG("Canceling rolling restarting process " << oldProcessId <<
 					": the resource limits have changed. Discarding newly spawned " <<
-					"process " << newProcess.process->inspect());
+					"process " << newProcess->inspect());
 				break;
 			case AR_ANOTHER_GROUP_IS_WAITING_FOR_CAPACITY:
 				P_DEBUG("Canceling rolling restarting process " << oldProcessId <<
 					": another app group is waiting for capacity. Discarding newly spawned " <<
-					"process " << newProcess.process->inspect());
+					"process " << newProcess->inspect());
 				break;
 			default:
 				P_BUG("Unknown result for Group::attach()");

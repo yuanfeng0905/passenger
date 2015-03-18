@@ -41,8 +41,8 @@ void verifyExpensiveInvariants() const {
 	vector<GetWaiter>::const_iterator it, end = getWaitlist.end();
 	for (it = getWaitlist.begin(); it != end; it++) {
 		const GetWaiter &waiter = *it;
-		const SuperGroupPtr *superGroup;
-		assert(!superGroups.lookup(waiter.options.getAppGroupName(), &superGroup));
+		const GroupPtr *group;
+		assert(!groups.lookup(waiter.options.getAppGroupName(), &group));
 	}
 	#endif
 }
@@ -54,15 +54,12 @@ void fullVerifyInvariants() const {
 	verifyExpensiveInvariants();
 	UPDATE_TRACE_POINT();
 
-	SuperGroupMap::ConstIterator sg_it(superGroups);
-	while (*sg_it != NULL) {
-		const SuperGroupPtr &superGroup = sg_it.getValue();
-		superGroup->verifyInvariants();
-		foreach (GroupPtr group, superGroup->groups) {
-			group->verifyInvariants();
-			group->verifyExpensiveInvariants();
-		}
-		sg_it.next();
+	GroupMap::ConstIterator g_it(groups);
+	while (*g_it != NULL) {
+		const GroupPtr &group = g_it.getValue();
+		group->verifyInvariants();
+		group->verifyExpensiveInvariants();
+		g_it.next();
 	}
 }
 
@@ -98,14 +95,14 @@ static const char *maybePluralize(unsigned int count, const char *singular, cons
 
 public:
 
-const SpawnerConfigPtr &getSpawnerConfig() const {
-	return spawnerFactory->getConfig();
+const SpawningKit::ConfigPtr &getSpawningKitConfig() const {
+	return spawningKitFactory->getConfig();
 }
 
 const UnionStation::CorePtr &getUnionStationCore() const {
-	return getSpawnerConfig()->unionStationCore;
+	return getSpawningKitConfig()->unionStationCore;
 }
 
 const RandomGeneratorPtr &getRandomGenerator() const {
-	return getSpawnerConfig()->randomGenerator;
+	return getSpawningKitConfig()->randomGenerator;
 }
