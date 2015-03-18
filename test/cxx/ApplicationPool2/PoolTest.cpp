@@ -2142,7 +2142,7 @@ namespace tut {
 		// Test that the first process has been restarted.
 		vector<ProcessPtr> processes2 = pool->getProcesses();
 		ensure_equals(processes2.size(), 1u);
-		ensure(processes2[0]->pid != processes[0]->pid);
+		ensure(processes2[0]->getPid() != processes[0]->getPid());
 
 		// The second asyncGet() should eventually be processed by
 		// the newly spawned process.
@@ -2490,7 +2490,7 @@ namespace tut {
 		pool->get(options, &ticket);
 		vector<ProcessPtr> processes = pool->getProcesses();
 		GroupPtr group = processes[0]->getGroup()->shared_from_this();
-		pid_t origPid = processes[0]->pid;
+		pid_t origPid = processes[0]->getPid();
 
 		SystemTime::forceAll(2);
 		ensure(pool->restartGroupByName("tmp.wsgi"));
@@ -2501,7 +2501,7 @@ namespace tut {
 
 		EVENTUALLY(5,
 			processes = pool->getProcesses();
-			result = processes.size() == 1u && processes[0]->pid != origPid;
+			result = processes.size() == 1u && processes[0]->getPid() != origPid;
 		);
 
 		debug->messages->send("Proceed with starting detached processes checker");

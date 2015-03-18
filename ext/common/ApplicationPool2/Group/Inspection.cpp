@@ -51,6 +51,9 @@ inspectXml(Stream &stream, bool includeSecrets = true) const {
 	if (restarting()) {
 		stream << "<restarting/>";
 	}
+	if (hasSpawnError) {
+		stream << "<resisting_deployment_error/>";
+	}
 	if (includeSecrets) {
 		stream << "<secret>" << escapeForXml(getSecret()) << "</secret>";
 	}

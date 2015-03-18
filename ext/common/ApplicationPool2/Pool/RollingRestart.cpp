@@ -77,8 +77,8 @@ ProcessPtr findProcessNeedingRollingRestart(const GroupPtr &group,
 	const ProcessList &list, const set<string> &ignoreList) const
 {
 	foreach (ProcessPtr process, list) {
-		if (ignoreList.find(process->gupid) == ignoreList.end()
-		 && process->spawnerCreationTime < group->spawner->creationTime)
+		if (ignoreList.find(process->getGupid()) == ignoreList.end()
+		 && process->getSpawnerCreationTime() < group->spawner->creationTime)
 		{
 			return process;
 		}
@@ -134,10 +134,10 @@ void restarterThreadRealMain() {
 		ExceptionPtr exception;
 
 		restarterThreadStatus = "Restarting process " + oldProcessId +
-			" in group " + group->name + "...";
-		restarterThreadGupid = oldProcess->gupid;
+			" in group " + group->getName() + "...";
+		restarterThreadGupid = oldProcess->getGupid();
 		P_DEBUG("Rolling restarting process " << oldProcessId <<
-			" in group " << group->name);
+			" in group " << group->getName());
 
 		l.unlock();
 		UPDATE_TRACE_POINT();
@@ -145,9 +145,7 @@ void restarterThreadRealMain() {
 			UPDATE_TRACE_POINT();
 			this_thread::restore_interruption ri(di);
 			this_thread::restore_syscall_interruption rsi(dsi);
-			newProcess = Process::createFromSpawningKitResult(
-				palloc, getSpawningKitConfig(),
-				spawner->spawn(options));
+			newProcess = group->createProcessObject(spawner->spawn(options));
 		} catch (const thread_interrupted &) {
 			// Returning so that we don't verify invariants.
 			return;
@@ -164,14 +162,14 @@ void restarterThreadRealMain() {
 			l.lock();
 			if (group->isAlive() && oldProcess->isAlive()) {
 				// Don't try to rolling restart this process next time.
-				ignoreList.insert(oldProcess->gupid);
+				ignoreList.insert(oldProcess->getGupid());
 				if (group->options.ignoreSpawnErrors) {
 					group->hasSpawnError = true;
 				}
 			}
 
 			exception = copyException(e);
-			P_ERROR("Could not spawn process for group " << group->name <<
+			P_ERROR("Could not spawn process for group " << group->getName() <<
 				": " << exception->what());
 
 			continue;
@@ -194,7 +192,7 @@ void restarterThreadRealMain() {
 
 		UPDATE_TRACE_POINT();
 		if (!group->isAlive()) {
-			P_DEBUG("Group " << group->name << " was detached after process " <<
+			P_DEBUG("Group " << group->getName() << " was detached after process " <<
 				oldProcessId << " has been rolling restarted; " <<
 				"discarding newly spawned process " <<
 				newProcess->inspect());

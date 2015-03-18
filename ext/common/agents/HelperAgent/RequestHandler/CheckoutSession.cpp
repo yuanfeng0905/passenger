@@ -365,7 +365,7 @@ onTimeout(Client *client, Request *req) {
 		}
 		runHookScripts(hOptions);
 
-		req->session->kill(SIGKILL);
+		req->session->getProcess()->kill(SIGKILL);
 		appPool->detachProcess(req->session->getGupid());
 	}
 	disconnectWithError(&client, "maximum request time reached");

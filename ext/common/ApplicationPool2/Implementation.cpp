@@ -1324,10 +1324,16 @@ Group::generateUuid(const Pool *pool) {
 	return pool->getRandomGenerator()->generateAsciiString(20);
 }
 
+
 bool
 Process::isBeingRollingRestarted() const {
-	return getPool()->restarterThreadGupid == gupid;
+	if (getGroup() != NULL) {
+		return getGroup()->getPool()->restarterThreadGupid == getGupid();
+	} else {
+		return false;
+	}
 }
+
 
 void
 Session::requestOOBW() {

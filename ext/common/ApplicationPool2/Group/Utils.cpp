@@ -79,4 +79,5 @@ mergeOptions(const Options &other) {
 	options.minProcesses     = other.minProcesses;
 	options.statThrottleRate = other.statThrottleRate;
 	options.maxPreloaderIdleTime = other.maxPreloaderIdleTime;
+	options.maxProcesses     = other.maxProcesses;
 }
