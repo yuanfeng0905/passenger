@@ -1161,6 +1161,7 @@ Group::detachedProcessesCheckerMain(GroupPtr self) {
 				}
 			}
 
+			UPDATE_TRACE_POINT();
 			end = processesToRemove.end();
 			for (it = processesToRemove.begin(); it != end; it++) {
 				removeProcessFromList(*it, detachedProcesses);

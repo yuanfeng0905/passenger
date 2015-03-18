@@ -1605,6 +1605,7 @@ namespace tut {
 		options.appType = "wsgi";
 		options.startupFile = "passenger_wsgi.py";
 		options.spawnMethod = "direct";
+		options.minProcesses = 0;
 
 		pool->asyncGet(options, callback);
 		EVENTUALLY(5,
