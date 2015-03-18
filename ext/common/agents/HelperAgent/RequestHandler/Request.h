@@ -11,6 +11,7 @@
 
 #include <ev++.h>
 #include <string>
+#include <cstring>
 
 #include <ServerKit/HttpRequest.h>
 #include <ServerKit/FdSinkChannel.h>
@@ -86,6 +87,12 @@ public:
 		ev_tstamp timeOnResponseBegun;
 	#endif
 
+
+	Request()
+		: BaseHttpRequest()
+	{
+		memset(&scopeLogs, 0, sizeof(scopeLogs));
+	}
 
 	const char *getStateString() const {
 		switch (state) {

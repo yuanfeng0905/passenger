@@ -415,7 +415,7 @@ public:
 			if (req->session->isClosed()) {
 				sessionDoc["closed"] = true;
 			} else {
-				sessionDoc["pid"] = session->getPid();
+				sessionDoc["pid"] = (Json::Int64) session->getPid();
 				sessionDoc["gupid"] = session->getGupid().toString();
 			}
 		}
