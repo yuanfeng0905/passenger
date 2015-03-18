@@ -27,6 +27,8 @@
 #include <cstdlib>
 #include <cassert>
 #include <ApplicationPool2/Common.h>
+#include <ApplicationPool2/Context.h>
+#include <ApplicationPool2/BasicGroupInfo.h>
 #include <ApplicationPool2/Process.h>
 #include <ApplicationPool2/Options.h>
 #include <SpawningKit/Factory.h>
@@ -93,6 +95,8 @@ public:
 		 */
 		SHUT_DOWN
 	};
+
+	BasicGroupInfo info;
 
 	/**
 	 * A back reference to the containing Pool. Should never
@@ -214,6 +218,36 @@ public:
 	#include <ApplicationPool2/Group/Inspection.cpp>
 	#include <ApplicationPool2/Group/Verification.cpp>
 
+	ProcessPtr createProcessObject(const Json::Value &json) {
+		struct Guard {
+			Context *context;
+			Process *process;
+
+			Guard(Context *c, Process *s)
+				: context(c),
+				  process(s)
+				{ }
+
+			~Guard() {
+				if (process != NULL) {
+					context->getProcessObjectPool().free(process);
+				}
+			}
+
+			void clear() {
+				process = NULL;
+			}
+		};
+
+		Context *context = getContext();
+		LockGuard l(context->getMmSyncher());
+		Process *process = context->getProcessObjectPool().malloc();
+		Guard guard(context, process);
+		process = new (process) Process(&info, json);
+		guard.clear();
+		return ProcessPtr(process, false);
+	}
+
 	/* Determines which process to route a get() action to. The returned process
 	 * is guaranteed to be `canBeRoutedTo()`, i.e. not totally busy.
 	 *
@@ -261,7 +295,7 @@ public:
 		session->onInitiateFailure = _onSessionInitiateFailure;
 		session->onClose   = _onSessionClose;
 		if (process->enabled == Process::ENABLED) {
-			enabledProcessBusynessLevels[process->index] = process->busyness();
+			enabledProcessBusynessLevels[process->getIndex()] = process->busyness();
 			if (!wasTotallyBusy && process->isTotallyBusy()) {
 				nEnabledProcessesTotallyBusy++;
 			}
@@ -378,7 +412,7 @@ public:
 			LifeStatus lifeStatus = (LifeStatus) this->lifeStatus.load(boost::memory_order_relaxed);
 			P_ASSERT_EQ(lifeStatus, SHUTTING_DOWN);
 		#endif
-		P_DEBUG("Finishing shutdown of group " << name);
+		P_DEBUG("Finishing shutdown of group " << info.name);
 		if (shutdownCallback) {
 			postLockActions.push_back(shutdownCallback);
 			shutdownCallback = Callback();
@@ -390,15 +424,7 @@ public:
 	}
 
 public:
-	static const unsigned int SECRET_SIZE = 16;
-
 	Options options;
-	/** This name uniquely identifies this Group within its Pool. It can also be used as the display name. */
-	const string name;
-	/** A secret token that may be known among all processes in this Group. Used for securing
-	 * intra-group process communication.
-	 */
-	char secret[SECRET_SIZE];
 	/** A UUID that's generated on Group initialization, and changes every time
 	 * the Group receives a restart command. Allows Union Station to track app
 	 * restarts. This information is public.
@@ -552,7 +578,7 @@ public:
 		assert(isAlive());
 		assert(getWaitlist.empty());
 
-		P_DEBUG("Begin shutting down group " << name);
+		P_DEBUG("Begin shutting down group " << info.name);
 		shutdownCallback = callback;
 		detachAll(postLockActions);
 		startCheckingDetachedProcesses(true);
@@ -608,7 +634,7 @@ public:
 				// spawning failed because the pool is at full capacity, then we
 				// try to kill some random idle process in the pool and try again.
 				if (spawn() == SR_ERR_POOL_AT_FULL_CAPACITY && enabledCount == 0) {
-					P_INFO("Unable to spawn the the sole process for group " << name <<
+					P_INFO("Unable to spawn the the sole process for group " << info.name <<
 						" because the max pool size has been reached. Trying " <<
 						"to shutdown another idle process to free capacity...");
 					if (poolForceFreeCapacity(this, postLockActions) != NULL) {
@@ -698,13 +724,13 @@ public:
 		} else if (poolAtFullCapacity()) {
 			return SR_ERR_POOL_AT_FULL_CAPACITY;
 		} else {
-			P_DEBUG("Requested spawning of new process for group " << name);
+			P_DEBUG("Requested spawning of new process for group " << info.name);
 			interruptableThreads.create_thread(
 				boost::bind(&Group::spawnThreadMain,
 					this, shared_from_this(), spawner,
 					options.copyAndPersist().clearPerRequestFields(),
 					restartsInitiated),
-				"Group process spawner: " + name,
+				"Group process spawner: " + info.name,
 				POOL_HELPER_THREAD_STACK_SIZE);
 			m_spawning = true;
 			processesBeingSpawned++;
@@ -723,6 +749,22 @@ public:
 	/********************************************
 	 * Queries
 	 ********************************************/
+
+	 Context *getContext() const {
+		return info.context;
+	}
+
+	const BasicGroupInfo &getInfo() {
+		return info;
+	}
+
+	StaticString getName() const {
+		return info.name;
+	}
+
+	StaticString getSecret() const {
+		return info.getSecret();
+	}
 
 	unsigned int getProcessCount() const {
 		return enabledCount + disablingCount + disabledCount;

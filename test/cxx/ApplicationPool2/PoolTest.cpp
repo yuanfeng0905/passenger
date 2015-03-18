@@ -184,8 +184,7 @@ namespace tut {
 		}
 
 		void disableProcess(ProcessPtr process, AtomicInt *result) {
-			*result = (int) pool->disableProcess(StaticString(process->gupid,
-				process->gupidSize));
+			*result = (int) pool->disableProcess(process->getGupid());
 		}
 	};
 
@@ -562,7 +561,7 @@ namespace tut {
 		EVENTUALLY(5,
 			result = number == 5;
 		);
-		ensure_equals(currentSession->getProcess()->pid, 3);
+		ensure_equals(currentSession->getProcess()->getPid(), 3);
 		ensure_equals(group->getWaitlist.size(), 0u);
 	}
 
@@ -840,7 +839,7 @@ namespace tut {
 			vector<ProcessPtr> processes = pool->getProcesses(false);
 			if (processes.size() == 1) {
 				GroupPtr group = processes[0]->getGroup()->shared_from_this();
-				result = group->name == "foo";
+				result = group->getName() == "foo";
 			} else {
 				result = false;
 			}
@@ -890,7 +889,7 @@ namespace tut {
 		EVENTUALLY(5,
 			result = number == 1;
 		);
-		ensure_equals(currentSession->getGroup()->name, "bar");
+		ensure_equals(currentSession->getGroup()->getName(), "bar");
 
 		// When that request is done, the process for bar should be killed,
 		// and a process for foo should be spawned.
@@ -902,7 +901,7 @@ namespace tut {
 			vector<ProcessPtr> processes = pool->getProcesses(false);
 			if (processes.size() == 1) {
 				GroupPtr group = processes[0]->getGroup()->shared_from_this();
-				result = group->name == "foo";
+				result = group->getName() == "foo";
 			} else {
 				result = false;
 			}
@@ -1079,8 +1078,8 @@ namespace tut {
 		options.minProcesses = 0;
 		ProcessPtr process = pool->get(options, &ticket)->getProcess()->shared_from_this();
 
-		ScopeGuard g(boost::bind(::kill, process->pid, SIGCONT));
-		kill(process->pid, SIGSTOP);
+		ScopeGuard g(boost::bind(::kill, process->getPid(), SIGCONT));
+		kill(process->getPid(), SIGSTOP);
 
 		ensure(pool->detachProcess(process));
 		{
@@ -1097,7 +1096,7 @@ namespace tut {
 				|| !process->osProcessExists();
 		);
 
-		kill(process->pid, SIGCONT);
+		kill(process->getPid(), SIGCONT);
 		g.clear();
 
 		EVENTUALLY(1,
@@ -1161,8 +1160,7 @@ namespace tut {
 		ensureMinProcesses(2);
 		vector<ProcessPtr> processes = pool->getProcesses();
 		ensure_equals("Disabling succeeds",
-			pool->disableProcess(StaticString(processes[0]->gupid,
-				processes[0]->gupidSize)), DR_SUCCESS);
+			pool->disableProcess(processes[0]->getGupid()), DR_SUCCESS);
 
 		LockGuard l(pool->syncher);
 		ensure(processes[0]->isAlive());
@@ -1212,8 +1210,7 @@ namespace tut {
 		ensure_equals("(1)", processes.size(), 1u);
 
 		setLogLevel(LVL_ERROR);
-		DisableResult result = pool->disableProcess(StaticString(
-			processes[0]->gupid, processes[0]->gupidSize));
+		DisableResult result = pool->disableProcess(processes[0]->getGupid());
 		ensure_equals("(2)", result, DR_ERROR);
 		ensure_equals("(3)", pool->getProcessCount(), 1u);
 	}
@@ -1360,7 +1357,7 @@ namespace tut {
 		vector<ProcessPtr> processes = pool->getProcesses();
 		ensure_equals(processes.size(), 2u);
 		DisableResult result = pool->disableProcess(
-			StaticString(processes[0]->gupid, processes[0]->gupidSize));
+			processes[0]->getGupid());
 		ensure_equals(result, DR_SUCCESS);
 
 		{
@@ -1431,8 +1428,7 @@ namespace tut {
 		EVENTUALLY(5,
 			result = number == 1;
 		);
-		string gupid(currentSession->getProcess()->gupid,
-			currentSession->getProcess()->gupidSize);
+		string gupid = currentSession->getProcess()->getGupid().toString();
 		ensure(!gupid.empty());
 		ensure_equals(currentSession->getProcess(),
 			pool->findProcessByGupid(gupid).get());
@@ -1676,7 +1672,7 @@ namespace tut {
 		for (int i = 0; i < 3; i++) {
 			pool->get(options, &ticket).reset();
 			ensure_equals(pool->getProcessCount(), 1u);
-			ensure_equals(pool->getProcesses()[0]->pid, origPid);
+			ensure_equals(pool->getProcesses()[0]->getPid(), origPid);
 		}
 
 		pool->get(options, &ticket).reset();
@@ -2021,8 +2017,7 @@ namespace tut {
 		options.statThrottleRate = 0;
 
 		SessionPtr session = pool->get(options, &ticket);
-		string gupid(session->getProcess()->gupid,
-			session->getProcess()->gupidSize);
+		string gupid = session->getProcess()->getGupid().toString();
 		session.reset();
 		pool->detachProcess(gupid);
 		touchFile("tmp.wsgi/tmp/restart.txt", 1);
