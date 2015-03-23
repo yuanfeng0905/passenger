@@ -347,6 +347,7 @@ _onTimeout(EV_P_ struct ev_timer *timer, int revents) {
 
 void
 onTimeout(Client *client, Request *req) {
+	SKC_LOG_EVENT(RequestHandler, client, "onTimeout");
 	if (req->session != NULL) {
 		SKC_ERROR(client, "Maximum request time of " << req->maxRequestTime <<
 			" seconds reached, killing process " << req->session->getPid());
