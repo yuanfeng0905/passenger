@@ -138,6 +138,13 @@ private
       opts.on("--data-buffer-dir PATH", String, "Use the given data buffer directory") do |val|
         @watchdog_options[:data_buffer_dir] = val
       end
+      opts.on("--ctl NAME=VALUE", String, "Directly set internal config option") do |val|
+        if val !~ /=.+/
+          abort "*** ERROR: invalid --ctl format: #{val}"
+        end
+        key, val = val.split("=", 2)
+        @watchdog_options[key] = val
+      end
       opts.on("--help", "Show this help message") do
         @options[:help] = true
       end
