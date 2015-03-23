@@ -446,6 +446,7 @@ private:
 
 			HeaderTable headers;
 			string logFile = getLogFile();
+			string fileDescriptorLogFile = getFileDescriptorLogFile();
 
 			headers.insert(req->pool, "content-type", "application/json");
 			Json::Value doc;
@@ -454,6 +455,9 @@ private:
 			doc["log_level"] = getLogLevel();
 			if (!logFile.empty()) {
 				doc["log_file"] = logFile;
+			}
+			if (!fileDescriptorLogFile.empty()) {
+				doc["file_descriptor_log_file"] = fileDescriptorLogFile;
 			}
 
 			writeSimpleResponse(client, 200, &headers,
@@ -488,8 +492,24 @@ private:
 			setLogLevel(json["log_level"].asInt());
 		}
 		if (json.isMember("log_file")) {
-			if (!setLogFile(json["log_file"].asCString())) {
-				int e = errno;
+			string logFile = json["log_file"].asString();
+			try {
+				logFile = absolutizePath(logFile);
+			} catch (const SystemException &e) {
+				unsigned int bufsize = 1024;
+				char *message = (char *) psg_pnalloc(req->pool, bufsize);
+				snprintf(message, bufsize, "{ \"status\": \"error\", "
+					"\"message\": \"Cannot absolutize log file filename: %s\" }",
+					e.what());
+				writeSimpleResponse(client, 500, &headers, message);
+				if (!req->ended()) {
+					endRequest(&client, &req);
+				}
+				return;
+			}
+
+			int e;
+			if (!setLogFile(logFile, &e)) {
 				unsigned int bufsize = 1024;
 				char *message = (char *) psg_pnalloc(req->pool, bufsize);
 				snprintf(message, bufsize, "{ \"status\": \"error\", "
@@ -518,6 +538,7 @@ private:
 		if (req->method != HTTP_POST) {
 			respondWith405(client, req);
 		} else if (authorize(client, req, FULL)) {
+			int e;
 			HeaderTable headers;
 			headers.insert(req->pool, "content-type", "application/json");
 
@@ -526,24 +547,45 @@ private:
 				writeSimpleResponse(client, 500, &headers, "{ \"status\": \"error\", "
 					"\"code\": \"NO_LOG_FILE\", "
 					"\"message\": \"" PROGRAM_NAME " was not configured with a log file.\" }\n");
-			} else {
-				if (!setLogFile(logFile.c_str())) {
-					int e = errno;
+				if (!req->ended()) {
+					endRequest(&client, &req);
+				}
+				return;
+			}
+
+			if (!setLogFile(logFile, &e)) {
+				unsigned int bufsize = 1024;
+				char *message = (char *) psg_pnalloc(req->pool, bufsize);
+				snprintf(message, bufsize, "{ \"status\": \"error\", "
+					"\"code\": \"LOG_FILE_OPEN_ERROR\", "
+					"\"message\": \"Cannot reopen log file %s: %s (errno=%d)\" }",
+					logFile.c_str(), strerror(e), e);
+				writeSimpleResponse(client, 500, &headers, message);
+				if (!req->ended()) {
+					endRequest(&client, &req);
+				}
+				return;
+			}
+			P_NOTICE("Log file reopened.");
+
+			if (hasFileDescriptorLogFile()) {
+				if (!setFileDescriptorLogFile(getFileDescriptorLogFile(), &e)) {
 					unsigned int bufsize = 1024;
 					char *message = (char *) psg_pnalloc(req->pool, bufsize);
 					snprintf(message, bufsize, "{ \"status\": \"error\", "
-						"\"code\": \"LOG_FILE_OPEN_ERROR\", "
-						"\"message\": \"Cannot reopen log file: %s (errno=%d)\" }",
-						strerror(e), e);
+						"\"code\": \"FD_LOG_FILE_OPEN_ERROR\", "
+						"\"message\": \"Cannot reopen file descriptor log file %s: %s (errno=%d)\" }",
+						getFileDescriptorLogFile().c_str(), strerror(e), e);
 					writeSimpleResponse(client, 500, &headers, message);
 					if (!req->ended()) {
 						endRequest(&client, &req);
 					}
 					return;
 				}
-				P_NOTICE("Log file reopened.");
-				writeSimpleResponse(client, 200, &headers, "{ \"status\": \"ok\" }\n");
+				P_NOTICE("File descriptor log file reopened.");
 			}
+
+			writeSimpleResponse(client, 200, &headers, "{ \"status\": \"ok\" }\n");
 
 			if (!req->ended()) {
 				endRequest(&client, &req);

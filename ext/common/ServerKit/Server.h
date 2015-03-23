@@ -1,6 +1,6 @@
 /*
  *  Phusion Passenger - https://www.phusionpassenger.com/
- *  Copyright (c) 2014 Phusion
+ *  Copyright (c) 2014-2015 Phusion
  *
  *  "Phusion Passenger" is a trademark of Hongli Lai & Ninh Bui.
  *
@@ -246,7 +246,7 @@ private:
 				break;
 			}
 
-			FdGuard guard(fd);
+			FdGuard guard(fd, NULL, 0);
 			client = checkoutClientObject();
 			TAILQ_INSERT_HEAD(&activeClients, client, nextClient.activeOrDisconnectedClient);
 			acceptedClients[acceptCount] = client;
@@ -255,6 +255,8 @@ private:
 			totalClientsAccepted++;
 			client->number = getNextClientNumber();
 			reinitializeClient(client, fd);
+			P_LOG_FILE_DESCRIPTOR_PURPOSE(fd, "Server " << getServerName()
+				<< ", client " << getClientName(client));
 			guard.clear();
 		}
 
@@ -311,7 +313,7 @@ private:
 			int fd = syscalls::accept(serverFd,
 				(struct sockaddr *) &u,
 				&addrlen);
-			FdGuard guard(fd);
+			FdGuard guard(fd, __FILE__, __LINE__);
 			if (fd == -1) {
 				return -1;
 			} else {
@@ -766,6 +768,8 @@ public:
 			acceptedClients[i] = client;
 			client->number = getNextClientNumber();
 			reinitializeClient(client, fds[i]);
+			P_LOG_FILE_DESCRIPTOR_PURPOSE(fds[i], "Server " << getServerName()
+				<< ", client " << getClientName(client));
 		}
 
 		SKS_DEBUG(size << " new client(s) accepted; there are now " <<
@@ -802,6 +806,12 @@ public:
 		unsigned int ret = uintToString(client->number, buf, size - 1);
 		buf[ret] = '\0';
 		return ret;
+	}
+
+	string getClientName(const Client *client) {
+		char buf[128];
+		unsigned int size = getClientName(client, buf, sizeof(buf));
+		return string(buf, size);
 	}
 
 	vector<ClientRefType> getActiveClients() {
@@ -884,6 +894,7 @@ public:
 		SKC_TRACE(c, 2, "Closing client file descriptor: " << fdnum);
 		try {
 			safelyClose(fdnum);
+			P_LOG_FILE_DESCRIPTOR_CLOSE(fdnum);
 		} catch (const SystemException &e) {
 			SKC_WARN(c, "An error occurred while closing the client file descriptor: " <<
 				e.what() << " (errno=" << e.code() << ")");
