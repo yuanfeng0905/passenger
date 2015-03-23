@@ -73,6 +73,7 @@ virtual void reinitializeRequest(Client *client, Request *req) {
 	req->stickySession = false;
 	req->halfCloseAppConnection = false;
 	req->sessionCheckoutTry = 0;
+	req->appResponseInitialized = false;
 	req->strip100ContinueHeader = false;
 	req->hasPragmaHeader = false;
 	req->host = NULL;
@@ -115,13 +116,17 @@ virtual void deinitializeRequest(Client *client, Request *req) {
 
 	/***************/
 
-	deinitializeAppResponse(client, req);
+	if (req->appResponseInitialized) {
+		deinitializeAppResponse(client, req);
+	}
 
 	ParentClass::deinitializeRequest(client, req);
 }
 
 void reinitializeAppResponse(Client *client, Request *req) {
 	AppResponse *resp = &req->appResponse;
+
+	req->appResponseInitialized = true;
 
 	resp->httpMajor = 1;
 	resp->httpMinor = 0;
@@ -147,6 +152,8 @@ void reinitializeAppResponse(Client *client, Request *req) {
 
 void deinitializeAppResponse(Client *client, Request *req) {
 	AppResponse *resp = &req->appResponse;
+
+	req->appResponseInitialized = false;
 
 	if (resp->httpState == AppResponse::PARSING_HEADERS
 	 && resp->parserState.headerParser != NULL)
