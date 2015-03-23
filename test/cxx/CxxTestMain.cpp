@@ -19,6 +19,8 @@
 #include <Utils/License.c>
 
 using namespace std;
+using namespace Passenger;
+using namespace TestSupport;
 
 namespace tut {
 	test_runner_singleton runner;
@@ -139,7 +141,7 @@ installAbortHandler() {
 
 	options.set("passenger_root", resourceLocator->getRoot());
 
-	initializeAgentOptions(options);
+	initializeAgentOptions("CxxTestMain", options);
 	installAgentAbortHandler();
 }
 

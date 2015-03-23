@@ -81,12 +81,15 @@ public:
 		: errorCallback(NULL)
 	{
 		FileBufferedChannel::setDataCallback(onDataCallback);
+		watcher.active = false;
 		watcher.fd = -1;
 		watcher.data = this;
 	}
 
 	~FileBufferedFdSinkChannel() {
-		ev_io_stop(ctx->libev->getLoop(), &watcher);
+		if (ev_is_active(&watcher)) {
+			ev_io_stop(ctx->libev->getLoop(), &watcher);
+		}
 	}
 
 	// May only be called right after construction.
@@ -147,7 +150,9 @@ public:
 	}
 
 	void deinitialize() {
-		ev_io_stop(ctx->libev->getLoop(), &watcher);
+		if (ev_is_active(&watcher)) {
+			ev_io_stop(ctx->libev->getLoop(), &watcher);
+		}
 		watcher.fd = -1;
 		FileBufferedChannel::deinitialize();
 	}
