@@ -133,10 +133,20 @@ private
         @watchdog_options[:pool_idle_time] = val
       end
       opts.on("--instance-registry-dir PATH", String, "Use the given instance registry directory") do |val|
-        @watchdog_options[:instance_registry] = val
+        @watchdog_options[:instance_registry_dir] = val
       end
       opts.on("--data-buffer-dir PATH", String, "Use the given data buffer directory") do |val|
         @watchdog_options[:data_buffer_dir] = val
+      end
+      opts.on("--fd-log-file PATH", String, "The file descriptor log file to use") do |val|
+        @watchdog_options[:file_descriptor_log_file] = val
+      end
+      opts.on("--ctl NAME=VALUE", String, "Directly set internal config option") do |val|
+        if val !~ /=.+/
+          abort "*** ERROR: invalid --ctl format: #{val}"
+        end
+        key, val = val.split("=", 2)
+        @watchdog_options[key] = val
       end
       opts.on("--help", "Show this help message") do
         @options[:help] = true

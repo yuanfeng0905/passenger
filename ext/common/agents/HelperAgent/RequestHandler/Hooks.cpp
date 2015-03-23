@@ -92,6 +92,7 @@ virtual void reinitializeRequest(Client *client, Request *req) {
 	/***************/
 
 	req->maxRequestTime = 0;
+	req->timeoutTimer.active = false;
 }
 
 virtual void deinitializeRequest(Client *client, Request *req) {
