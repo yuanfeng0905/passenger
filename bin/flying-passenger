@@ -138,6 +138,9 @@ private
       opts.on("--data-buffer-dir PATH", String, "Use the given data buffer directory") do |val|
         @watchdog_options[:data_buffer_dir] = val
       end
+      opts.on("--fd-log-file PATH", String, "The file descriptor log file to use") do |val|
+        @watchdog_options[:file_descriptor_log_file] = val
+      end
       opts.on("--ctl NAME=VALUE", String, "Directly set internal config option") do |val|
         if val !~ /=.+/
           abort "*** ERROR: invalid --ctl format: #{val}"
