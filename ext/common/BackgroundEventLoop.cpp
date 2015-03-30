@@ -146,6 +146,7 @@ BackgroundEventLoop::stop() {
 	if (priv->thr != NULL) {
 		ev_async_send(loop, async);
 		priv->thr->join();
+		delete priv->thr;
 		priv->thr = NULL;
 	}
 }

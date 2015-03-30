@@ -134,17 +134,19 @@ module PhusionPassenger
           opts.on("--log-file FILENAME", String,
             "Where to write log messages. Default:#{nl}" +
             "console, or /dev/null when daemonized") do |value|
-            options[:log_file] = value
+            options[:log_file] = File.absolute_path_no_resolve(value)
           end
           opts.on("--pid-file FILENAME", String, "Where to store the PID file") do |value|
-            options[:pid_file] = value
+            options[:pid_file] = File.absolute_path_no_resolve(value)
           end
           opts.on("--instance-registry-dir PATH", String,
             "Use the given instance registry directory") do |value|
-            options[:instance_registry_dir] = value
+              # relative values OK
+              options[:instance_registry_dir] = value
           end
           opts.on("--data-buffer-dir PATH", String,
             "Use the given data buffer directory") do |value|
+            # relative values OK (absolutizePath in HelperAgent Main)
             options[:data_buffer_dir] = value
           end
 
@@ -159,6 +161,7 @@ module PhusionPassenger
             "Consider application a Ruby app, and use#{nl}" +
             "the given rackup file") do |value|
             options[:app_type] = "rack"
+            # relative w.r.t. app dir
             options[:startup_file] = value
           end
           opts.on("--app-type NAME", String,
@@ -167,6 +170,7 @@ module PhusionPassenger
           end
           opts.on("--startup-file FILENAME", String,
             "Force given startup file to be used") do |value|
+            # relative w.r.t. app dir
             options[:startup_file] = value
           end
           opts.on("--spawn-method NAME", String,
@@ -270,6 +274,7 @@ module PhusionPassenger
           opts.separator ""
           opts.separator "Nginx engine options:"
           opts.on("--nginx-bin FILENAME", String, "Nginx binary to use as core") do |value|
+            # relative values OK
             options[:nginx_bin] = value
           end
           opts.on("--nginx-version VERSION", String,
