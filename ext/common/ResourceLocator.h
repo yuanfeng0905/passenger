@@ -153,7 +153,7 @@ public:
 			return path;
 		}
 
-		throw RuntimeException("Support binary " + name + " not found");
+		throw RuntimeException("Support binary " + name + " not found (tried: " + getSupportBinariesDir() + "/" + name + " and " + path + ")");
 	}
 };
 
