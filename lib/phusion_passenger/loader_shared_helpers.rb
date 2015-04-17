@@ -401,7 +401,10 @@ module PhusionPassenger
         end
       end
       if Kernel.respond_to?(:gem, true)
-        gem(gem_name)
+        begin
+          gem(gem_name)
+        rescue Gem::LoadError
+        end
       end
       require(library_name || gem_name)
     end
