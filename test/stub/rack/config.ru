@@ -2,10 +2,16 @@
 require 'cgi'
 
 require File.expand_path(File.dirname(__FILE__) + "/library")
+require 'cgi'
 
 app = lambda do |env|
   case env['PATH_INFO']
   when '/'
+    params = CGI.parse(env['QUERY_STRING'])
+    if params['sleep_seconds'].first
+      sleep params['sleep_seconds'].first.to_f
+    end
+
     if File.exist?("front_page.txt")
       text_response(File.read("front_page.txt"))
     else

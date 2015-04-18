@@ -188,6 +188,7 @@ initializePoolOptions(Client *client, Request *req, RequestAnalysis &analysis) {
 	}
 
 	if (!req->ended()) {
+		fillPoolOption(req, req->options.environmentVariables, PASSENGER_ENV_VARS);
 		fillPoolOption(req, req->options.maxRequests, PASSENGER_MAX_REQUESTS);
 	}
 }
@@ -195,6 +196,12 @@ initializePoolOptions(Client *client, Request *req, RequestAnalysis &analysis) {
 void
 fillPoolOptionsFromAgentsOptions(Options &options) {
 	options.ruby = defaultRuby;
+	if (agentsOptions->has("default_nodejs")) {
+		options.nodejs = agentsOptions->get("default_nodejs");
+	}
+	if (agentsOptions->has("default_python")) {
+		options.python = agentsOptions->get("default_python");
+	}
 	options.logLevel = getLogLevel();
 	options.loggingAgentAddress = loggingAgentAddress;
 	options.loggingAgentUsername = P_STATIC_STRING("logging");
@@ -356,7 +363,6 @@ createNewPoolOptions(Client *client, Request *req, const HashedStaticString &app
 	fillPoolOption(req, options.restartDir, "!~PASSENGER_RESTART_DIR");
 	fillPoolOption(req, options.startupFile, "!~PASSENGER_STARTUP_FILE");
 	fillPoolOption(req, options.loadShellEnvvars, "!~PASSENGER_LOAD_SHELL_ENVVARS");
-	fillPoolOption(req, options.environmentVariables, "!~PASSENGER_ENV_VARS");
 	fillPoolOption(req, options.raiseInternalError, "!~PASSENGER_RAISE_INTERNAL_ERROR");
 	/******************/
 	fillPoolOption(req, options.debugger, "!~PASSENGER_DEBUGGER");
