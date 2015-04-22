@@ -39,6 +39,11 @@
 	
 
 	
+		addHeader(result, StaticString("!~PASSENGER_METEOR_APP_SETTINGS",
+			sizeof("!~PASSENGER_METEOR_APP_SETTINGS") - 1), config->meteorAppSettings);
+	
+
+	
 		addHeader(result, StaticString("!~PASSENGER_APP_ENV",
 			sizeof("!~PASSENGER_APP_ENV") - 1), config->appEnv);
 	
