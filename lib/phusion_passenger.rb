@@ -14,7 +14,7 @@ module PhusionPassenger
 
   PACKAGE_NAME = 'passenger-enterprise-server'
   # Run 'rake ext/common/Constants.h' after changing this number.
-  VERSION_STRING = '5.0.7'
+  VERSION_STRING = '5.0.8'
 
   PREFERRED_NGINX_VERSION = '1.6.3'
   NGINX_SHA256_CHECKSUM = '0a98e95b366e4d6042f331e1fa4d70e18fd1e49d8993e589008e70e742b7e757'
@@ -133,7 +133,7 @@ module PhusionPassenger
   # method was used. Can be 'deb', 'rpm', 'homebrew', 'test'
   # or 'unknown'.
   def self.packaging_method
-    return @custom_packaging_method
+    return @packaging_method
   end
 
   # Whether the current Phusion Passenger installation is installed
