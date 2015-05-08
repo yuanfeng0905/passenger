@@ -439,8 +439,10 @@ static ngx_int_t
 init_module(ngx_cycle_t *cycle) {
     char *error_message;
 
-    if (passenger_main_conf.fly_with.len != 0
-     || passenger_main_conf.root_dir.len != 0) {
+    if ((passenger_main_conf.fly_with.len != 0
+      || passenger_main_conf.root_dir.len != 0)
+     && !ngx_test_config)
+    {
         passenger_enterprise_license_init();
         error_message = passenger_enterprise_license_check();
         if (error_message != NULL) {
@@ -482,7 +484,9 @@ init_worker_process(ngx_cycle_t *cycle) {
     ngx_core_conf_t *core_conf;
 
     if (passenger_main_conf.fly_with.len == 0
-     && passenger_main_conf.root_dir.len != 0) {
+     && passenger_main_conf.root_dir.len != 0
+     && !ngx_test_config)
+    {
         save_master_process_pid(cycle);
 
         core_conf = (ngx_core_conf_t *) ngx_get_conf(cycle->conf_ctx, ngx_core_module);
