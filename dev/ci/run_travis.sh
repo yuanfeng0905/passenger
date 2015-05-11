@@ -23,15 +23,7 @@ export rvmsudo_secure_path=1
 export LC_CTYPE=C.UTF-8
 unset BUNDLE_GEMFILE
 
-if [[ -e /etc/workaround-docker-2267/hosts ]]; then
-	HOSTS_FILE=/etc/workaround-docker-2267/hosts
-	sudo workaround-docker-2267
-	find /usr/local/rvm/rubies/*/lib/ruby -name resolv.rb | sudo xargs sed -i 's|/etc/hosts|/cte/hosts|g'
-else
-	HOSTS_FILE=/etc/hosts
-fi
-
-sudo sh -c "cat >> $HOSTS_FILE" <<EOF
+sudo sh -c "cat >> /etc/hosts" <<EOF
 127.0.0.1 passenger.test
 127.0.0.1 mycook.passenger.test
 127.0.0.1 zsfa.passenger.test
