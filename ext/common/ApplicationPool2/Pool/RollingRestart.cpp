@@ -6,22 +6,28 @@
  *
  *  See LICENSE file for license information.
  */
+#include <ApplicationPool2/Pool.h>
 
-// This file is included inside the Pool class.
+/*************************************************************************
+ *
+ * Rolling restarting functions for ApplicationPool2::Pool
+ *
+ *************************************************************************/
 
-// Actually private, but marked public so that unit tests can access the fields.
-public:
+namespace Passenger {
+namespace ApplicationPool2 {
 
-bool restarterThreadActive;
-string restarterThreadStatus;
-string restarterThreadGupid;
+using namespace std;
+using namespace boost;
+
 
 /*
  * The restarter thread takes care of rolling restarting processes.
  * It works by going over all processes in the pool, and replacing
  * processes for which holds 'spawnerCreationTime < group.spawner.creationTime'.
  */
-void startRestarterThread() {
+void
+Pool::startRestarterThread() {
 	if (!restarterThreadActive) {
 		P_DEBUG("Starting rolling restarter thread");
 		restarterThreadActive = true;
@@ -38,7 +44,8 @@ void startRestarterThread() {
  * Returns a random process within the entire pool that should be rolling restarted,
  * or null if there is no such process.
  */
-ProcessPtr findProcessNeedingRollingRestart(const set<string> &ignoreList) const {
+ProcessPtr
+Pool::findProcessNeedingRollingRestart(const set<string> &ignoreList) const {
 	GroupMap::ConstIterator g_it(groups);
 	while (*g_it != NULL) {
 		GroupPtr group = g_it.getValue();
@@ -55,7 +62,8 @@ ProcessPtr findProcessNeedingRollingRestart(const set<string> &ignoreList) const
  * Returns a random process within a specific group that should be rolling
  * restarted, or null if there is no such process.
  */
-ProcessPtr findProcessNeedingRollingRestart(const GroupPtr &group,
+ProcessPtr
+Pool::findProcessNeedingRollingRestart(const GroupPtr &group,
 	const set<string> &ignoreList) const
 {
 	if (!group->isAlive() || group->hasSpawnError) {
@@ -73,7 +81,8 @@ ProcessPtr findProcessNeedingRollingRestart(const GroupPtr &group,
 	return process;
 }
 
-ProcessPtr findProcessNeedingRollingRestart(const GroupPtr &group,
+ProcessPtr
+Pool::findProcessNeedingRollingRestart(const GroupPtr &group,
 	const ProcessList &list, const set<string> &ignoreList) const
 {
 	foreach (ProcessPtr process, list) {
@@ -86,7 +95,8 @@ ProcessPtr findProcessNeedingRollingRestart(const GroupPtr &group,
 	return ProcessPtr();
 }
 
-void setRestarterThreadInactive(this_thread::disable_interruption *di,
+void
+Pool::setRestarterThreadInactive(this_thread::disable_interruption *di,
 	this_thread::disable_syscall_interruption *dsi)
 {
 	ScopedLock l(syncher);
@@ -101,7 +111,8 @@ void setRestarterThreadInactive(this_thread::disable_interruption *di,
 	}
 }
 
-void restarterThreadMain() {
+void
+Pool::restarterThreadMain() {
 	try {
 		restarterThreadRealMain();
 	} catch (const thread_interrupted &) {
@@ -109,7 +120,8 @@ void restarterThreadMain() {
 	}
 }
 
-void restarterThreadRealMain() {
+void
+Pool::restarterThreadRealMain() {
 	TRACE_POINT();
 	this_thread::disable_interruption di;
 	this_thread::disable_syscall_interruption dsi;
@@ -285,3 +297,7 @@ void restarterThreadRealMain() {
 	verifyInvariants();
 	verifyExpensiveInvariants();
 }
+
+
+} // namespace ApplicationPool2
+} // namespace Passenger

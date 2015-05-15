@@ -6,23 +6,32 @@
  *
  *  See LICENSE file for license information.
  */
+#include <ApplicationPool2/Pool.h>
 
-// This file is included inside the Pool class.
+/*************************************************************************
+ *
+ * Analytics collection functions for ApplicationPool2::Pool
+ *
+ *************************************************************************/
 
-private:
+namespace Passenger {
+namespace ApplicationPool2 {
 
-struct UnionStationLogEntry {
-	string groupName;
-	const char *category;
-	string key;
-	string data;
-};
-
-SystemMetricsCollector systemMetricsCollector;
-SystemMetrics systemMetrics;
+using namespace std;
+using namespace boost;
 
 
-static void collectAnalytics(PoolPtr self) {
+void
+Pool::initializeAnalyticsCollection() {
+	interruptableThreads.create_thread(
+		boost::bind(collectAnalytics, shared_from_this()),
+		"Pool analytics collector",
+		POOL_HELPER_THREAD_STACK_SIZE
+	);
+}
+
+void
+Pool::collectAnalytics(PoolPtr self) {
 	TRACE_POINT();
 	syscalls::usleep(3000000);
 	while (!this_thread::interruption_requested()) {
@@ -54,13 +63,15 @@ static void collectAnalytics(PoolPtr self) {
 	}
 }
 
-static void collectPids(const ProcessList &processes, vector<pid_t> &pids) {
+void
+Pool::collectPids(const ProcessList &processes, vector<pid_t> &pids) {
 	foreach (const ProcessPtr &process, processes) {
 		pids.push_back(process->getPid());
 	}
 }
 
-static void updateProcessMetrics(const ProcessList &processes,
+void
+Pool::updateProcessMetrics(const ProcessList &processes,
 	const ProcessMetricMap &allMetrics,
 	vector<ProcessPtr> &processesToDetach)
 {
@@ -93,7 +104,8 @@ static void updateProcessMetrics(const ProcessList &processes,
 	}
 }
 
-void prepareUnionStationProcessStateLogs(vector<UnionStationLogEntry> &logEntries,
+void
+Pool::prepareUnionStationProcessStateLogs(vector<UnionStationLogEntry> &logEntries,
 	const GroupPtr &group) const
 {
 	const UnionStation::CorePtr &unionStationCore = getUnionStationCore();
@@ -113,7 +125,8 @@ void prepareUnionStationProcessStateLogs(vector<UnionStationLogEntry> &logEntrie
 	}
 }
 
-void prepareUnionStationSystemMetricsLogs(vector<UnionStationLogEntry> &logEntries,
+void
+Pool::prepareUnionStationSystemMetricsLogs(vector<UnionStationLogEntry> &logEntries,
 	const GroupPtr &group) const
 {
 	const UnionStation::CorePtr &unionStationCore = getUnionStationCore();
@@ -132,7 +145,8 @@ void prepareUnionStationSystemMetricsLogs(vector<UnionStationLogEntry> &logEntri
 	}
 }
 
-void realCollectAnalytics() {
+void
+Pool::realCollectAnalytics() {
 	TRACE_POINT();
 	this_thread::disable_interruption di;
 	this_thread::disable_syscall_interruption dsi;
@@ -230,12 +244,5 @@ void realCollectAnalytics() {
 }
 
 
-protected:
-
-void initializeAnalyticsCollection() {
-	interruptableThreads.create_thread(
-		boost::bind(collectAnalytics, shared_from_this()),
-		"Pool analytics collector",
-		POOL_HELPER_THREAD_STACK_SIZE
-	);
-}
+} // namespace ApplicationPool2
+} // namespace Passenger
