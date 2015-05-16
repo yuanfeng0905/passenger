@@ -92,7 +92,7 @@ Pool::inspectProcessList(const InspectOptions &options, stringstream &result,
 		const Socket *socket;
 		if (options.verbose && (socket = process->getSockets().findSocketWithName("http")) != NULL) {
 			result << "    URL     : http://" << replaceString(socket->address, "tcp://", "") << endl;
-			result << "    Password: " << group->getSecret() << endl;
+			result << "    Password: " << group->getApiKey().toStaticString() << endl;
 		}
 	}
 }
@@ -112,8 +112,15 @@ Pool::inspect(const InspectOptions &options, bool lock) const {
 	const char *headerColor = maybeColorize(options, ANSI_COLOR_YELLOW ANSI_COLOR_BLUE_BG ANSI_COLOR_BOLD);
 	const char *resetColor  = maybeColorize(options, ANSI_COLOR_RESET);
 
+	if (!authorizeByUid(options.uid, false)
+	 && !authorizeByApiKey(options.apiKey, false))
+	{
+		throw SecurityException("Operation unauthorized");
+	}
+
 	result << headerColor << "----------- General information -----------" << resetColor << endl;
 	result << "Max pool size : " << max << endl;
+	result << "App groups    : " << groups.size() << endl;
 	result << "Processes     : " << getProcessCount(false) << endl;
 	result << "Requests in top-level queue : " << getWaitlist.size() << endl;
 	if (restarterThreadActive) {
@@ -132,6 +139,13 @@ Pool::inspect(const InspectOptions &options, bool lock) const {
 	GroupMap::ConstIterator g_it(groups);
 	while (*g_it != NULL) {
 		const GroupPtr &group = g_it.getValue();
+		if (!group->authorizeByUid(options.uid)
+		 && !group->authorizeByApiKey(options.apiKey))
+		{
+			g_it.next();
+			continue;
+		}
+
 		ProcessList::const_iterator p_it;
 
 		result << group->getName() << ":" << endl;
@@ -164,16 +178,23 @@ Pool::inspect(const InspectOptions &options, bool lock) const {
 }
 
 string
-Pool::toXml(bool includeSecrets, bool lock) const {
+Pool::toXml(const ToXmlOptions &options, bool lock) const {
 	DynamicScopedLock l(syncher, lock);
 	stringstream result;
 	GroupMap::ConstIterator g_it(groups);
 	ProcessList::const_iterator p_it;
 
+	if (!authorizeByUid(options.uid, false)
+	 && !authorizeByApiKey(options.apiKey, false))
+	{
+		throw SecurityException("Operation unauthorized");
+	}
+
 	result << "<?xml version=\"1.0\" encoding=\"iso8859-1\" ?>\n";
 	result << "<info version=\"3\">";
 
 	result << "<passenger_version>" << PASSENGER_VERSION << "</passenger_version>";
+	result << "<group_count>" << groups.size() << "</group_count>";
 	result << "<process_count>" << getProcessCount(false) << "</process_count>";
 	result << "<max>" << max << "</max>";
 	result << "<capacity_used>" << capacityUsedUnlocked() << "</capacity_used>";
@@ -183,7 +204,7 @@ Pool::toXml(bool includeSecrets, bool lock) const {
 			"</rolling_restart_status>";
 	}
 
-	if (includeSecrets) {
+	if (options.secrets) {
 		vector<GetWaiter>::const_iterator w_it, w_end = getWaitlist.end();
 
 		result << "<get_wait_list>";
@@ -199,18 +220,24 @@ Pool::toXml(bool includeSecrets, bool lock) const {
 	result << "<supergroups>";
 	while (*g_it != NULL) {
 		const GroupPtr &group = g_it.getValue();
+		if (!group->authorizeByUid(options.uid)
+		 && !group->authorizeByApiKey(options.apiKey))
+		{
+			g_it.next();
+			continue;
+		}
 
 		result << "<supergroup>";
 		result << "<name>" << escapeForXml(group->getName()) << "</name>";
 		result << "<state>READY</state>";
 		result << "<get_wait_list_size>0</get_wait_list_size>";
 		result << "<capacity_used>" << group->capacityUsed() << "</capacity_used>";
-		if (includeSecrets) {
-			result << "<secret>" << escapeForXml(group->getSecret()) << "</secret>";
+		if (options.secrets) {
+			result << "<secret>" << escapeForXml(group->getApiKey().toStaticString()) << "</secret>";
 		}
 
 		result << "<group default=\"true\">";
-		group->inspectXml(result, includeSecrets);
+		group->inspectXml(result, options.secrets);
 		result << "</group>";
 
 		result << "</supergroup>";

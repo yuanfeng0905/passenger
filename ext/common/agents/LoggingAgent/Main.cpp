@@ -6,6 +6,9 @@
  *
  *  See LICENSE file for license information.
  */
+// Include ev++.h early to avoid macro clash on EV_ERROR.
+#include <ev++.h>
+
 #include <oxt/system_calls.hpp>
 #include <oxt/backtrace.hpp>
 #include <oxt/thread.hpp>
@@ -19,10 +22,12 @@
 #include <cstring>
 #include <cerrno>
 #include <algorithm>
+#include <stdexcept>
 #include <stdlib.h>
 #include <signal.h>
 
 #include <agents/Base.h>
+#include <agents/AdminServerUtils.h>
 #include <agents/LoggingAgent/OptionParser.h>
 #include <agents/LoggingAgent/LoggingServer.h>
 #include <agents/LoggingAgent/AdminServer.h>
@@ -53,7 +58,7 @@ namespace LoggingAgent {
 		string password;
 		FileDescriptor serverSocketFd;
 		vector<int> adminSockets;
-		vector<LoggingAgent::AdminServer::Authorization> adminAuthorizations;
+		AdminAccountDatabase adminAccountDatabase;
 
 		ResourceLocator *resourceLocator;
 		BackgroundEventLoop *bgloop;
@@ -134,30 +139,6 @@ makeFileWorldReadableAndWritable(const string &path) {
 }
 
 static void
-parseAndAddAdminAuthorization(const string &description) {
-	TRACE_POINT();
-	WorkingObjects *wo = workingObjects;
-	LoggingAgent::AdminServer::Authorization auth;
-	vector<string> args;
-
-	split(description, ':', args);
-
-	if (args.size() == 2) {
-		auth.level = LoggingAgent::AdminServer::FULL;
-		auth.username = args[0];
-		auth.password = strip(readAll(args[1]));
-	} else if (args.size() == 3) {
-		auth.level = LoggingAgent::AdminServer::parseLevel(args[0]);
-		auth.username = args[1];
-		auth.password = strip(readAll(args[2]));
-	} else {
-		P_BUG("Too many elements in authorization description");
-	}
-
-	wo->adminAuthorizations.push_back(auth);
-}
-
-static void
 initializePrivilegedWorkingObjects() {
 	TRACE_POINT();
 	const VariantMap &options = *agentsOptions;
@@ -174,7 +155,11 @@ initializePrivilegedWorkingObjects() {
 
 	UPDATE_TRACE_POINT();
 	foreach (description, authorizations) {
-		parseAndAddAdminAuthorization(description);
+		try {
+			wo->adminAccountDatabase.add(description);
+		} catch (const ArgumentException &e) {
+			throw std::runtime_error(e.what());
+		}
 	}
 
 	// Initialize ResourceLocator here in case passenger_root's parent
@@ -285,9 +270,9 @@ initializeUnprivilegedWorkingObjects() {
 	UPDATE_TRACE_POINT();
 	wo->adminServer = new LoggingAgent::AdminServer(wo->serverKitContext);
 	wo->adminServer->loggingServer = wo->loggingServer;
+	wo->adminServer->adminAccountDatabase = &wo->adminAccountDatabase;
 	wo->adminServer->exitEvent = &wo->exitEvent;
 	wo->adminServer->shutdownFinishCallback = adminServerShutdownFinished;
-	wo->adminServer->authorizations = wo->adminAuthorizations;
 	foreach (fd, wo->adminSockets) {
 		wo->adminServer->listen(fd);
 	}
@@ -441,6 +426,9 @@ runLoggingAgent() {
 		cleanup();
 	} catch (const tracable_exception &e) {
 		P_ERROR("ERROR: " << e.what() << "\n" << e.backtrace());
+		return 1;
+	} catch (const std::runtime_error &e) {
+		P_CRITICAL("ERROR: " << e.what());
 		return 1;
 	}
 

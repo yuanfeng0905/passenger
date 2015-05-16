@@ -95,7 +95,7 @@ private:
 		result.push_back(&options.loggingAgentAddress);
 		result.push_back(&options.loggingAgentUsername);
 		result.push_back(&options.loggingAgentPassword);
-		result.push_back(&options.groupSecret);
+		result.push_back(&options.apiKey);
 		result.push_back(&options.hostName);
 		result.push_back(&options.uri);
 		result.push_back(&options.unionStationKey);
@@ -442,8 +442,8 @@ public:
 	 * see these values.
 	 */
 
-	/** The secret key of the pool group that the spawned process is to belong to. */
-	StaticString groupSecret;
+	/** The API key of the pool group that the spawned process is to belong to. */
+	StaticString apiKey;
 
 	/**
 	 * A UUID that's generated on Group initialization, and changes every time
@@ -615,7 +615,7 @@ public:
 			appendKeyValue4(vec, "debugger",           debugger);
 			appendKeyValue4(vec, "analytics",          analytics);
 
-			appendKeyValue (vec, "group_secret",       groupSecret);
+			appendKeyValue (vec, "api_key",            apiKey);
 
 			/*********************************/
 

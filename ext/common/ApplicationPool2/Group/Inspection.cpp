@@ -39,7 +39,8 @@ inspectXml(Stream &stream, bool includeSecrets = true) const {
 		stream << "<resisting_deployment_error/>";
 	}
 	if (includeSecrets) {
-		stream << "<secret>" << escapeForXml(getSecret()) << "</secret>";
+		stream << "<secret>" << escapeForXml(getApiKey().toStaticString()) << "</secret>";
+		stream << "<api_key>" << escapeForXml(getApiKey().toStaticString()) << "</api_key>";
 	}
 	LifeStatus lifeStatus = (LifeStatus) this->lifeStatus.load(boost::memory_order_relaxed);
 	switch (lifeStatus) {
@@ -55,6 +56,12 @@ inspectXml(Stream &stream, bool includeSecrets = true) const {
 	default:
 		P_BUG("Unknown 'lifeStatus' state " << lifeStatus);
 	}
+
+	SpawningKit::UserSwitchingInfo usInfo(SpawningKit::prepareUserSwitching(options));
+	stream << "<user>" << escapeForXml(usInfo.username) << "</user>";
+	stream << "<uid>" << usInfo.uid << "</uid>";
+	stream << "<group>" << escapeForXml(usInfo.groupname) << "</group>";
+	stream << "<gid>" << usInfo.gid << "</gid>";
 
 	stream << "<options>";
 	options.toXml(stream, getResourceLocator());

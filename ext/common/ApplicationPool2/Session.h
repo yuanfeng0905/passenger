@@ -133,9 +133,9 @@ public:
 	}
 
 
-	StaticString getGroupSecret() const {
+	const ApiKey &getApiKey() const {
 		assert(!closed);
-		return StaticString(processInfo->groupInfo->secret, BasicGroupInfo::SECRET_SIZE);
+		return processInfo->groupInfo->apiKey;
 	}
 
 	pid_t getPid() const {
