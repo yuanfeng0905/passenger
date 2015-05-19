@@ -80,8 +80,6 @@
 
 	#define DEFAULT_UNION_STATION_GATEWAY_PORT 443
 
-	#define DEFAULT_USER "nobody"
-
 	#define DEFAULT_WEB_APP_USER "nobody"
 
 	#define ENTERPRISE_URL "https://www.phusionpassenger.com/enterprise"
@@ -99,6 +97,8 @@
 	#define MESSAGE_SERVER_MAX_USERNAME_SIZE 100
 
 	#define NGINX_DOC_URL "https://www.phusionpassenger.com/documentation/Users%20guide%20Nginx.html"
+
+	#define PASSENGER_DEFAULT_USER "nobody"
 
 	#define PASSENGER_IS_ENTERPRISE 1
 
