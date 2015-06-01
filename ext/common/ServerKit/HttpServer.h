@@ -964,6 +964,16 @@ protected:
 		return false;
 	}
 
+	virtual PassengerLogLevel getClientOutputErrorDisconnectionLogLevel(
+		Client *client, int errcode) const
+	{
+		if (errcode == EPIPE || errcode == ECONNRESET) {
+			return LVL_INFO;
+		} else {
+			return LVL_WARN;
+		}
+	}
+
 	virtual void reinitializeClient(Client *client, int fd) {
 		ParentClass::reinitializeClient(client, fd);
 		client->requestsBegun = 0;

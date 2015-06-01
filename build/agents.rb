@@ -111,7 +111,9 @@ AGENT_OBJECTS.each_pair do |agent_object, agent_dependencies|
       "-o #{full_agent_object} " <<
       "#{EXTRA_PRE_CXXFLAGS} " <<
       "-Iext -Iext/common " <<
-      "#{AGENT_CFLAGS} #{LIBEV_CFLAGS} #{LIBEIO_CFLAGS} " <<
+      "#{AGENT_CFLAGS} #{LIBEV_CFLAGS} #{LIBUV_CFLAGS} " <<
+      "#{PlatformInfo.curl_flags} " <<
+      "#{PlatformInfo.zlib_flags} " <<
       "#{EXTRA_CXXFLAGS}")
   end
 end
@@ -126,7 +128,7 @@ dependencies = agent_objects + [
   LIBBOOST_OXT,
   agent_libs.link_objects,
   LIBEV_TARGET,
-  LIBEIO_TARGET
+  LIBUV_TARGET
 ].flatten.compact
 file AGENT_OUTPUT_DIR + AGENT_EXE => dependencies do
   agent_objects_as_string = agent_objects.join(" ")
@@ -135,7 +137,7 @@ file AGENT_OUTPUT_DIR + AGENT_EXE => dependencies do
     "-o #{AGENT_OUTPUT_DIR}#{AGENT_EXE}.o " <<
     "#{EXTRA_PRE_CXXFLAGS} " <<
     "-Iext -Iext/common " <<
-    "#{AGENT_CFLAGS} #{LIBEV_CFLAGS} #{LIBEIO_CFLAGS} " <<
+    "#{AGENT_CFLAGS} #{LIBEV_CFLAGS} #{LIBUV_CFLAGS} " <<
     "#{PlatformInfo.curl_flags} " <<
     "#{PlatformInfo.zlib_flags} " <<
     "#{EXTRA_CXXFLAGS}")
@@ -145,8 +147,8 @@ file AGENT_OUTPUT_DIR + AGENT_EXE => dependencies do
     "#{agent_objects_as_string} " <<
     "#{LIBBOOST_OXT_LINKARG} " <<
     "#{EXTRA_PRE_CXX_LDFLAGS} " <<
-    "#{LIBEV_LIBS} " <<
-    "#{LIBEIO_LIBS} " <<
+    "#{libev_libs} " <<
+    "#{libuv_libs} " <<
     "#{PlatformInfo.curl_libs} " <<
     "#{PlatformInfo.zlib_libs} " <<
     "#{PlatformInfo.portability_cxx_ldflags} " <<

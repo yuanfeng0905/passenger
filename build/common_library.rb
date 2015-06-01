@@ -1,3 +1,4 @@
+# encoding: utf-8
 #  Phusion Passenger - https://www.phusionpassenger.com/
 #  Copyright (c) 2010-2015 Phusion
 #
@@ -82,8 +83,7 @@ end
 if USE_VENDORED_LIBEV
   LIBEV_SOURCE_DIR = File.expand_path("../ext/libev", File.dirname(__FILE__)) + "/"
   LIBEV_CFLAGS = "-Iext/libev"
-  LIBEV_LIBS = LIBEV_OUTPUT_DIR + ".libs/libev.a"
-  LIBEV_TARGET = LIBEV_LIBS
+  LIBEV_TARGET = LIBEV_OUTPUT_DIR + ".libs/libev.a"
 
   task :libev => LIBEV_TARGET
 
@@ -124,33 +124,42 @@ if USE_VENDORED_LIBEV
   end
 
   task :clean => 'libev:clean'
+
+  def libev_libs
+    la_contents = File.open(LIBEV_OUTPUT_DIR + ".libs/libev.la", "r") do |f|
+      f.read
+    end
+    la_contents =~ /dependency_libs='(.+)'/
+    "#{LIBEV_OUTPUT_DIR}.libs/libev.a #{$1}".strip
+  end
 else
   LIBEV_CFLAGS = string_option('LIBEV_CFLAGS', '-I/usr/include/libev')
-  LIBEV_LIBS   = string_option('LIBEV_LIBS', '-lev')
   LIBEV_TARGET = nil
   task :libev  # do nothing
+
+  def libev_libs
+    string_option('LIBEV_LIBS', '-lev')
+  end
 end
 
 # Apple Clang 4.2 complains about ambiguous member templates in ev++.h.
 LIBEV_CFLAGS << " -Wno-ambiguous-member-template" if PlatformInfo.compiler_supports_wno_ambiguous_member_template?
 
 
-########## libeio ##########
+########## libuv ##########
 
-if USE_VENDORED_LIBEIO
-  LIBEIO_SOURCE_DIR = File.expand_path("../ext/libeio", File.dirname(__FILE__)) + "/"
-  LIBEIO_CFLAGS = "-Iext/libeio"
-  LIBEIO_LIBS = LIBEIO_OUTPUT_DIR + ".libs/libeio.a"
-  LIBEIO_TARGET = LIBEIO_LIBS
+if USE_VENDORED_LIBUV
+  LIBUV_SOURCE_DIR = File.expand_path("../ext/libuv", File.dirname(__FILE__)) + "/"
+  LIBUV_CFLAGS = "-Iext/libuv/include"
+  LIBUV_TARGET = LIBUV_OUTPUT_DIR + ".libs/libuv.a"
 
-  task :libeio => LIBEIO_TARGET
+  task :libuv => LIBUV_TARGET
 
   dependencies = [
-    "ext/libeio/configure",
-    "ext/libeio/config.h.in",
-    "ext/libeio/Makefile.am"
+    "ext/libuv/configure",
+    "ext/libuv/Makefile.am"
   ]
-  file LIBEIO_OUTPUT_DIR + "Makefile" => dependencies do
+  file LIBUV_OUTPUT_DIR + "Makefile" => dependencies do
     cc = CC
     cxx = CXX
     if OPTIMIZE && LTO
@@ -160,34 +169,47 @@ if USE_VENDORED_LIBEIO
     # Disable all warnings. The author has a clear standpoint on that:
     # http://pod.tst.eu/http://cvs.schmorp.de/libev/ev.pod#COMPILER_WARNINGS
     cflags = "#{EXTRA_CFLAGS} -w"
-    sh "mkdir -p #{LIBEIO_OUTPUT_DIR}" if !File.directory?(LIBEIO_OUTPUT_DIR)
-    sh "cd #{LIBEIO_OUTPUT_DIR} && sh #{LIBEIO_SOURCE_DIR}configure " +
+    sh "mkdir -p #{LIBUV_OUTPUT_DIR}" if !File.directory?(LIBUV_OUTPUT_DIR)
+    # Prevent 'make' from regenerating autotools files
+    sh "cd #{LIBUV_SOURCE_DIR} && (touch aclocal.m4 configure Makefile.in || true)"
+    sh "cd #{LIBUV_OUTPUT_DIR} && sh #{LIBUV_SOURCE_DIR}configure " +
       "--disable-shared --enable-static " +
-      # libeio's configure script may select a different default compiler than we
+      # libuv's configure script may select a different default compiler than we
       # do, so we force our compiler choice.
-      "CC='#{cc}' CXX='#{cxx}' CFLAGS='#{cflags}'"
+      "CC='#{cc}' CXX='#{cxx}' CFLAGS='#{cflags}' AM_V_CC= AM_V_CCLD="
   end
 
-  libeio_sources = Dir["ext/libeio/{*.c,*.h}"]
-  file LIBEIO_OUTPUT_DIR + ".libs/libeio.a" => [LIBEIO_OUTPUT_DIR + "Makefile"] + libeio_sources do
-    sh "rm -f #{LIBEIO_OUTPUT_DIR}/libeio.la"
-    sh "cd #{LIBEIO_OUTPUT_DIR} && make libeio.la"
+  libuv_sources = Dir["ext/libuv/**/{*.c,*.h}"]
+  file LIBUV_OUTPUT_DIR + ".libs/libuv.a" => [LIBUV_OUTPUT_DIR + "Makefile"] + libuv_sources do
+    sh "rm -f #{LIBUV_OUTPUT_DIR}/libuv.la"
+    sh "cd #{LIBUV_OUTPUT_DIR} && make -j2 libuv.la"
   end
 
-  task 'libeio:clean' do
+  task 'libuv:clean' do
     patterns = %w(Makefile config.h config.log config.status libtool
-      stamp-h1 *.o *.lo *.la .libs .deps)
+      stamp-h1 src test *.o *.lo *.la *.pc .libs .deps)
     patterns.each do |pattern|
-      sh "rm -rf #{LIBEIO_OUTPUT_DIR}#{pattern}"
+      sh "rm -rf #{LIBUV_OUTPUT_DIR}#{pattern}"
     end
   end
 
-  task :clean => 'libeio:clean'
+  task :clean => 'libuv:clean'
+
+  def libuv_libs
+    la_contents = File.open(LIBUV_OUTPUT_DIR + ".libs/libuv.la", "r") do |f|
+      f.read
+    end
+    la_contents =~ /dependency_libs='(.+)'/
+    "#{LIBUV_OUTPUT_DIR}.libs/libuv.a #{$1}".strip
+  end
 else
-  LIBEIO_CFLAGS = string_option('LIBEIO_CFLAGS', '-I/usr/include/libeio')
-  LIBEIO_LIBS   = string_option('LIBEIO_LIBS', '-leio')
-  LIBEIO_TARGET = nil
-  task :libeio  # do nothing
+  LIBUV_CFLAGS = string_option('LIBUV_CFLAGS', '-I/usr/include/libuv')
+  LIBUV_TARGET = nil
+  task :libuv  # do nothing
+
+  def libuv_libs
+    string_option('LIBUV_LIBS', '-luv')
+  end
 end
 
 

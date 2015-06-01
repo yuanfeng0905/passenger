@@ -19,6 +19,10 @@
 #include <Utils/json.h>
 #include <Utils/JsonUtils.h>
 
+extern "C" {
+	struct uv_loop_s;
+}
+
 namespace Passenger {
 namespace ServerKit {
 
@@ -50,12 +54,14 @@ private:
 
 public:
 	SafeLibevPtr libev;
+	struct uv_loop_s *libuv;
 	struct MemoryKit::mbuf_pool mbuf_pool;
 	string secureModePassword;
 	FileBufferedChannelConfig defaultFileBufferedChannelConfig;
 
-	Context(const SafeLibevPtr &_libev)
-		: libev(_libev)
+	Context(const SafeLibevPtr &_libev, struct uv_loop_s *_libuv)
+		: libev(_libev),
+		  libuv(_libuv)
 	{
 		initialize();
 	}

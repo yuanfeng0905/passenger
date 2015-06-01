@@ -9,19 +9,26 @@
 
 TEST_CXX_CFLAGS = "-Iext -Iext/common " <<
   "#{EXTRA_PRE_CXXFLAGS} " <<
-  "#{LIBEV_CFLAGS} #{LIBEIO_CFLAGS} #{PlatformInfo.curl_flags} -Itest/cxx -Itest/support " <<
+  "#{LIBEV_CFLAGS} #{LIBUV_CFLAGS} #{PlatformInfo.curl_flags} -Itest/cxx -Itest/support " <<
   "#{TEST_COMMON_CFLAGS}"
 TEST_CXX_CFLAGS << " #{PlatformInfo.adress_sanitizer_flag}" if USE_ASAN
-TEST_CXX_LDFLAGS = "#{EXTRA_PRE_CXX_LDFLAGS} " <<
-  "#{TEST_COMMON_LIBRARY.link_objects_as_string} " <<
-  "#{TEST_BOOST_OXT_LIBRARY} #{LIBEV_LIBS} #{LIBEIO_LIBS} " <<
-  "#{PlatformInfo.curl_libs} " <<
-  "#{PlatformInfo.zlib_libs} " <<
-  "#{PlatformInfo.portability_cxx_ldflags}"
-TEST_CXX_LDFLAGS << " #{PlatformInfo.dmalloc_ldflags}" if USE_DMALLOC
-TEST_CXX_LDFLAGS << " #{PlatformInfo.adress_sanitizer_flag}" if USE_ASAN
-TEST_CXX_LDFLAGS << " #{EXTRA_CXX_LDFLAGS}"
-TEST_CXX_LDFLAGS.strip!
+
+def test_cxx_ldflags
+  @test_cxx_ldflags ||= begin
+    result = "#{EXTRA_PRE_CXX_LDFLAGS} " <<
+      "#{TEST_COMMON_LIBRARY.link_objects_as_string} " <<
+      "#{TEST_BOOST_OXT_LIBRARY} #{libev_libs} #{libuv_libs} " <<
+      "#{PlatformInfo.curl_libs} " <<
+      "#{PlatformInfo.zlib_libs} " <<
+      "#{PlatformInfo.portability_cxx_ldflags}"
+    result << " #{PlatformInfo.dmalloc_ldflags}" if USE_DMALLOC
+    result << " #{PlatformInfo.adress_sanitizer_flag}" if USE_ASAN
+    result << " #{EXTRA_CXX_LDFLAGS}"
+    result.strip!
+    result
+  end
+end
+
 TEST_CXX_OBJECTS = {
   'test/cxx/CxxTestMain.o' => %w(
     test/cxx/CxxTestMain.cpp),
@@ -281,14 +288,14 @@ end
 dependencies = [
   TEST_CXX_OBJECTS.keys,
   LIBEV_TARGET,
-  LIBEIO_TARGET,
+  LIBUV_TARGET,
   TEST_BOOST_OXT_LIBRARY,
   TEST_COMMON_LIBRARY.link_objects,
   'ext/common/Constants.h'
 ].flatten.compact
 file 'test/cxx/CxxTestMain' => dependencies.flatten do
   objects = TEST_CXX_OBJECTS.keys.join(' ')
-  create_executable("test/cxx/CxxTestMain", objects, TEST_CXX_LDFLAGS)
+  create_executable("test/cxx/CxxTestMain", objects, test_cxx_ldflags)
 end
 
 deps = [

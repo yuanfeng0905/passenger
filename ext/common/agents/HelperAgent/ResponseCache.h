@@ -231,7 +231,7 @@ private:
 	}
 
 	time_t parseDate(psg_pool_t *pool, const LString *date, ev_tstamp now) const {
-		if (date == NULL) {
+		if (date == NULL || date->size == 0) {
 			return (time_t) now;
 		}
 
@@ -316,7 +316,7 @@ private:
 
 	void invalidateLocation(Request *req, const HashedStaticString &header) {
 		const LString *value = req->appResponse.headers.lookup(header);
-		if (value == NULL) {
+		if (value == NULL || value->size == 0) {
 			return;
 		}
 
@@ -562,7 +562,7 @@ public:
 		ServerKit::HeaderTable &respHeaders = req->appResponse.headers;
 
 		req->appResponse.cacheControl = respHeaders.lookup(CACHE_CONTROL);
-		if (req->appResponse.cacheControl != NULL) {
+		if (req->appResponse.cacheControl != NULL && req->appResponse.cacheControl->size > 0) {
 			req->appResponse.cacheControl = psg_lstr_make_contiguous(
 				req->appResponse.cacheControl,
 				req->pool);
