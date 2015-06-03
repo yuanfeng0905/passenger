@@ -33,6 +33,7 @@ class InstanceDirectory {
 public:
 	struct CreationOptions {
 		string prefix;
+		uid_t originalUid;
 		bool userSwitching;
 		uid_t defaultUid;
 		gid_t defaultGid;
@@ -40,6 +41,7 @@ public:
 
 		CreationOptions()
 			: prefix("passenger"),
+			  originalUid(geteuid()),
 			  userSwitching(true),
 			  defaultUid(USER_NOT_GIVEN),
 			  defaultGid(GROUP_NOT_GIVEN)
@@ -92,17 +94,17 @@ private:
 
 	void initializeInstanceDirectory(const CreationOptions &options) {
 		createPropertyFile(options);
-		createAgentSocketsSubdir();
+		createAgentSocketsSubdir(options);
 		createAppSocketsSubdir(options);
 		createLockFile();
 	}
 
-	bool runningAsRoot() const {
-		return geteuid() == 0;
+	bool runningAsRoot(const CreationOptions &options) const {
+		return options.originalUid == 0;
 	}
 
-	void createAgentSocketsSubdir() {
-		if (runningAsRoot()) {
+	void createAgentSocketsSubdir(const CreationOptions &options) {
+		if (runningAsRoot(options)) {
 			/* The server socket must be accessible by the web server
 			 * and by the apps, which may run as complete different users,
 			 * so this subdirectory must be world-accessible.
@@ -114,7 +116,7 @@ private:
 	}
 
 	void createAppSocketsSubdir(const CreationOptions &options) {
-		if (runningAsRoot()) {
+		if (runningAsRoot(options)) {
 			if (options.userSwitching) {
 				/* Each app may be running as a different user,
 				 * so the apps.s subdirectory must be world-writable.

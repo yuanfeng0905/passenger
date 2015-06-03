@@ -181,7 +181,7 @@ private:
 			P_WARN(threadNumber);
 			if (threadNumber < 1 || (unsigned int) threadNumber > requestHandlers.size()) {
 				HeaderTable headers;
-				headers.insert(req->pool, "content-type", "application/json");
+				headers.insert(req->pool, "Content-Type", "application/json");
 				writeSimpleResponse(client, 400, &headers,
 					"{ \"status\": \"error\", \"reason\": \"Invalid thread number\" }");
 				if (!req->ended()) {
@@ -194,7 +194,7 @@ private:
 				disconnectClient, requestHandlers[threadNumber - 1], results.str(1)));
 
 			HeaderTable headers;
-			headers.insert(req->pool, "content-type", "application/json");
+			headers.insert(req->pool, "Content-Type", "application/json");
 			writeSimpleResponse(client, 200, &headers,
 				"{ \"status\": \"ok\" }");
 			if (!req->ended()) {
@@ -212,7 +212,7 @@ private:
 	void processServerStatus(Client *client, Request *req) {
 		if (authorize(client, req, READONLY)) {
 			HeaderTable headers;
-			headers.insert(req->pool, "content-type", "application/json");
+			headers.insert(req->pool, "Content-Type", "application/json");
 
 			Json::Value doc;
 			doc["threads"] = (Json::UInt) requestHandlers.size();
@@ -240,7 +240,7 @@ private:
 			try {
 				VariantMap params = parseQueryString(req->getQueryString());
 				HeaderTable headers;
-				headers.insert(req->pool, "content-type", "text/xml");
+				headers.insert(req->pool, "Content-Type", "text/xml");
 				writeSimpleResponse(client, 200, &headers,
 					psg_pstrdup(req->pool, appPool->toXml(
 						params.getBool("secrets", false, false))));
@@ -261,7 +261,7 @@ private:
 				ApplicationPool2::Pool::InspectOptions options(
 					parseQueryString(req->getQueryString()));
 				HeaderTable headers;
-				headers.insert(req->pool, "content-type", "text/plain");
+				headers.insert(req->pool, "Content-Type", "text/plain");
 				writeSimpleResponse(client, 200, &headers,
 					psg_pstrdup(req->pool, appPool->inspect(options)));
 			} catch (const SyntaxError &e) {
@@ -292,8 +292,8 @@ private:
 		HeaderTable headers;
 		RestartMethod method = ApplicationPool2::RM_DEFAULT;
 
-		headers.insert(req->pool, "content-type", "application/json");
-		headers.insert(req->pool, "cache-control", "no-cache, no-store, must-revalidate");
+		headers.insert(req->pool, "Content-Type", "application/json");
+		headers.insert(req->pool, "Cache-Control", "no-cache, no-store, must-revalidate");
 
 		if (!req->jsonBody.isMember("name")) {
 			endAsBadRequest(&client, &req, "Name required");
@@ -342,8 +342,8 @@ private:
 		HeaderTable headers;
 		const char *response;
 
-		headers.insert(req->pool, "content-type", "application/json");
-		headers.insert(req->pool, "cache-control", "no-cache, no-store, must-revalidate");
+		headers.insert(req->pool, "Content-Type", "application/json");
+		headers.insert(req->pool, "Cache-Control", "no-cache, no-store, must-revalidate");
 
 		if (req->jsonBody.isMember("pid")) {
 			pid_t pid = (pid_t) req->jsonBody["pid"].asUInt();
@@ -364,7 +364,7 @@ private:
 	void processBacktraces(Client *client, Request *req) {
 		if (authorize(client, req, READONLY)) {
 			HeaderTable headers;
-			headers.insert(req->pool, "content-type", "text/plain");
+			headers.insert(req->pool, "Content-Type", "text/plain");
 			writeSimpleResponse(client, 200, &headers,
 				psg_pstrdup(req->pool, oxt::thread::all_backtraces()));
 			if (!req->ended()) {
@@ -378,8 +378,8 @@ private:
 	void processPing(Client *client, Request *req) {
 		if (authorize(client, req, READONLY)) {
 			HeaderTable headers;
-			headers.insert(req->pool, "cache-control", "no-cache, no-store, must-revalidate");
-			headers.insert(req->pool, "content-type", "application/json");
+			headers.insert(req->pool, "Cache-Control", "no-cache, no-store, must-revalidate");
+			headers.insert(req->pool, "Content-Type", "application/json");
 			writeSimpleResponse(client, 200, &headers, "{ \"status\": \"ok\" }");
 			if (!req->ended()) {
 				endRequest(&client, &req);
@@ -394,7 +394,7 @@ private:
 			respondWith405(client, req);
 		} else if (authorize(client, req, FULL)) {
 			HeaderTable headers;
-			headers.insert(req->pool, "content-type", "application/json");
+			headers.insert(req->pool, "Content-Type", "application/json");
 			exitEvent->notify();
 			writeSimpleResponse(client, 200, &headers, "{ \"status\": \"ok\" }");
 			if (!req->ended()) {
@@ -420,7 +420,7 @@ private:
 			respondWith405(client, req);
 		} else if (authorize(client, req, FULL)) {
 			HeaderTable headers;
-			headers.insert(req->pool, "content-type", "application/json");
+			headers.insert(req->pool, "Content-Type", "application/json");
 			for (unsigned int i = 0; i < requestHandlers.size(); i++) {
 				requestHandlers[i]->getContext()->libev->runLater(boost::bind(
 					garbageCollect, requestHandlers[i]));
@@ -448,7 +448,7 @@ private:
 			string logFile = getLogFile();
 			string fileDescriptorLogFile = getFileDescriptorLogFile();
 
-			headers.insert(req->pool, "content-type", "application/json");
+			headers.insert(req->pool, "Content-Type", "application/json");
 			Json::Value doc;
 			requestHandlers[0]->getContext()->libev->runSync(boost::bind(
 				getRequestHandlerConfig, requestHandlers[0], &doc));
@@ -485,8 +485,8 @@ private:
 		HeaderTable headers;
 		Json::Value &json = req->jsonBody;
 
-		headers.insert(req->pool, "content-type", "application/json");
-		headers.insert(req->pool, "cache-control", "no-cache, no-store, must-revalidate");
+		headers.insert(req->pool, "Content-Type", "application/json");
+		headers.insert(req->pool, "Cache-Control", "no-cache, no-store, must-revalidate");
 
 		if (json.isMember("log_level")) {
 			setLogLevel(json["log_level"].asInt());
@@ -540,7 +540,7 @@ private:
 		} else if (authorize(client, req, FULL)) {
 			int e;
 			HeaderTable headers;
-			headers.insert(req->pool, "content-type", "application/json");
+			headers.insert(req->pool, "Content-Type", "application/json");
 
 			string logFile = getLogFile();
 			if (logFile.empty()) {
@@ -604,8 +604,8 @@ private:
 
 	void respondWith401(Client *client, Request *req) {
 		HeaderTable headers;
-		headers.insert(req->pool, "cache-control", "no-cache, no-store, must-revalidate");
-		headers.insert(req->pool, "www-authenticate", "Basic realm=\"admin\"");
+		headers.insert(req->pool, "Cache-Control", "no-cache, no-store, must-revalidate");
+		headers.insert(req->pool, "WWW-Authenticate", "Basic realm=\"admin\"");
 		writeSimpleResponse(client, 401, &headers, "Unauthorized");
 		if (!req->ended()) {
 			endRequest(&client, &req);
@@ -614,7 +614,7 @@ private:
 
 	void respondWith404(Client *client, Request *req) {
 		HeaderTable headers;
-		headers.insert(req->pool, "cache-control", "no-cache, no-store, must-revalidate");
+		headers.insert(req->pool, "Cache-Control", "no-cache, no-store, must-revalidate");
 		writeSimpleResponse(client, 404, &headers, "Not found");
 		if (!req->ended()) {
 			endRequest(&client, &req);
@@ -623,7 +623,7 @@ private:
 
 	void respondWith405(Client *client, Request *req) {
 		HeaderTable headers;
-		headers.insert(req->pool, "cache-control", "no-cache, no-store, must-revalidate");
+		headers.insert(req->pool, "Cache-Control", "no-cache, no-store, must-revalidate");
 		writeSimpleResponse(client, 405, &headers, "Method not allowed");
 		if (!req->ended()) {
 			endRequest(&client, &req);
@@ -632,7 +632,7 @@ private:
 
 	void respondWith413(Client *client, Request *req) {
 		HeaderTable headers;
-		headers.insert(req->pool, "cache-control", "no-cache, no-store, must-revalidate");
+		headers.insert(req->pool, "Cache-Control", "no-cache, no-store, must-revalidate");
 		writeSimpleResponse(client, 413, &headers, "Request body too large");
 		if (!req->ended()) {
 			endRequest(&client, &req);
@@ -641,8 +641,8 @@ private:
 
 	void respondWith422(Client *client, Request *req, const StaticString &body) {
 		HeaderTable headers;
-		headers.insert(req->pool, "cache-control", "no-cache, no-store, must-revalidate");
-		headers.insert(req->pool, "content-type", "text/plain; charset=utf-8");
+		headers.insert(req->pool, "Cache-Control", "no-cache, no-store, must-revalidate");
+		headers.insert(req->pool, "Content-Type", "text/plain; charset=utf-8");
 		writeSimpleResponse(client, 422, &headers, body);
 		if (!req->ended()) {
 			endRequest(&client, &req);
