@@ -29,6 +29,7 @@ namespace ServerKit {
 
 
 extern const HashedStaticString HTTP_CONTENT_LENGTH;
+extern const HashedStaticString HTTP_TRANSFER_ENCODING;
 extern const HashedStaticString HTTP_X_SENDFILE;
 extern const HashedStaticString HTTP_X_ACCEL_REDIRECT;
 
@@ -156,7 +157,7 @@ private:
 		 || self->state->state == HttpHeaderParserState::PARSING_HEADER_VALUE
 		 || self->state->state == HttpHeaderParserState::PARSING_FIRST_HEADER_VALUE)
 		{
-			// New header key encountered.
+			// New header field encountered.
 
 			if (self->state->state == HttpHeaderParserState::PARSING_FIRST_HEADER_VALUE
 			 || self->state->state == HttpHeaderParserState::PARSING_HEADER_VALUE)
@@ -168,8 +169,10 @@ private:
 				self->insertCurrentHeader();
 			}
 
+			// Initialize new header field.
 			self->state->currentHeader = (Header *) psg_palloc(self->pool, sizeof(Header));
 			psg_lstr_init(&self->state->currentHeader->key);
+			psg_lstr_init(&self->state->currentHeader->origKey);
 			psg_lstr_init(&self->state->currentHeader->val);
 			self->state->hasher.reset();
 			if (self->state->state == HttpHeaderParserState::PARSING_URL) {
@@ -179,12 +182,20 @@ private:
 			}
 		}
 
-		psg_lstr_append(&self->state->currentHeader->key, self->pool,
+		psg_lstr_append(&self->state->currentHeader->origKey, self->pool,
 			*self->currentBuffer, data, len);
-		if (psg_lstr_first_byte(&self->state->currentHeader->key) != '!') {
-			convertLowerCase((unsigned char *) const_cast<char *>(data), len);
+		if (psg_lstr_first_byte(&self->state->currentHeader->origKey) == '!') {
+			psg_lstr_append(&self->state->currentHeader->key, self->pool,
+				*self->currentBuffer, data, len);
+			self->state->hasher.update(data, len);
+		} else {
+			char *downcasedData = (char *) psg_pnalloc(self->pool, len);
+			convertLowerCase((const unsigned char *) data,
+				(unsigned char *) downcasedData, len);
+			psg_lstr_append(&self->state->currentHeader->key, self->pool,
+				downcasedData, len);
+			self->state->hasher.update(downcasedData, len);
 		}
-		self->state->hasher.update(data, len);
 
 		return 0;
 	}
@@ -343,6 +354,27 @@ private:
 			message->httpState = Message::UPGRADED;
 			message->bodyType  = Message::RBT_UPGRADE;
 			message->wantKeepAlive = false;
+		} else if (message->headers.lookup(HTTP_X_SENDFILE) != NULL
+		 || message->headers.lookup(HTTP_X_ACCEL_REDIRECT) != NULL)
+		{
+			// If X-Sendfile or X-Accel-Redirect is set, pretend like the body
+			// is empty and disallow keep-alive. See:
+			// https://github.com/phusion/passenger/issues/1376
+			// https://github.com/phusion/passenger/issues/1498
+			//
+			// We don't set a fake "Content-Length: 0" header here
+			// because it's undefined what Content-Length means if
+			// X-Sendfile or X-Accel-Redirect are set.
+			//
+			// Because the response header no longer has any header
+			// that signals its size, keep-alive should also be disabled
+			// for the *request*. We already do that in RequestHandler's
+			// ForwardResponse.cpp.
+			message->httpState = Message::COMPLETE;
+			message->bodyType = Message::RBT_NO_BODY;
+			message->headers.erase(HTTP_CONTENT_LENGTH);
+			message->headers.erase(HTTP_TRANSFER_ENCODING);
+			message->wantKeepAlive = false;
 		} else if (requestMethod == HTTP_HEAD
 		 || status / 100 == 1  // status 1xx
 		 || status == 204
@@ -354,14 +386,6 @@ private:
 				message->httpState = Message::ONEHUNDRED_CONTINUE;
 			}
 			message->bodyType = Message::RBT_NO_BODY;
-		} else if (message->headers.lookup(HTTP_X_SENDFILE) != NULL
-		 || message->headers.lookup(HTTP_X_ACCEL_REDIRECT) != NULL)
-		{
-			// Ignore Content-Length when X-Sendfile or X-Accel-Redirect is set.
-			// See https://github.com/phusion/passenger/issues/1376
-			message->httpState = Message::COMPLETE;
-			message->bodyType = Message::RBT_NO_BODY;
-			message->headers.erase(HTTP_CONTENT_LENGTH);
 		} else if (state->parser.flags & F_CHUNKED) {
 			if (contentLength == std::numeric_limits<boost::uint64_t>::max()) {
 				message->httpState = Message::PARSING_CHUNKED_BODY;

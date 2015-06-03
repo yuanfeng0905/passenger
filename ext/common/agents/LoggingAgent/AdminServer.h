@@ -22,6 +22,8 @@
 #include <Utils/StrIntUtils.h>
 #include <Utils/modp_b64.h>
 #include <Utils/json.h>
+#include <Utils/BufferedIO.h>
+#include <Utils/MessageIO.h>
 
 namespace Passenger {
 namespace LoggingAgent {
@@ -46,8 +48,8 @@ private:
 	void processPing(Client *client, Request *req) {
 		if (authorizeStateInspectionOperation(this, client, req)) {
 			HeaderTable headers;
-			headers.insert(req->pool, "cache-control", "no-cache, no-store, must-revalidate");
-			headers.insert(req->pool, "content-type", "application/json");
+			headers.insert(req->pool, "Cache-Control", "no-cache, no-store, must-revalidate");
+			headers.insert(req->pool, "Content-Type", "application/json");
 			writeSimpleResponse(client, 200, &headers, "{ \"status\": \"ok\" }");
 			if (!req->ended()) {
 				endRequest(&client, &req);
@@ -62,7 +64,7 @@ private:
 			respondWith405(client, req);
 		} else if (authorizeAdminOperation(this, client, req)) {
 			HeaderTable headers;
-			headers.insert(req->pool, "content-type", "application/json");
+			headers.insert(req->pool, "Content-Type", "application/json");
 			exitEvent->notify();
 			writeSimpleResponse(client, 200, &headers, "{ \"status\": \"ok\" }");
 			if (!req->ended()) {
@@ -84,7 +86,7 @@ private:
 			string logFile = getLogFile();
 			string fileDescriptorLogFile = getFileDescriptorLogFile();
 
-			headers.insert(req->pool, "content-type", "application/json");
+			headers.insert(req->pool, "Content-Type", "application/json");
 			doc["log_level"] = getLogLevel();
 			if (!logFile.empty()) {
 				doc["log_file"] = logFile;
@@ -113,7 +115,7 @@ private:
 		HeaderTable headers;
 		Json::Value &json = req->jsonBody;
 
-		headers.insert(req->pool, "content-type", "application/json");
+		headers.insert(req->pool, "Content-Type", "application/json");
 
 		if (json.isMember("log_level")) {
 			setLogLevel(json["log_level"].asInt());
@@ -157,13 +159,103 @@ private:
 		}
 	}
 
+	void processReinheritLogs(Client *client, Request *req) {
+		if (req->method != HTTP_POST) {
+			respondWith405(client, req);
+		} else if (authorizeAdminOperation(this, client, req)) {
+			HeaderTable headers;
+			headers.insert(req->pool, "Cache-Control", "no-cache, no-store, must-revalidate");
+			headers.insert(req->pool, "Content-Type", "application/json");
+
+			if (instanceDir.empty() || fdPassingPassword.empty()) {
+				writeSimpleResponse(client, 501, &headers, "{ \"status\": \"error\", "
+					"\"code\": \"NO_WATCHDOG\", "
+					"\"message\": \"No Watchdog process\" }\n");
+				if (!req->ended()) {
+					endRequest(&client, &req);
+				}
+				return;
+			}
+
+			FileDescriptor watchdog(connectToUnixServer(instanceDir + "/agents.s/watchdog",
+				NULL, 0), __FILE__, __LINE__);
+			writeExact(watchdog,
+				"GET /config/log_file.fd HTTP/1.1\r\n"
+				"Connection: close\r\n"
+				"Fd-Passing-Password: " + fdPassingPassword + "\r\n"
+				"\r\n");
+			BufferedIO io(watchdog);
+			string response = io.readLine();
+			SKC_DEBUG(client, "Watchdog response: \"" << cEscapeString(response) << "\"");
+			if (response != "HTTP/1.1 200 OK\r\n") {
+				watchdog.close();
+				writeSimpleResponse(client, 500, &headers, "{ \"status\": \"error\", "
+					"\"code\": \"INHERIT_ERROR\", "
+					"\"message\": \"Error communicating with Watchdog process: non-200 response\" }\n");
+				if (!req->ended()) {
+					endRequest(&client, &req);
+				}
+				return;
+			}
+
+			string logFilePath;
+			while (true) {
+				response = io.readLine();
+				SKC_DEBUG(client, "Watchdog response: \"" << cEscapeString(response) << "\"");
+				if (response.empty()) {
+					watchdog.close();
+					writeSimpleResponse(client, 500, &headers, "{ \"status\": \"error\", "
+						"\"code\": \"INHERIT_ERROR\", "
+						"\"message\": \"Error communicating with Watchdog process: "
+							"premature EOF encountered in response\" }\n");
+					if (!req->ended()) {
+						endRequest(&client, &req);
+					}
+					return;
+				} else if (response == "\r\n") {
+					break;
+				} else if (startsWith(response, "filename: ")
+					|| startsWith(response, "Filename: "))
+				{
+					response.erase(0, strlen("filename: "));
+					logFilePath = response;
+				}
+			}
+
+			if (logFilePath.empty()) {
+				watchdog.close();
+				writeSimpleResponse(client, 500, &headers, "{ \"status\": \"error\", "
+					"\"code\": \"INHERIT_ERROR\", "
+					"\"message\": \"Error communicating with Watchdog process: "
+						"no log filename received in response\" }\n");
+				if (!req->ended()) {
+					endRequest(&client, &req);
+				}
+				return;
+			}
+
+			unsigned long long timeout = 1000000;
+			int fd = readFileDescriptorWithNegotiation(watchdog, &timeout);
+			setLogFileWithFd(logFilePath, fd);
+			safelyClose(fd);
+			watchdog.close();
+
+			writeSimpleResponse(client, 200, &headers, "{ \"status\": \"ok\" }\n");
+			if (!req->ended()) {
+				endRequest(&client, &req);
+			}
+		} else {
+			respondWith401(client, req);
+		}
+	}
+
 	void processReopenLogs(Client *client, Request *req) {
 		if (req->method != HTTP_POST) {
 			respondWith405(client, req);
 		} else if (authorizeAdminOperation(this, client, req)) {
 			int e;
 			HeaderTable headers;
-			headers.insert(req->pool, "content-type", "application/json");
+			headers.insert(req->pool, "Content-Type", "application/json");
 
 			string logFile = getLogFile();
 			if (logFile.empty()) {
@@ -223,7 +315,7 @@ private:
 			respondWith405(client, req);
 		} else if (authorizeStateInspectionOperation(this, client, req)) {
 			HeaderTable headers;
-			headers.insert(req->pool, "content-type", "text/plain");
+			headers.insert(req->pool, "Content-Type", "text/plain");
 
 			stringstream stream;
 			loggingServer->dump(stream);
@@ -238,8 +330,8 @@ private:
 
 	void respondWith401(Client *client, Request *req) {
 		HeaderTable headers;
-		headers.insert(req->pool, "cache-control", "no-cache, no-store, must-revalidate");
-		headers.insert(req->pool, "www-authenticate", "Basic realm=\"admin\"");
+		headers.insert(req->pool, "Cache-Control", "no-cache, no-store, must-revalidate");
+		headers.insert(req->pool, "WWW-Authenticate", "Basic realm=\"admin\"");
 		writeSimpleResponse(client, 401, &headers, "Unauthorized");
 		if (!req->ended()) {
 			endRequest(&client, &req);
@@ -248,7 +340,7 @@ private:
 
 	void respondWith404(Client *client, Request *req) {
 		HeaderTable headers;
-		headers.insert(req->pool, "cache-control", "no-cache, no-store, must-revalidate");
+		headers.insert(req->pool, "Cache-Control", "no-cache, no-store, must-revalidate");
 		writeSimpleResponse(client, 404, &headers, "Not found");
 		if (!req->ended()) {
 			endRequest(&client, &req);
@@ -257,7 +349,7 @@ private:
 
 	void respondWith405(Client *client, Request *req) {
 		HeaderTable headers;
-		headers.insert(req->pool, "cache-control", "no-cache, no-store, must-revalidate");
+		headers.insert(req->pool, "Cache-Control", "no-cache, no-store, must-revalidate");
 		writeSimpleResponse(client, 405, &headers, "Method not allowed");
 		if (!req->ended()) {
 			endRequest(&client, &req);
@@ -266,8 +358,8 @@ private:
 
 	void respondWith422(Client *client, Request *req, const StaticString &body) {
 		HeaderTable headers;
-		headers.insert(req->pool, "cache-control", "no-cache, no-store, must-revalidate");
-		headers.insert(req->pool, "content-type", "text/plain; charset=utf-8");
+		headers.insert(req->pool, "Cache-Control", "no-cache, no-store, must-revalidate");
+		headers.insert(req->pool, "Content-Type", "text/plain; charset=utf-8");
 		writeSimpleResponse(client, 422, &headers, body);
 		if (!req->ended()) {
 			endRequest(&client, &req);
@@ -278,20 +370,31 @@ protected:
 	virtual void onRequestBegin(Client *client, Request *req) {
 		const StaticString path(req->path.start->data, req->path.size);
 
-		P_INFO("Admin request: " << path);
+		P_INFO("Admin request: " << http_method_str(req->method) <<
+			" " << StaticString(req->path.start->data, req->path.size));
 
-		if (path == P_STATIC_STRING("/ping.json")) {
-			processPing(client, req);
-		} else if (path == P_STATIC_STRING("/shutdown.json")) {
-			processShutdown(client, req);
-		} else if (path == P_STATIC_STRING("/config.json")) {
-			processConfig(client, req);
-		} else if (path == P_STATIC_STRING("/reopen_logs.json")) {
-			processReopenLogs(client, req);
-		} else if (path == P_STATIC_STRING("/status.txt")) {
-			processStatusTxt(client, req);
-		} else {
-			respondWith404(client, req);
+		try {
+			if (path == P_STATIC_STRING("/ping.json")) {
+				processPing(client, req);
+			} else if (path == P_STATIC_STRING("/shutdown.json")) {
+				processShutdown(client, req);
+			} else if (path == P_STATIC_STRING("/config.json")) {
+				processConfig(client, req);
+			} else if (path == P_STATIC_STRING("/reinherit_logs.json")) {
+				processReinheritLogs(client, req);
+			} else if (path == P_STATIC_STRING("/reopen_logs.json")) {
+				processReopenLogs(client, req);
+			} else if (path == P_STATIC_STRING("/status.txt")) {
+				processStatusTxt(client, req);
+			} else {
+				respondWith404(client, req);
+			}
+		} catch (const oxt::tracable_exception &e) {
+			SKC_ERROR(client, "Exception: " << e.what() << "\n" << e.backtrace());
+			if (!req->ended()) {
+				req->wantKeepAlive = false;
+				endRequest(&client, &req);
+			}
 		}
 	}
 
@@ -327,6 +430,8 @@ protected:
 public:
 	LoggingServer *loggingServer;
 	AdminAccountDatabase *adminAccountDatabase;
+	string instanceDir;
+	string fdPassingPassword;
 	EventFd *exitEvent;
 
 	AdminServer(ServerKit::Context *context)

@@ -231,7 +231,7 @@ private:
 	}
 
 	time_t parseDate(psg_pool_t *pool, const LString *date, ev_tstamp now) const {
-		if (date == NULL) {
+		if (date == NULL || date->size == 0) {
 			return (time_t) now;
 		}
 
@@ -316,7 +316,7 @@ private:
 
 	void invalidateLocation(Request *req, const HashedStaticString &header) {
 		const LString *value = req->appResponse.headers.lookup(header);
-		if (value == NULL) {
+		if (value == NULL || value->size == 0) {
 			return;
 		}
 
@@ -344,16 +344,16 @@ private:
 				return;
 			}
 
-			char *hostData = (char *) psg_pnalloc(req->pool, host.size());
-			memcpy(hostData, host.data(), host.size());
-			convertLowerCase((unsigned char *) hostData, host.size());
-			host = StaticString(hostData, host.size());
+			char *lowercaseHost = (char *) psg_pnalloc(req->pool, host.size());
+			convertLowerCase((const unsigned char *) host.data(),
+				(unsigned char *) lowercaseHost, host.size());
+			host = StaticString(lowercaseHost, host.size());
 
-			char *reqHost = (char *) psg_pnalloc(req->pool, req->host->size);
-			memcpy(reqHost, req->host->start->data, req->host->size);
-			convertLowerCase((unsigned char *) reqHost, req->host->size);
+			char *lowercaseReqHost = (char *) psg_pnalloc(req->pool, req->host->size);
+			convertLowerCase((const unsigned char *) req->host->start->data,
+				(unsigned char *) lowercaseReqHost, req->host->size);
 
-			if (memcmp(host.data(), reqHost, req->host->size) != 0) {
+			if (memcmp(host.data(), lowercaseReqHost, req->host->size) != 0) {
 				// The host names don't match.
 				return;
 			}
@@ -562,7 +562,7 @@ public:
 		ServerKit::HeaderTable &respHeaders = req->appResponse.headers;
 
 		req->appResponse.cacheControl = respHeaders.lookup(CACHE_CONTROL);
-		if (req->appResponse.cacheControl != NULL) {
+		if (req->appResponse.cacheControl != NULL && req->appResponse.cacheControl->size > 0) {
 			req->appResponse.cacheControl = psg_lstr_make_contiguous(
 				req->appResponse.cacheControl,
 				req->pool);

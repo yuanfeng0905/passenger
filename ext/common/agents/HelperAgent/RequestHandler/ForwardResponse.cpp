@@ -319,11 +319,15 @@ onAppResponseBegin(Client *client, Request *req) {
 			req->wantKeepAlive = false;
 		}
 	}
-	if (resp->headers.lookup(HTTP_X_SENDFILE) != NULL
-	 || resp->headers.lookup(HTTP_X_ACCEL_REDIRECT) != NULL)
+	if (resp->headers.lookup(ServerKit::HTTP_X_SENDFILE) != NULL
+	 || resp->headers.lookup(ServerKit::HTTP_X_ACCEL_REDIRECT) != NULL)
 	{
-		// https://github.com/phusion/passenger/issues/1498
-		resp->wantKeepAlive = false;
+		// If X-Sendfile or X-Accel-Redirect is set, then HttpHeaderParser
+		// treats the app response as having no body, and removes the
+		// Content-Length and Transfer-Encoding headers. Because of this,
+		// the response that we output also doesn't Content-Length
+		// or Transfer-Encoding. So we should disable keep-alive.
+		req->wantKeepAlive = false;
 	}
 
 	prepareAppResponseCaching(client, req);
@@ -537,10 +541,10 @@ constructHeaderBuffersForResponse(Request *req, struct iovec *buffers,
 	}
 
 	while (*it != NULL) {
-		dataSize += it->header->key.size + sizeof(": ") - 1;
+		dataSize += it->header->origKey.size + sizeof(": ") - 1;
 		dataSize += it->header->val.size + sizeof("\r\n") - 1;
 
-		part = it->header->key.start;
+		part = it->header->origKey.start;
 		while (part != NULL) {
 			if (buffers != NULL) {
 				buffers[i].iov_base = (void *) part->data;

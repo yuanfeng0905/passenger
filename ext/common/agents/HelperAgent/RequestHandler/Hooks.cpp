@@ -167,6 +167,7 @@ void deinitializeAppResponse(Client *client, Request *req) {
 	ServerKit::HeaderTable::Iterator it(resp->headers);
 	while (*it != NULL) {
 		psg_lstr_deinit(&it->header->key);
+		psg_lstr_deinit(&it->header->origKey);
 		psg_lstr_deinit(&it->header->val);
 		it.next();
 	}
@@ -174,6 +175,7 @@ void deinitializeAppResponse(Client *client, Request *req) {
 	it = ServerKit::HeaderTable::Iterator(resp->secureHeaders);
 	while (*it != NULL) {
 		psg_lstr_deinit(&it->header->key);
+		psg_lstr_deinit(&it->header->origKey);
 		psg_lstr_deinit(&it->header->val);
 		it.next();
 	}

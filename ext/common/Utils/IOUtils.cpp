@@ -140,6 +140,30 @@ isLocalSocketAddress(const StaticString &address) {
 }
 
 void
+setBlocking(int fd) {
+	int flags, ret;
+
+	do {
+		flags = fcntl(fd, F_GETFL);
+	} while (flags == -1 && errno == EINTR);
+	if (flags == -1) {
+		int e = errno;
+		throw SystemException("Cannot set socket to blocking mode: "
+			"cannot get socket flags",
+			e);
+	}
+	do {
+		ret = fcntl(fd, F_SETFL, flags & ~O_NONBLOCK);
+	} while (ret == -1 && errno == EINTR);
+	if (ret == -1) {
+		int e = errno;
+		throw SystemException("Cannot set socket to blocking mode: "
+			"cannot set socket flags",
+			e);
+	}
+}
+
+void
 setNonBlocking(int fd) {
 	int flags, ret;
 
@@ -344,6 +368,17 @@ createTcpServer(const char *address, unsigned short port, unsigned int backlogSi
 		fprintf(stderr, "so_reuseaddr failed: %s\n", strerror(e));
 	}
 	// Ignore SO_REUSEADDR error, it's not fatal.
+
+	#ifdef SO_REUSEPORT
+		optval = 1;
+		if (syscalls::setsockopt(fd, SOL_SOCKET, SO_REUSEPORT,
+			&optval, sizeof(optval)) == -1)
+		{
+			int e = errno;
+			fprintf(stderr, "so_reuseport failed: %s\n", strerror(e));
+		}
+		// Ignore SO_REUSEPORT error, it's not fatal.
+	#endif
 
 	if (backlogSize == 0) {
 		backlogSize = 1024;

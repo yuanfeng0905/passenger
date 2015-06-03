@@ -964,10 +964,20 @@ protected:
 		return false;
 	}
 
+	virtual PassengerLogLevel getClientOutputErrorDisconnectionLogLevel(
+		Client *client, int errcode) const
+	{
+		if (errcode == EPIPE || errcode == ECONNRESET) {
+			return LVL_INFO;
+		} else {
+			return LVL_WARN;
+		}
+	}
+
 	virtual void reinitializeClient(Client *client, int fd) {
 		ParentClass::reinitializeClient(client, fd);
 		client->requestsBegun = 0;
-		client->currentRequest = NULL;
+		assert(client->currentRequest == NULL);
 	}
 
 	virtual void reinitializeRequest(Client *client, Request *req) {
@@ -1009,6 +1019,7 @@ protected:
 		HeaderTable::Iterator it(req->headers);
 		while (*it != NULL) {
 			psg_lstr_deinit(&it->header->key);
+			psg_lstr_deinit(&it->header->origKey);
 			psg_lstr_deinit(&it->header->val);
 			it.next();
 		}
@@ -1016,6 +1027,7 @@ protected:
 		it = HeaderTable::Iterator(req->secureHeaders);
 		while (*it != NULL) {
 			psg_lstr_deinit(&it->header->key);
+			psg_lstr_deinit(&it->header->origKey);
 			psg_lstr_deinit(&it->header->val);
 			it.next();
 		}
@@ -1057,6 +1069,10 @@ public:
 
 		while (!STAILQ_EMPTY(&freeRequests)) {
 			Request *request = STAILQ_FIRST(&freeRequests);
+			if (request->pool != NULL) {
+				psg_destroy_pool(request->pool);
+				request->pool = NULL;
+			}
 			P_ASSERT_EQ(request->httpState, Request::IN_FREELIST);
 			freeRequestCount--;
 			STAILQ_REMOVE_HEAD(&freeRequests, nextRequest.freeRequest);

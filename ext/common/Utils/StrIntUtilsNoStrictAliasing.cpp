@@ -1,6 +1,6 @@
 /*
  *  Phusion Passenger - https://www.phusionpassenger.com/
- *  Copyright (c) 2014 Phusion
+ *  Copyright (c) 2014-2015 Phusion
  *
  *  "Phusion Passenger" is a trademark of Hongli Lai & Ninh Bui.
  *
@@ -9,6 +9,7 @@
 
 #include <boost/cstdint.hpp>
 #include <cstddef>
+#include <Utils/StrIntUtils.h>
 
 namespace Passenger {
 
@@ -20,7 +21,10 @@ using namespace std;
 
 #if defined(__x86_64__) || defined(__x86__)
 void
-convertLowerCase(unsigned char *data, size_t len) {
+convertLowerCase(const unsigned char * restrict data,
+	unsigned char * restrict output,
+	size_t len)
+{
 	/*
 	 * Parts of this function is taken from stringencoders and modified to add
 	 * 64-bit support. https://code.google.com/p/stringencoders/
@@ -95,7 +99,8 @@ convertLowerCase(unsigned char *data, size_t len) {
 		const size_t leftover = len % 8;
 		const size_t imax = len / 8;
 		const boost::uint64_t *s = (const boost::uint64_t *) data;
-		boost::uint64_t *d = (boost::uint64_t *) data;
+		boost::uint64_t *d = (boost::uint64_t *) output;
+
 		for (i = 0; i != imax; ++i) {
 			eax = s[i];
 			/*
@@ -109,15 +114,15 @@ convertLowerCase(unsigned char *data, size_t len) {
 		}
 
 		i = imax * 8;
-		data = (unsigned char *) d;
+		output = (unsigned char *) d;
 		switch (leftover) {
-		case 7: *data++ = (unsigned char) gsToLowerMap[ustr[i++]];
-		case 6: *data++ = (unsigned char) gsToLowerMap[ustr[i++]];
-		case 5: *data++ = (unsigned char) gsToLowerMap[ustr[i++]];
-		case 4: *data++ = (unsigned char) gsToLowerMap[ustr[i++]];
-		case 3: *data++ = (unsigned char) gsToLowerMap[ustr[i++]];
-		case 2: *data++ = (unsigned char) gsToLowerMap[ustr[i++]];
-		case 1: *data++ = (unsigned char) gsToLowerMap[ustr[i]];
+		case 7: *output++ = (unsigned char) gsToLowerMap[ustr[i++]];
+		case 6: *output++ = (unsigned char) gsToLowerMap[ustr[i++]];
+		case 5: *output++ = (unsigned char) gsToLowerMap[ustr[i++]];
+		case 4: *output++ = (unsigned char) gsToLowerMap[ustr[i++]];
+		case 3: *output++ = (unsigned char) gsToLowerMap[ustr[i++]];
+		case 2: *output++ = (unsigned char) gsToLowerMap[ustr[i++]];
+		case 1: *output++ = (unsigned char) gsToLowerMap[ustr[i]];
 		case 0: break;
 		}
 	#elif defined(__x86__)
@@ -127,7 +132,7 @@ convertLowerCase(unsigned char *data, size_t len) {
 		const size_t leftover = len % 4;
 		const size_t imax = len / 4;
 		const boost::uint32_t *s = (const boost::uint32_t *) data;
-		boost::uint32_t *d = (boost::uint32_t *) data;
+		boost::uint32_t *d = (boost::uint32_t *) output;
 		for (i = 0; i != imax; ++i) {
 			eax = s[i];
 			/*
@@ -141,11 +146,11 @@ convertLowerCase(unsigned char *data, size_t len) {
 		}
 
 		i = imax * 4;
-		data = (unsigned char *) d;
+		output = (unsigned char *) d;
 		switch (leftover) {
-		case 3: *data++ = (unsigned char) gsToLowerMap[ustr[i++]];
-		case 2: *data++ = (unsigned char) gsToLowerMap[ustr[i++]];
-		case 1: *data++ = (unsigned char) gsToLowerMap[ustr[i]];
+		case 3: *output++ = (unsigned char) gsToLowerMap[ustr[i++]];
+		case 2: *output++ = (unsigned char) gsToLowerMap[ustr[i++]];
+		case 1: *output++ = (unsigned char) gsToLowerMap[ustr[i]];
 		case 0: break;
 		}
 	#else

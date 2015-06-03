@@ -199,6 +199,10 @@ public:
 		return bodyType == RBT_UPGRADE;
 	}
 
+	bool begun() const {
+		return (int) httpState >= COMPLETE;
+	}
+
 	bool canKeepAlive() const {
 		return wantKeepAlive && bodyFullyRead();
 	}

@@ -84,6 +84,7 @@ module PhusionPassenger
         begin
           password = instance.read_only_admin_password
         rescue Errno::EACCES
+          return
         end
         request.basic_auth("ro_admin", password)
       end
@@ -92,6 +93,7 @@ module PhusionPassenger
         begin
           password = instance.full_admin_password
         rescue Errno::EACCES
+          return
         end
         request.basic_auth("admin", password)
       end

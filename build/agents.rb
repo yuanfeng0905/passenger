@@ -115,6 +115,8 @@ AGENT_OBJECTS.each_pair do |agent_object, agent_dependencies|
       "#{EXTRA_PRE_CXXFLAGS} " <<
       "-Iext -Iext/common " <<
       "#{AGENT_CFLAGS} #{LIBEV_CFLAGS} #{LIBUV_CFLAGS} " <<
+      "#{PlatformInfo.curl_flags} " <<
+      "#{PlatformInfo.zlib_flags} " <<
       "#{EXTRA_CXXFLAGS}")
   end
 end
@@ -148,8 +150,8 @@ file AGENT_OUTPUT_DIR + AGENT_EXE => dependencies do
     "#{agent_objects_as_string} " <<
     "#{LIBBOOST_OXT_LINKARG} " <<
     "#{EXTRA_PRE_CXX_LDFLAGS} " <<
-    "#{LIBEV_LIBS} " <<
-    "#{LIBUV_LIBS} " <<
+    "#{libev_libs} " <<
+    "#{libuv_libs} " <<
     "#{PlatformInfo.curl_libs} " <<
     "#{PlatformInfo.zlib_libs} " <<
     "#{PlatformInfo.portability_cxx_ldflags} " <<
