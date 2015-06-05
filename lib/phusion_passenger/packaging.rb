@@ -49,6 +49,7 @@ module PhusionPassenger
       'passenger-config',
       'passenger-install-apache2-module',
       'passenger-install-nginx-module',
+      'passenger-irb',
       'flying-passenger'
     ]
 
