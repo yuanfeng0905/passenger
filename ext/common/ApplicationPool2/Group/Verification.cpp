@@ -6,13 +6,35 @@
  *
  *  See LICENSE file for license information.
  */
+#include <ApplicationPool2/Group.h>
 
-// This file is included inside the Group class.
+/*************************************************************************
+ *
+ * Correctness verification functions for ApplicationPool2::Group
+ *
+ *************************************************************************/
 
-private:
+namespace Passenger {
+namespace ApplicationPool2 {
+
+using namespace std;
+using namespace boost;
+
+
+/****************************
+ *
+ * Private methods
+ *
+ ****************************/
+
+
+bool
+Group::selfCheckingEnabled() const {
+	return pool->selfchecking;
+}
 
 void
-verifyInvariants() const {
+Group::verifyInvariants() const {
 	// !a || b: logical equivalent of a IMPLIES b.
 	#ifndef NDEBUG
 	if (!selfCheckingEnabled()) {
@@ -59,7 +81,7 @@ verifyInvariants() const {
 }
 
 void
-verifyExpensiveInvariants() const {
+Group::verifyExpensiveInvariants() const {
 	#ifndef NDEBUG
 	// !a || b: logical equivalent of a IMPLIES b.
 
@@ -104,7 +126,7 @@ verifyExpensiveInvariants() const {
 
 #ifndef NDEBUG
 bool
-verifyNoRequestsOnGetWaitlistAreRoutable() const {
+Group::verifyNoRequestsOnGetWaitlistAreRoutable() const {
 	deque<GetWaiter>::const_iterator it, end = getWaitlist.end();
 
 	for (it = getWaitlist.begin(); it != end; it++) {
@@ -115,3 +137,7 @@ verifyNoRequestsOnGetWaitlistAreRoutable() const {
 	return true;
 }
 #endif
+
+
+} // namespace ApplicationPool2
+} // namespace Passenger
