@@ -48,7 +48,7 @@
 
 	#define DEFAULT_HTTP_SERVER_LISTEN_ADDRESS "tcp://127.0.0.1:3000"
 
-	#define DEFAULT_LOGGING_AGENT_ADMIN_LISTEN_ADDRESS "tcp://127.0.0.1:9345"
+	#define DEFAULT_LOGGING_AGENT_API_LISTEN_ADDRESS "tcp://127.0.0.1:9345"
 
 	#define DEFAULT_LOGGING_AGENT_LISTEN_ADDRESS "tcp://127.0.0.1:9344"
 
@@ -97,6 +97,12 @@
 	#define MESSAGE_SERVER_MAX_USERNAME_SIZE 100
 
 	#define NGINX_DOC_URL "https://www.phusionpassenger.com/documentation/Users%20guide%20Nginx.html"
+
+	#define PASSENGER_API_VERSION "0.2"
+
+	#define PASSENGER_API_VERSION_MAJOR 0
+
+	#define PASSENGER_API_VERSION_MINOR 2
 
 	#define PASSENGER_DEFAULT_USER "nobody"
 

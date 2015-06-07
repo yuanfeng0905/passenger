@@ -42,10 +42,10 @@
 #include <cerrno>
 
 #include <agents/Base.h>
-#include <agents/AdminServerUtils.h>
+#include <agents/ApiServerUtils.h>
 #include <agents/HelperAgent/OptionParser.h>
 #include <agents/LoggingAgent/OptionParser.h>
-#include <agents/Watchdog/AdminServer.h>
+#include <agents/Watchdog/ApiServer.h>
 #include <Constants.h>
 #include <InstanceDirectory.h>
 #include <FileDescriptor.h>
@@ -101,11 +101,11 @@ namespace WatchdogAgent {
 		bool pidsCleanedUp;
 		bool pidFileCleanedUp;
 
-		AdminAccountDatabase adminAccountDatabase;
-		int adminServerFds[SERVER_KIT_MAX_SERVER_ENDPOINTS];
+		ApiAccountDatabase apiAccountDatabase;
+		int apiServerFds[SERVER_KIT_MAX_SERVER_ENDPOINTS];
 		BackgroundEventLoop *bgloop;
 		ServerKit::Context *serverKitContext;
-		AdminServer *adminServer;
+		ApiServer *apiServer;
 
 		WorkingObjects()
 			: errorEvent(__FILE__, __LINE__, "WorkingObjects: errorEvent"),
@@ -115,10 +115,10 @@ namespace WatchdogAgent {
 			  pidFileCleanedUp(false),
 			  bgloop(NULL),
 			  serverKitContext(NULL),
-			  adminServer(NULL)
+			  apiServer(NULL)
 		{
 			for (unsigned int i = 0; i < SERVER_KIT_MAX_SERVER_ENDPOINTS; i++) {
-				adminServerFds[i] = -1;
+				apiServerFds[i] = -1;
 			}
 		}
 	};
@@ -281,11 +281,11 @@ waitForStarterProcessOrWatchers(const WorkingObjectsPtr &wo, vector<AgentWatcher
 	sigaction(SIGINT, &action, NULL);
 	sigaction(SIGTERM, &action, NULL);
 
-	P_DEBUG("Stopping admin server");
+	P_DEBUG("Stopping API server");
 	wo->bgloop->stop();
 	for (unsigned int i = 0; i < SERVER_KIT_MAX_SERVER_ENDPOINTS; i++) {
-		if (wo->adminServerFds[i] != -1) {
-			syscalls::close(wo->adminServerFds[i]);
+		if (wo->apiServerFds[i] != -1) {
+			syscalls::close(wo->apiServerFds[i]);
 		}
 	}
 
@@ -546,16 +546,15 @@ usage() {
 	printf("                              logging server\n");
 	printf("\n");
 	printf("Other options (optional):\n");
-	printf("      --admin-listen ADDRESS\n");
-	printf("                            Listen on the given address for admin commands.\n");
+	printf("      --api-listen ADDRESS  Listen on the given address for API commands.\n");
 	printf("                            The address must be formatted as tcp://IP:PORT for\n");
 	printf("                            TCP sockets, or unix:PATH for Unix domain sockets.\n");
 	printf("                            You can specify this option multiple times (up to\n");
 	printf("                            %u times) to listen on multiple addresses.\n",
 		SERVER_KIT_MAX_SERVER_ENDPOINTS - 1);
 	printf("      --authorize [LEVEL]:USERNAME:PASSWORDFILE\n");
-	printf("                            Enables authentication on the admin server, through\n");
-	printf("                            the given admin account. LEVEL indicates the\n");
+	printf("                            Enables authentication on the API server, through\n");
+	printf("                            the given API account. LEVEL indicates the\n");
 	printf("                            privilege level (see below). PASSWORDFILE must\n");
 	printf("                            point to a file containing the password\n");
 	printf("\n");
@@ -587,7 +586,7 @@ usage() {
 	printf("\n");
 	printf("[A] = Automatically passed to supervised agents\n");
 	printf("\n");
-	printf("Admin account privilege levels (ordered from most to least privileges):\n");
+	printf("API account privilege levels (ordered from most to least privileges):\n");
 	printf("  readonly    Read-only access\n");
 	printf("  full        Full access (default)\n");
 }
@@ -641,20 +640,20 @@ parseOptions(int argc, const char *argv[], VariantMap &options) {
 					exit(1);
 				}
 			}
-		} else if (p.isValueFlag(argc, i, argv[i], '\0', "--admin-listen")) {
+		} else if (p.isValueFlag(argc, i, argv[i], '\0', "--api-listen")) {
 			if (getSocketAddressType(argv[i + 1]) != SAT_UNKNOWN) {
-				vector<string> addresses = options.getStrSet("watchdog_admin_addresses",
+				vector<string> addresses = options.getStrSet("watchdog_api_addresses",
 					false);
 				if (addresses.size() == SERVER_KIT_MAX_SERVER_ENDPOINTS - 1) {
-					fprintf(stderr, "ERROR: you may specify up to %u --admin-listen addresses.\n",
+					fprintf(stderr, "ERROR: you may specify up to %u --api-listen addresses.\n",
 						SERVER_KIT_MAX_SERVER_ENDPOINTS - 1);
 					exit(1);
 				}
 				addresses.push_back(argv[i + 1]);
-				options.setStrSet("watchdog_admin_addresses", addresses);
+				options.setStrSet("watchdog_api_addresses", addresses);
 				i += 2;
 			} else {
-				fprintf(stderr, "ERROR: invalid address format for --admin-listen. The address "
+				fprintf(stderr, "ERROR: invalid address format for --api-listen. The address "
 					"must be formatted as tcp://IP:PORT for TCP sockets, or unix:PATH "
 					"for Unix domain sockets.\n");
 				exit(1);
@@ -1014,20 +1013,20 @@ initializeWorkingObjects(const WorkingObjectsPtr &wo, InstanceDirToucherPtr &ins
 	options.setDefault("server_password",
 		wo->randomGenerator.generateAsciiString(24));
 
-	strset = options.getStrSet("server_admin_addresses", false);
+	strset = options.getStrSet("server_api_addresses", false);
 	strset.insert(strset.begin(),
-		"unix:" + wo->instanceDir->getPath() + "/agents.s/server_admin");
-	options.setStrSet("server_admin_addresses", strset);
+		"unix:" + wo->instanceDir->getPath() + "/agents.s/server_api");
+	options.setStrSet("server_api_addresses", strset);
 
 	UPDATE_TRACE_POINT();
 	options.setDefault("logging_agent_address",
 		"unix:" + wo->instanceDir->getPath() + "/agents.s/logging");
 	options.setDefault("logging_agent_password",
 		wo->randomGenerator.generateAsciiString(24));
-	strset = options.getStrSet("logging_agent_admin_addresses", false);
+	strset = options.getStrSet("logging_agent_api_addresses", false);
 	strset.insert(strset.begin(),
-		"unix:" + wo->instanceDir->getPath() + "/agents.s/logging_admin");
-	options.setStrSet("logging_agent_admin_addresses", strset);
+		"unix:" + wo->instanceDir->getPath() + "/agents.s/logging_api");
+	options.setStrSet("logging_agent_api_addresses", strset);
 
 	UPDATE_TRACE_POINT();
 	strset = options.getStrSet("logging_agent_authorizations", false);
@@ -1066,11 +1065,11 @@ makeFileWorldReadableAndWritable(const string &path) {
 }
 
 static void
-initializeAdminServer(const WorkingObjectsPtr &wo) {
+initializeApiServer(const WorkingObjectsPtr &wo) {
 	TRACE_POINT();
 	VariantMap &options = *agentsOptions;
 	vector<string> authorizations = options.getStrSet("watchdog_authorizations", false);
-	vector<string> adminAddresses = options.getStrSet("watchdog_admin_addresses", false);
+	vector<string> apiAddresses = options.getStrSet("watchdog_api_addresses", false);
 	string description;
 
 	UPDATE_TRACE_POINT();
@@ -1084,24 +1083,24 @@ initializeAdminServer(const WorkingObjectsPtr &wo) {
 
 	foreach (description, authorizations) {
 		try {
-			wo->adminAccountDatabase.add(description);
+			wo->apiAccountDatabase.add(description);
 		} catch (const ArgumentException &e) {
 			throw std::runtime_error(e.what());
 		}
 	}
 
 	UPDATE_TRACE_POINT();
-	adminAddresses.insert(adminAddresses.begin(),
-		"unix:" + wo->instanceDir->getPath() + "/agents.s/watchdog");
-	options.setStrSet("watchdog_admin_addresses", adminAddresses);
+	apiAddresses.insert(apiAddresses.begin(),
+		"unix:" + wo->instanceDir->getPath() + "/agents.s/watchdog_api");
+	options.setStrSet("watchdog_api_addresses", apiAddresses);
 
 	UPDATE_TRACE_POINT();
-	for (unsigned int i = 0; i < adminAddresses.size(); i++) {
-		P_DEBUG("Admin server will listen on " << adminAddresses[i]);
-		wo->adminServerFds[i] = createServer(adminAddresses[i], 0, true,
+	for (unsigned int i = 0; i < apiAddresses.size(); i++) {
+		P_DEBUG("API server will listen on " << apiAddresses[i]);
+		wo->apiServerFds[i] = createServer(apiAddresses[i], 0, true,
 			__FILE__, __LINE__);
-		if (getSocketAddressType(adminAddresses[i]) == SAT_UNIX) {
-			makeFileWorldReadableAndWritable(parseUnixSocketAddress(adminAddresses[i]));
+		if (getSocketAddressType(apiAddresses[i]) == SAT_UNIX) {
+			makeFileWorldReadableAndWritable(parseUnixSocketAddress(apiAddresses[i]));
 		}
 	}
 
@@ -1113,12 +1112,51 @@ initializeAdminServer(const WorkingObjectsPtr &wo) {
 		absolutizePath(options.get("data_buffer_dir"));
 
 	UPDATE_TRACE_POINT();
-	wo->adminServer = new AdminServer(wo->serverKitContext);
-	wo->adminServer->adminAccountDatabase = &wo->adminAccountDatabase;
-	wo->adminServer->exitEvent = &wo->exitEvent;
-	wo->adminServer->fdPassingPassword = options.get("watchdog_fd_passing_password");
-	for (unsigned int i = 0; i < adminAddresses.size(); i++) {
-		wo->adminServer->listen(wo->adminServerFds[i]);
+	wo->apiServer = new ApiServer(wo->serverKitContext);
+	wo->apiServer->apiAccountDatabase = &wo->apiAccountDatabase;
+	wo->apiServer->exitEvent = &wo->exitEvent;
+	wo->apiServer->fdPassingPassword = options.get("watchdog_fd_passing_password");
+	for (unsigned int i = 0; i < apiAddresses.size(); i++) {
+		wo->apiServer->listen(wo->apiServerFds[i]);
+	}
+}
+
+static void
+createCompatSymlinks(const WorkingObjectsPtr &wo) {
+	/* In 5.0.10, 'watchdog' has been renamed to 'watchdog_api',
+	 * 'server_admin' has been renamed to 'server_api',
+	 * and 'logging_admin' has been renamed to 'logging_api'.
+	 * To maintain backward compatibility with older versions of
+	 * passenger-status etc, we create compatibility symlinks.
+	 */
+	int ret, e;
+	string prefix = wo->instanceDir->getPath() + "/agents.s/";
+
+	do {
+		ret = symlink("watchdog_api", (prefix + "watchdog").c_str());
+	} while (ret == -1 && errno == EAGAIN);
+	if (ret == -1) {
+		e = errno;
+		throw FileSystemException("Cannot create symlink: " + prefix + "watchdog",
+			e, prefix + "watchdog");
+	}
+
+	do {
+		ret = symlink("server_api", (prefix + "server_admin").c_str());
+	} while (ret == -1 && errno == EAGAIN);
+	if (ret == -1) {
+		e = errno;
+		throw FileSystemException("Cannot create symlink: " + prefix + "server_admin",
+			e, prefix + "server_admin");
+	}
+
+	do {
+		ret = symlink("logging_api", (prefix + "logging_admin").c_str());
+	} while (ret == -1 && errno == EAGAIN);
+	if (ret == -1) {
+		e = errno;
+		throw FileSystemException("Cannot create symlink: " + prefix + "logging_admin",
+			e, prefix + "logging_admin");
 	}
 }
 
@@ -1251,7 +1289,8 @@ watchdogMain(int argc, char *argv[]) {
 		lowerPrivilege();
 		initializeWorkingObjects(wo, instanceDirToucher, uidBeforeLoweringPrivilege);
 		initializeAgentWatchers(wo, watchers);
-		initializeAdminServer(wo);
+		initializeApiServer(wo);
+		createCompatSymlinks(wo);
 		UPDATE_TRACE_POINT();
 		runHookScriptAndThrowOnError("before_watchdog_initialization");
 	} catch (const std::exception &e) {

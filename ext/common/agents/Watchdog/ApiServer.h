@@ -6,14 +6,14 @@
  *
  *  See LICENSE file for license information.
  */
-#ifndef _PASSENGER_WATCHDOG_AGENT_ADMIN_SERVER_H_
-#define _PASSENGER_WATCHDOG_AGENT_ADMIN_SERVER_H_
+#ifndef _PASSENGER_WATCHDOG_AGENT_API_SERVER_H_
+#define _PASSENGER_WATCHDOG_AGENT_API_SERVER_H_
 
 #include <sstream>
 #include <string>
 #include <cstring>
 
-#include <agents/AdminServerUtils.h>
+#include <agents/ApiServerUtils.h>
 #include <ServerKit/HttpServer.h>
 #include <DataStructures/LString.h>
 #include <Exceptions.h>
@@ -39,11 +39,33 @@ public:
 	DEFINE_SERVER_KIT_BASE_HTTP_REQUEST_FOOTER(Request);
 };
 
-class AdminServer: public ServerKit::HttpServer<AdminServer, ServerKit::HttpClient<Request> > {
+class ApiServer: public ServerKit::HttpServer<ApiServer, ServerKit::HttpClient<Request> > {
 private:
-	typedef ServerKit::HttpServer<AdminServer, ServerKit::HttpClient<Request> > ParentClass;
+	typedef ServerKit::HttpServer<ApiServer, ServerKit::HttpClient<Request> > ParentClass;
 	typedef ServerKit::HttpClient<Request> Client;
 	typedef ServerKit::HeaderTable HeaderTable;
+
+	void route(Client *client, Request *req, const StaticString &path) {
+		if (path == P_STATIC_STRING("/status.txt")) {
+			processStatusTxt(client, req);
+		} else if (path == P_STATIC_STRING("/ping.json")) {
+			apiServerProcessPing(this, client, req);
+		} else if (path == P_STATIC_STRING("/version.json")) {
+			apiServerProcessVersion(this, client, req);
+		} else if (path == P_STATIC_STRING("/shutdown.json")) {
+			apiServerProcessShutdown(this, client, req);
+		} else if (path == P_STATIC_STRING("/backtraces.txt")) {
+			apiServerProcessBacktraces(this, client, req);
+		} else if (path == P_STATIC_STRING("/config.json")) {
+			processConfig(client, req);
+		} else if (path == P_STATIC_STRING("/config/log_file.fd")) {
+			processConfigLogFileFd(client, req);
+		} else if (path == P_STATIC_STRING("/reopen_logs.json")) {
+			apiServerProcessReopenLogs(this, client, req);
+		} else {
+			apiServerRespondWith404(this, client, req);
+		}
+	}
 
 	void processStatusTxt(Client *client, Request *req) {
 		if (authorizeStateInspectionOperation(this, client, req)) {
@@ -56,44 +78,14 @@ private:
 				endRequest(&client, &req);
 			}
 		} else {
-			respondWith401(client, req);
-		}
-	}
-
-	void processPing(Client *client, Request *req) {
-		if (authorizeStateInspectionOperation(this, client, req)) {
-			HeaderTable headers;
-			headers.insert(req->pool, "Cache-Control", "no-cache, no-store, must-revalidate");
-			headers.insert(req->pool, "Content-Type", "application/json");
-			writeSimpleResponse(client, 200, &headers, "{ \"status\": \"ok\" }");
-			if (!req->ended()) {
-				endRequest(&client, &req);
-			}
-		} else {
-			respondWith401(client, req);
-		}
-	}
-
-	void processShutdown(Client *client, Request *req) {
-		if (req->method != HTTP_POST) {
-			respondWith405(client, req);
-		} else if (authorizeAdminOperation(this, client, req)) {
-			HeaderTable headers;
-			headers.insert(req->pool, "Content-Type", "application/json");
-			exitEvent->notify();
-			writeSimpleResponse(client, 200, &headers, "{ \"status\": \"ok\" }");
-			if (!req->ended()) {
-				endRequest(&client, &req);
-			}
-		} else {
-			respondWith401(client, req);
+			apiServerRespondWith401(this, client, req);
 		}
 	}
 
 	void processConfig(Client *client, Request *req) {
 		if (req->method == HTTP_GET) {
 			if (!authorizeStateInspectionOperation(this, client, req)) {
-				respondWith401(client, req);
+				apiServerRespondWith401(this, client, req);
 			}
 
 			HeaderTable headers;
@@ -116,13 +108,13 @@ private:
 			}
 		} else if (req->method == HTTP_PUT) {
 			if (!authorizeAdminOperation(this, client, req)) {
-				respondWith401(client, req);
+				apiServerRespondWith401(this, client, req);
 			} else if (!req->hasBody()) {
 				endAsBadRequest(&client, &req, "Body required");
 			}
 			// Continue in processConfigBody()
 		} else {
-			respondWith405(client, req);
+			apiServerRespondWith405(this, client, req);
 		}
 	}
 
@@ -187,7 +179,7 @@ private:
 
 	void processConfigLogFileFd(Client *client, Request *req) {
 		if (req->method != HTTP_GET) {
-			respondWith405(client, req);
+			apiServerRespondWith405(this, client, req);
 		} else if (authorizeFdPassingOperation(client, req)) {
 			HeaderTable headers;
 			headers.insert(req->pool, "Cache-Control", "no-cache, no-store, must-revalidate");
@@ -209,106 +201,7 @@ private:
 				endRequest(&client, &req);
 			}
 		} else {
-			respondWith401(client, req);
-		}
-	}
-
-	void processReopenLogs(Client *client, Request *req) {
-		if (req->method != HTTP_POST) {
-			respondWith405(client, req);
-		} else if (authorizeAdminOperation(this, client, req)) {
-			int e;
-			HeaderTable headers;
-			headers.insert(req->pool, "Content-Type", "application/json");
-
-			string logFile = getLogFile();
-			if (logFile.empty()) {
-				writeSimpleResponse(client, 500, &headers, "{ \"status\": \"error\", "
-					"\"code\": \"NO_LOG_FILE\", "
-					"\"message\": \"" PROGRAM_NAME " was not configured with a log file.\" }\n");
-				if (!req->ended()) {
-					endRequest(&client, &req);
-				}
-				return;
-			}
-
-			if (!setLogFile(logFile, &e)) {
-				unsigned int bufsize = 1024;
-				char *message = (char *) psg_pnalloc(req->pool, bufsize);
-				snprintf(message, bufsize, "{ \"status\": \"error\", "
-					"\"code\": \"LOG_FILE_OPEN_ERROR\", "
-					"\"message\": \"Cannot reopen log file %s: %s (errno=%d)\" }",
-					logFile.c_str(), strerror(e), e);
-				writeSimpleResponse(client, 500, &headers, message);
-				if (!req->ended()) {
-					endRequest(&client, &req);
-				}
-				return;
-			}
-			P_NOTICE("Log file reopened.");
-
-			if (hasFileDescriptorLogFile()) {
-				if (!setFileDescriptorLogFile(getFileDescriptorLogFile(), &e)) {
-					unsigned int bufsize = 1024;
-					char *message = (char *) psg_pnalloc(req->pool, bufsize);
-					snprintf(message, bufsize, "{ \"status\": \"error\", "
-						"\"code\": \"FD_LOG_FILE_OPEN_ERROR\", "
-						"\"message\": \"Cannot reopen file descriptor log file %s: %s (errno=%d)\" }",
-						getFileDescriptorLogFile().c_str(), strerror(e), e);
-					writeSimpleResponse(client, 500, &headers, message);
-					if (!req->ended()) {
-						endRequest(&client, &req);
-					}
-					return;
-				}
-				P_NOTICE("File descriptor log file reopened.");
-			}
-
-			writeSimpleResponse(client, 200, &headers, "{ \"status\": \"ok\" }\n");
-
-			if (!req->ended()) {
-				endRequest(&client, &req);
-			}
-		} else {
-			respondWith401(client, req);
-		}
-	}
-
-	void respondWith401(Client *client, Request *req) {
-		HeaderTable headers;
-		headers.insert(req->pool, "Cache-Control", "no-cache, no-store, must-revalidate");
-		headers.insert(req->pool, "WWW-Authenticate", "Basic realm=\"admin\"");
-		writeSimpleResponse(client, 401, &headers, "Unauthorized");
-		if (!req->ended()) {
-			endRequest(&client, &req);
-		}
-	}
-
-	void respondWith404(Client *client, Request *req) {
-		HeaderTable headers;
-		headers.insert(req->pool, "Cache-Control", "no-cache, no-store, must-revalidate");
-		writeSimpleResponse(client, 404, &headers, "Not found");
-		if (!req->ended()) {
-			endRequest(&client, &req);
-		}
-	}
-
-	void respondWith405(Client *client, Request *req) {
-		HeaderTable headers;
-		headers.insert(req->pool, "Cache-Control", "no-cache, no-store, must-revalidate");
-		writeSimpleResponse(client, 405, &headers, "Method not allowed");
-		if (!req->ended()) {
-			endRequest(&client, &req);
-		}
-	}
-
-	void respondWith422(Client *client, Request *req, const StaticString &body) {
-		HeaderTable headers;
-		headers.insert(req->pool, "Cache-Control", "no-cache, no-store, must-revalidate");
-		headers.insert(req->pool, "Content-Type", "text/plain; charset=utf-8");
-		writeSimpleResponse(client, 422, &headers, body);
-		if (!req->ended()) {
-			endRequest(&client, &req);
+			apiServerRespondWith401(this, client, req);
 		}
 	}
 
@@ -316,25 +209,11 @@ protected:
 	virtual void onRequestBegin(Client *client, Request *req) {
 		const StaticString path(req->path.start->data, req->path.size);
 
-		P_INFO("Admin request: " << http_method_str(req->method) <<
+		P_INFO("API request: " << http_method_str(req->method) <<
 			" " << StaticString(req->path.start->data, req->path.size));
 
 		try {
-			if (path == P_STATIC_STRING("/status.txt")) {
-				processStatusTxt(client, req);
-			} else if (path == P_STATIC_STRING("/ping.json")) {
-				processPing(client, req);
-			} else if (path == P_STATIC_STRING("/shutdown.json")) {
-				processShutdown(client, req);
-			} else if (path == P_STATIC_STRING("/config.json")) {
-				processConfig(client, req);
-			} else if (path == P_STATIC_STRING("/config/log_file.fd")) {
-				processConfigLogFileFd(client, req);
-			} else if (path == P_STATIC_STRING("/reopen_logs.json")) {
-				processReopenLogs(client, req);
-			} else {
-				respondWith404(client, req);
-			}
+			route(client, req, path);
 		} catch (const oxt::tracable_exception &e) {
 			SKC_ERROR(client, "Exception: " << e.what() << "\n" << e.backtrace());
 			if (!req->ended()) {
@@ -354,9 +233,17 @@ protected:
 			// EOF
 			Json::Reader reader;
 			if (reader.parse(req->body, req->jsonBody)) {
-				processConfigBody(client, req);
+				try {
+					processConfigBody(client, req);
+				} catch (const oxt::tracable_exception &e) {
+					SKC_ERROR(client, "Exception: " << e.what() << "\n" << e.backtrace());
+					if (!req->ended()) {
+						req->wantKeepAlive = false;
+						endRequest(&client, &req);
+					}
+				}
 			} else {
-				respondWith422(client, req, reader.getFormattedErrorMessages());
+				apiServerRespondWith422(this, client, req, reader.getFormattedErrorMessages());
 			}
 		} else {
 			// Error
@@ -374,18 +261,18 @@ protected:
 	}
 
 public:
-	AdminAccountDatabase *adminAccountDatabase;
+	ApiAccountDatabase *apiAccountDatabase;
 	EventFd *exitEvent;
 	string fdPassingPassword;
 
-	AdminServer(ServerKit::Context *context)
+	ApiServer(ServerKit::Context *context)
 		: ParentClass(context),
-		  adminAccountDatabase(NULL),
+		  apiAccountDatabase(NULL),
 		  exitEvent(NULL)
 		{ }
 
 	virtual StaticString getServerName() const {
-		return P_STATIC_STRING("WatchdogAdminServer");
+		return P_STATIC_STRING("WatchdogApiServer");
 	}
 
 	virtual unsigned int getClientName(const Client *client, char *buf, size_t size) const {
@@ -405,4 +292,4 @@ public:
 } // namespace WatchdogAgent
 } // namespace Passenger
 
-#endif /* _PASSENGER_WATCHDOG_AGENT_ADMIN_SERVER_H_ */
+#endif /* _PASSENGER_WATCHDOG_AGENT_API_SERVER_H_ */
