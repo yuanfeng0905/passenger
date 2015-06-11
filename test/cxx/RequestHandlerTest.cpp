@@ -1,3 +1,6 @@
+#if 0
+// FIXME <Jun 8, 2015] DK> rewrite
+
 #include <TestSupport.h>
 #include <agents/HelperAgent/RequestHandler.h>
 #include <agents/HelperAgent/RequestHandler.cpp>
@@ -1483,3 +1486,4 @@ namespace tut {
 		ensure_equals(processes.size(), 0u);
 	}
 }
+#endif

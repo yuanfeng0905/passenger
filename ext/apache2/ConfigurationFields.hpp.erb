@@ -20,6 +20,8 @@
  *   rake ext/apache2/ConfigurationFields.hpp
  */
 
+struct GeneratedDirConfigPart {
+	enum Threeway { ENABLED, DISABLED, UNSET };
 <%
 require 'phusion_passenger/apache2/config_options'
 
@@ -76,3 +78,4 @@ end
 	/** <%= definition[3] %> */
 	<%= definition[0] %>;
 <% end %>
+};
