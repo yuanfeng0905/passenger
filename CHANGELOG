@@ -2,6 +2,17 @@ Release 5.0.11
 --------------
 
  * In 5.0.10, admin tools such as `passenger-status` and `passenger-config restart-app` display an authorization error if they are run without sudo, while at the same time Passenger isn't serving any applications. Since this is confusing, they have now been modified to display a more appropriate error message.
+ * Fixes a bug in the RPMs that prevent admin tools such as `passenger-status` and `passenger-config restart-app` from working when they are invoked without root privileges.
+ * Fixes a bug on OS X that prevent admin tools such as `passenger-status` and `passenger-config restart-app` from detecting Passenger instance directories when they are invoked without root privileges. Closes GH-1535.
+ * Fixes a bug that causes Passenger not to work if the HOME environment variable is not set.
+ * Fixes compatibility with non-Rails Ruby apps that require the actionview gem. Closes GH-1547.
+ * Fixes some non-fatal "permission denied" error that may occasionally occur if user switching is turned off. Closes GH-1541.
+ * Relative values for the `pid_file` and `log_file` options in Passengerfile.json are now supported.
+ * If Passengerfile.json contains a syntax error, Passenger Standalone now correctly prints an error message instead of crashing.
+ * Sending a SIGABRT signal to a Ruby process now properly makes it terminate.
+ * The `passenger-config restart-app` command now accepts `.` as parameter, which it will interpreter as "restart the app in the current working directory". Closes GH-1386.
+ * [Apache] Setting `PassengerLogLevel` no longer redirects Apache's own stderr to that log file. Closes GH-1373.
+ * [Standalone] Passenger Standalone's Nginx engine now includes the RealIP module. Closes GH-1389.
 
 
 Release 5.0.10

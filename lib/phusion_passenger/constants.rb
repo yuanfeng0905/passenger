@@ -50,8 +50,8 @@ module PhusionPassenger
     DEFAULT_UNION_STATION_GATEWAY_ADDRESS = "gateway.unionstationapp.com"
     DEFAULT_UNION_STATION_GATEWAY_PORT = 443
     DEFAULT_HTTP_SERVER_LISTEN_ADDRESS = "tcp://127.0.0.1:3000"
-    DEFAULT_LOGGING_AGENT_LISTEN_ADDRESS = "tcp://127.0.0.1:9344"
-    DEFAULT_LOGGING_AGENT_API_LISTEN_ADDRESS = "tcp://127.0.0.1:9345"
+    DEFAULT_UST_ROUTER_LISTEN_ADDRESS = "tcp://127.0.0.1:9344"
+    DEFAULT_UST_ROUTER_API_LISTEN_ADDRESS = "tcp://127.0.0.1:9345"
 
     # Size limits
     MESSAGE_SERVER_MAX_USERNAME_SIZE = 100
@@ -71,8 +71,8 @@ module PhusionPassenger
     PASSENGER_API_VERSION_MINOR = 2
     PASSENGER_API_VERSION = "#{PASSENGER_API_VERSION_MAJOR}.#{PASSENGER_API_VERSION_MINOR}"
     SERVER_INSTANCE_DIR_STRUCTURE_MAJOR_VERSION = 2
-    SERVER_INSTANCE_DIR_STRUCTURE_MINOR_VERSION = 1
-    SERVER_INSTANCE_DIR_STRUCTURE_MIN_SUPPORTED_MINOR_VERSION = 1
+    SERVER_INSTANCE_DIR_STRUCTURE_MINOR_VERSION = 3
+    SERVER_INSTANCE_DIR_STRUCTURE_MIN_SUPPORTED_MINOR_VERSION = 3
 
     # Misc
     FEEDBACK_FD = 3
@@ -105,7 +105,8 @@ module PhusionPassenger
       "--without-http_uwsgi_module " <<
       "--with-http_gzip_static_module " <<
       "--with-http_stub_status_module " <<
-      "--with-http_ssl_module"
+      "--with-http_ssl_module " <<
+      "--with-http_realip_module"
     PASSENGER_IS_ENTERPRISE = 1
   end
 

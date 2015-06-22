@@ -6,8 +6,8 @@
  *
  *  See LICENSE file for license information.
  */
-#ifndef _PASSENGER_SERVER_AGENT_API_SERVER_H_
-#define _PASSENGER_SERVER_AGENT_API_SERVER_H_
+#ifndef _PASSENGER_CORE_API_SERVER_H_
+#define _PASSENGER_CORE_API_SERVER_H_
 
 #include <boost/regex.hpp>
 #include <oxt/thread.hpp>
@@ -16,8 +16,8 @@
 #include <cstring>
 #include <sys/types.h>
 
-#include <agents/HelperAgent/RequestHandler.h>
-#include <agents/ApiServerUtils.h>
+#include <agent/Core/RequestHandler.h>
+#include <agent/ApiServerUtils.h>
 #include <ApplicationPool2/Pool.h>
 #include <ServerKit/HttpServer.h>
 #include <DataStructures/LString.h>
@@ -32,7 +32,7 @@
 #include <Utils/MessageIO.h>
 
 namespace Passenger {
-namespace ServerAgent {
+namespace Core {
 
 using namespace std;
 
@@ -601,7 +601,7 @@ public:
 };
 
 
-} // namespace ServerAgent
+} // namespace Core
 } // namespace Passenger
 
-#endif /* _PASSENGER_SERVER_AGENT_API_SERVER_H_ */
+#endif /* _PASSENGER_CORE_API_SERVER_H_ */

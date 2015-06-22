@@ -1,32 +1,32 @@
 /*
  *  Phusion Passenger - https://www.phusionpassenger.com/
- *  Copyright (c) 2014-2015 Phusion
+ *  Copyright (c) 2013-2015 Phusion
  *
  *  "Phusion Passenger" is a trademark of Hongli Lai & Ninh Bui.
  *
  *  See LICENSE file for license information.
  */
-#ifndef _PASSENGER_WATCHDOG_AGENT_API_SERVER_H_
-#define _PASSENGER_WATCHDOG_AGENT_API_SERVER_H_
+#ifndef _PASSENGER_UST_ROUTER_API_SERVER_H_
+#define _PASSENGER_UST_ROUTER_API_SERVER_H_
 
 #include <sstream>
 #include <string>
-#include <cstring>
 
-#include <agents/ApiServerUtils.h>
+#include <agent/UstRouter/LoggingServer.h>
+#include <agent/ApiServerUtils.h>
+#include <ApplicationPool2/ApiKey.h>
 #include <ServerKit/HttpServer.h>
 #include <DataStructures/LString.h>
 #include <Exceptions.h>
 #include <StaticString.h>
-#include <Logging.h>
-#include <Constants.h>
 #include <Utils/StrIntUtils.h>
 #include <Utils/modp_b64.h>
 #include <Utils/json.h>
+#include <Utils/BufferedIO.h>
 #include <Utils/MessageIO.h>
 
 namespace Passenger {
-namespace WatchdogAgent {
+namespace UstRouter {
 
 using namespace std;
 
@@ -46,9 +46,7 @@ private:
 	typedef ServerKit::HeaderTable HeaderTable;
 
 	void route(Client *client, Request *req, const StaticString &path) {
-		if (path == P_STATIC_STRING("/status.txt")) {
-			processStatusTxt(client, req);
-		} else if (path == P_STATIC_STRING("/ping.json")) {
+		if (path == P_STATIC_STRING("/ping.json")) {
 			apiServerProcessPing(this, client, req);
 		} else if (path == P_STATIC_STRING("/version.json")) {
 			apiServerProcessVersion(this, client, req);
@@ -58,27 +56,15 @@ private:
 			apiServerProcessBacktraces(this, client, req);
 		} else if (path == P_STATIC_STRING("/config.json")) {
 			processConfig(client, req);
-		} else if (path == P_STATIC_STRING("/config/log_file.fd")) {
-			processConfigLogFileFd(client, req);
+		} else if (path == P_STATIC_STRING("/reinherit_logs.json")) {
+			apiServerProcessReinheritLogs(this, client, req,
+				instanceDir, fdPassingPassword);
 		} else if (path == P_STATIC_STRING("/reopen_logs.json")) {
 			apiServerProcessReopenLogs(this, client, req);
+		} else if (path == P_STATIC_STRING("/status.txt")) {
+			processStatusTxt(client, req);
 		} else {
 			apiServerRespondWith404(this, client, req);
-		}
-	}
-
-	void processStatusTxt(Client *client, Request *req) {
-		if (authorizeStateInspectionOperation(this, client, req)) {
-			HeaderTable headers;
-			//stringstream stream;
-			headers.insert(req->pool, "Content-Type", "text/plain");
-			//loggingServer->dump(stream);
-			//writeSimpleResponse(client, 200, &headers, stream.str());
-			if (!req->ended()) {
-				endRequest(&client, &req);
-			}
-		} else {
-			apiServerRespondWith401(this, client, req);
 		}
 	}
 
@@ -160,43 +146,22 @@ private:
 			P_NOTICE("Log file opened.");
 		}
 
-		writeSimpleResponse(client, 200, &headers, "{ \"status\": \"ok\" }");
+		writeSimpleResponse(client, 200, &headers, "{ \"status\": \"ok\" }\n");
 		if (!req->ended()) {
 			endRequest(&client, &req);
 		}
 	}
 
-	bool authorizeFdPassingOperation(Client *client, Request *req) {
-		const LString *password = req->headers.lookup("fd-passing-password");
-		if (password == NULL) {
-			return false;
-		}
-
-		password = psg_lstr_make_contiguous(password, req->pool);
-		return constantTimeCompare(StaticString(password->start->data, password->size),
-			fdPassingPassword);
-	}
-
-	void processConfigLogFileFd(Client *client, Request *req) {
+	void processStatusTxt(Client *client, Request *req) {
 		if (req->method != HTTP_GET) {
 			apiServerRespondWith405(this, client, req);
-		} else if (authorizeFdPassingOperation(client, req)) {
+		} else if (authorizeStateInspectionOperation(this, client, req)) {
 			HeaderTable headers;
-			headers.insert(req->pool, "Cache-Control", "no-cache, no-store, must-revalidate");
 			headers.insert(req->pool, "Content-Type", "text/plain");
-			headers.insert(req->pool, "Filename", getLogFile());
-			req->wantKeepAlive = false;
-			writeSimpleResponse(client, 200, &headers, "");
-			if (req->ended()) {
-				return;
-			}
 
-			unsigned long long timeout = 1000000;
-			setBlocking(client->getFd());
-			writeFileDescriptorWithNegotiation(client->getFd(), STDERR_FILENO,
-				&timeout);
-			setNonBlocking(client->getFd());
-
+			stringstream stream;
+			loggingServer->dump(stream);
+			writeSimpleResponse(client, 200, &headers, stream.str());
 			if (!req->ended()) {
 				endRequest(&client, &req);
 			}
@@ -261,18 +226,21 @@ protected:
 	}
 
 public:
+	LoggingServer *loggingServer;
 	ApiAccountDatabase *apiAccountDatabase;
-	EventFd *exitEvent;
+	string instanceDir;
 	string fdPassingPassword;
+	EventFd *exitEvent;
 
 	ApiServer(ServerKit::Context *context)
 		: ParentClass(context),
+		  loggingServer(NULL),
 		  apiAccountDatabase(NULL),
 		  exitEvent(NULL)
 		{ }
 
 	virtual StaticString getServerName() const {
-		return P_STATIC_STRING("WatchdogApiServer");
+		return P_STATIC_STRING("LoggerApiServer");
 	}
 
 	virtual unsigned int getClientName(const Client *client, char *buf, size_t size) const {
@@ -289,7 +257,7 @@ public:
 };
 
 
-} // namespace WatchdogAgent
+} // namespace UstRouter
 } // namespace Passenger
 
-#endif /* _PASSENGER_WATCHDOG_AGENT_API_SERVER_H_ */
+#endif /* _PASSENGER_UST_ROUTER_API_SERVER_H_ */

@@ -150,7 +150,7 @@ module PhusionPassenger
           end
           opts.on("--data-buffer-dir PATH", String,
             "Use the given data buffer directory") do |value|
-            # relative values OK (absolutizePath in HelperAgent Main)
+            # relative values OK (absolutizePath in Passenger core main)
             options[:data_buffer_dir] = value
           end
 
@@ -371,7 +371,7 @@ module PhusionPassenger
         if app_dir
           begin
             ConfigUtils.load_local_config_file!(app_dir, @local_options)
-          rescue ConfigLoadError => e
+          rescue ConfigUtils::ConfigLoadError => e
             abort "*** ERROR: #{e.message}"
           end
         end
@@ -539,6 +539,9 @@ module PhusionPassenger
         else
           options[:log_file] ||= "#{exec_root}/#{log_basename}"
         end
+
+        options[:log_file] = File.expand_path(options[:log_file], exec_root)
+        options[:pid_file] = File.expand_path(options[:pid_file], exec_root)
       end
 
       def create_working_dir

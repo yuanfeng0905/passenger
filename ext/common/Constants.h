@@ -48,10 +48,6 @@
 
 	#define DEFAULT_HTTP_SERVER_LISTEN_ADDRESS "tcp://127.0.0.1:3000"
 
-	#define DEFAULT_LOGGING_AGENT_API_LISTEN_ADDRESS "tcp://127.0.0.1:9345"
-
-	#define DEFAULT_LOGGING_AGENT_LISTEN_ADDRESS "tcp://127.0.0.1:9344"
-
 	#define DEFAULT_LOG_LEVEL 3
 
 	#define DEFAULT_MAX_POOL_SIZE 6
@@ -79,6 +75,10 @@
 	#define DEFAULT_UNION_STATION_GATEWAY_ADDRESS "gateway.unionstationapp.com"
 
 	#define DEFAULT_UNION_STATION_GATEWAY_PORT 443
+
+	#define DEFAULT_UST_ROUTER_API_LISTEN_ADDRESS "tcp://127.0.0.1:9345"
+
+	#define DEFAULT_UST_ROUTER_LISTEN_ADDRESS "tcp://127.0.0.1:9344"
 
 	#define DEFAULT_WEB_APP_USER "nobody"
 
@@ -128,9 +128,9 @@
 
 	#define SERVER_INSTANCE_DIR_STRUCTURE_MAJOR_VERSION 2
 
-	#define SERVER_INSTANCE_DIR_STRUCTURE_MINOR_VERSION 1
+	#define SERVER_INSTANCE_DIR_STRUCTURE_MINOR_VERSION 3
 
-	#define SERVER_INSTANCE_DIR_STRUCTURE_MIN_SUPPORTED_MINOR_VERSION 1
+	#define SERVER_INSTANCE_DIR_STRUCTURE_MIN_SUPPORTED_MINOR_VERSION 3
 
 	#define SERVER_KIT_MAX_SERVER_ENDPOINTS 4
 
@@ -140,7 +140,7 @@
 
 	#define STANDALONE_DOC_URL "https://www.phusionpassenger.com/documentation/Users%20guide%20Standalone.html"
 
-	#define STANDALONE_NGINX_CONFIGURE_OPTIONS "--with-cc-opt='-Wno-error' --without-http_fastcgi_module --without-http_scgi_module --without-http_uwsgi_module --with-http_gzip_static_module --with-http_stub_status_module --with-http_ssl_module"
+	#define STANDALONE_NGINX_CONFIGURE_OPTIONS "--with-cc-opt='-Wno-error' --without-http_fastcgi_module --without-http_scgi_module --without-http_uwsgi_module --with-http_gzip_static_module --with-http_stub_status_module --with-http_ssl_module --with-http_realip_module"
 
 	#define SUPPORT_URL "https://www.phusionpassenger.com/documentation_and_support"
 

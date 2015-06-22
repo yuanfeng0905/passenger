@@ -26,11 +26,11 @@
 #include <stdlib.h>
 #include <signal.h>
 
-#include <agents/Base.h>
-#include <agents/ApiServerUtils.h>
-#include <agents/LoggingAgent/OptionParser.h>
-#include <agents/LoggingAgent/LoggingServer.h>
-#include <agents/LoggingAgent/ApiServer.h>
+#include <agent/Base.h>
+#include <agent/ApiServerUtils.h>
+#include <agent/UstRouter/OptionParser.h>
+#include <agent/UstRouter/LoggingServer.h>
+#include <agent/UstRouter/ApiServer.h>
 
 #include <AccountsDatabase.h>
 #include <Account.h>
@@ -53,7 +53,7 @@ using namespace Passenger;
 /***** Constants and working objects *****/
 
 namespace Passenger {
-namespace LoggingAgent {
+namespace UstRouter {
 	struct WorkingObjects {
 		string password;
 		FileDescriptor serverSocketFd;
@@ -66,7 +66,7 @@ namespace LoggingAgent {
 		AccountsDatabasePtr accountsDatabase;
 		LoggingServer *loggingServer;
 
-		LoggingAgent::ApiServer *apiServer;
+		UstRouter::ApiServer *apiServer;
 		EventFd exitEvent;
 		EventFd allClientsDisconnectedEvent;
 
@@ -85,10 +85,10 @@ namespace LoggingAgent {
 			  terminationCount(0)
 			{ }
 	};
-} // namespace LoggingAgent
+} // namespace UstRouter
 } // namespace Passenger
 
-using namespace Passenger::LoggingAgent;
+using namespace Passenger::UstRouter;
 
 static VariantMap *agentsOptions;
 static WorkingObjects *workingObjects;
@@ -98,11 +98,11 @@ static WorkingObjects *workingObjects;
 
 static void printInfo(EV_P_ struct ev_signal *watcher, int revents);
 static void onTerminationSignal(EV_P_ struct ev_signal *watcher, int revents);
-static void apiServerShutdownFinished(LoggingAgent::ApiServer *server);
+static void apiServerShutdownFinished(UstRouter::ApiServer *server);
 static void waitForExitEvent();
 
 void
-loggingAgentFeedbackFdBecameReadable(ev::io &watcher, int revents) {
+ustRouterFeedbackFdBecameReadable(ev::io &watcher, int revents) {
 	/* This event indicates that the watchdog has been killed.
 	 * In this case we'll kill all descendant
 	 * processes and exit. There's no point in keeping this agent
@@ -144,12 +144,12 @@ initializePrivilegedWorkingObjects() {
 	const VariantMap &options = *agentsOptions;
 	WorkingObjects *wo = workingObjects = new WorkingObjects();
 
-	wo->password = options.get("logging_agent_password", false);
+	wo->password = options.get("ust_router_password", false);
 	if (wo->password.empty()) {
-		wo->password = strip(readAll(options.get("logging_agent_password_file")));
+		wo->password = strip(readAll(options.get("ust_router_password_file")));
 	}
 
-	vector<string> authorizations = options.getStrSet("logging_agent_authorizations",
+	vector<string> authorizations = options.getStrSet("ust_router_authorizations",
 		false);
 	string description;
 
@@ -175,7 +175,7 @@ startListening() {
 	string address;
 	vector<string> apiAddresses;
 
-	address = options.get("logging_agent_address");
+	address = options.get("ust_router_address");
 	wo->serverSocketFd.assign(createServer(address, 0, true,
 		__FILE__, __LINE__), NULL, 0);
 	P_LOG_FILE_DESCRIPTOR_PURPOSE(wo->serverSocketFd,
@@ -185,7 +185,7 @@ startListening() {
 	}
 
 	UPDATE_TRACE_POINT();
-	apiAddresses = options.getStrSet("logging_agent_api_addresses",
+	apiAddresses = options.getStrSet("ust_router_api_addresses",
 		false);
 	foreach (address, apiAddresses) {
 		wo->apiSockets.push_back(createServer(address, 0, true,
@@ -223,19 +223,19 @@ lowerPrivilege() {
 
 		if (initgroups(userName.c_str(), gid) != 0) {
 			int e = errno;
-			throw SystemException("Unable to lower " AGENT_EXE " logger's privilege "
+			throw SystemException("Unable to lower " SHORT_PROGRAM_NAME " UstRouter's privilege "
 				"to that of user '" + userName + "' and group '" + groupName +
 				"': cannot set supplementary groups", e);
 		}
 		if (setgid(gid) != 0) {
 			int e = errno;
-			throw SystemException("Unable to lower " AGENT_EXE " logger's privilege "
+			throw SystemException("Unable to lower " SHORT_PROGRAM_NAME " UstRouter's privilege "
 				"to that of user '" + userName + "' and group '" + groupName +
 				"': cannot set group ID to " + toString(gid), e);
 		}
 		if (setuid(pwUser->pw_uid) != 0) {
 			int e = errno;
-			throw SystemException("Unable to lower " AGENT_EXE " logger's privilege "
+			throw SystemException("Unable to lower " SHORT_PROGRAM_NAME " UstRouter's privilege "
 				"to that of user '" + userName + "' and group '" + groupName +
 				"': cannot set user ID to " + toString(pwUser->pw_uid), e);
 		}
@@ -268,7 +268,7 @@ initializeUnprivilegedWorkingObjects() {
 		wo->serverSocketFd, wo->accountsDatabase, options);
 
 	UPDATE_TRACE_POINT();
-	wo->apiServer = new LoggingAgent::ApiServer(wo->serverKitContext);
+	wo->apiServer = new UstRouter::ApiServer(wo->serverKitContext);
 	wo->apiServer->loggingServer = wo->loggingServer;
 	wo->apiServer->apiAccountDatabase = &wo->apiAccountDatabase;
 	wo->apiServer->instanceDir = options.get("instance_dir", false);
@@ -292,7 +292,7 @@ static void
 reportInitializationInfo() {
 	TRACE_POINT();
 
-	P_NOTICE(AGENT_EXE " logger online, PID " << getpid());
+	P_NOTICE(SHORT_PROGRAM_NAME " UstRouter online, PID " << getpid());
 	if (feedbackFdAvailable()) {
 		writeArrayMessage(FEEDBACK_FD,
 			"initialized",
@@ -302,10 +302,10 @@ reportInitializationInfo() {
 
 static void
 printInfo(EV_P_ struct ev_signal *watcher, int revents) {
-	cerr << "---------- Begin LoggingAgent status ----------\n";
+	cerr << "---------- Begin UstRouter status ----------\n";
 	workingObjects->loggingServer->dump(cerr);
 	cerr.flush();
-	cerr << "---------- End LoggingAgent status   ----------\n";
+	cerr << "---------- End UstRouter status   ----------\n";
 }
 
 static void
@@ -338,7 +338,7 @@ shutdownApiServer() {
 }
 
 static void
-apiServerShutdownFinished(LoggingAgent::ApiServer *server) {
+apiServerShutdownFinished(UstRouter::ApiServer *server) {
 	workingObjects->allClientsDisconnectedEvent.notify();
 }
 
@@ -369,7 +369,7 @@ waitForExitEvent() {
 	if (FD_ISSET(FEEDBACK_FD, &fds)) {
 		UPDATE_TRACE_POINT();
 		/* If the watchdog has been killed then we'll exit. There's no
-		 * point in keeping the logging agent running because we can't
+		 * point in keeping the UstRouter running because we can't
 		 * detect when the web server exits, and because this logging
 		 * agent doesn't own the instance directory. As soon as
 		 * passenger-status is run, the instance directory will be
@@ -402,16 +402,16 @@ cleanup() {
 	TRACE_POINT();
 	WorkingObjects *wo = workingObjects;
 
-	P_DEBUG("Shutting down " AGENT_EXE " logger...");
+	P_DEBUG("Shutting down " SHORT_PROGRAM_NAME " UstRouter...");
 	wo->bgloop->stop();
 	delete wo->apiServer;
-	P_NOTICE(AGENT_EXE " logger shutdown finished");
+	P_NOTICE(SHORT_PROGRAM_NAME " UstRouter shutdown finished");
 }
 
 static int
-runLoggingAgent() {
+runUstRouter() {
 	TRACE_POINT();
-	P_NOTICE("Starting " AGENT_EXE " logger...");
+	P_NOTICE("Starting " SHORT_PROGRAM_NAME " UstRouter...");
 
 	try {
 		UPDATE_TRACE_POINT();
@@ -442,18 +442,18 @@ runLoggingAgent() {
 
 static void
 parseOptions(int argc, const char *argv[], VariantMap &options) {
-	OptionParser p(loggingAgentUsage);
+	OptionParser p(ustRouterUsage);
 	int i = 2;
 
 	while (i < argc) {
-		if (parseLoggingAgentOption(argc, argv, i, options)) {
+		if (parseUstRouterOption(argc, argv, i, options)) {
 			continue;
 		} else if (p.isFlag(argv[i], 'h', "--help")) {
-			loggingAgentUsage();
+			ustRouterUsage();
 			exit(0);
 		} else {
 			fprintf(stderr, "ERROR: unrecognized argument %s. Please type "
-				"'%s logger --help' for usage.\n", argv[i], argv[0]);
+				"'%s ust-router --help' for usage.\n", argv[i], argv[0]);
 			exit(1);
 		}
 	}
@@ -463,11 +463,11 @@ static void
 preinitialize(VariantMap &options) {
 	// Set log_level here so that initializeAgent() calls setLogLevel()
 	// and setLogFile() with the right value.
-	if (options.has("logging_agent_log_level")) {
-		options.setInt("log_level", options.getInt("logging_agent_log_level"));
+	if (options.has("ust_router_log_level")) {
+		options.setInt("log_level", options.getInt("ust_router_log_level"));
 	}
-	if (options.has("logging_agent_log_file")) {
-		options.setInt("debug_log_file", options.getInt("logging_agent_log_file"));
+	if (options.has("ust_router_log_file")) {
+		options.setInt("debug_log_file", options.getInt("ust_router_log_file"));
 	}
 }
 
@@ -475,10 +475,10 @@ static void
 setAgentsOptionsDefaults() {
 	VariantMap &options = *agentsOptions;
 	set<string> defaultApiListenAddress;
-	defaultApiListenAddress.insert(DEFAULT_LOGGING_AGENT_API_LISTEN_ADDRESS);
+	defaultApiListenAddress.insert(DEFAULT_UST_ROUTER_API_LISTEN_ADDRESS);
 
-	options.setDefault("logging_agent_address", DEFAULT_LOGGING_AGENT_LISTEN_ADDRESS);
-	options.setDefaultStrSet("logging_agent_api_addresses", defaultApiListenAddress);
+	options.setDefault("ust_router_address", DEFAULT_UST_ROUTER_LISTEN_ADDRESS);
+	options.setDefaultStrSet("ust_router_api_addresses", defaultApiListenAddress);
 }
 
 static void
@@ -492,8 +492,8 @@ sanityCheckOptions() {
 		ok = false;
 	}
 
-	if (!options.has("logging_agent_password")
-	 && !options.has("logging_agent_password_file"))
+	if (!options.has("ust_router_password")
+	 && !options.has("ust_router_password_file"))
 	{
 		fprintf(stderr, "ERROR: please set the --password-file argument.\n");
 		ok = false;
@@ -526,9 +526,9 @@ sanityCheckOptions() {
 }
 
 int
-loggingAgentMain(int argc, char *argv[]) {
+ustRouterMain(int argc, char *argv[]) {
 	agentsOptions = new VariantMap();
-	*agentsOptions = initializeAgent(argc, &argv, AGENT_EXE " logger",
+	*agentsOptions = initializeAgent(argc, &argv, SHORT_PROGRAM_NAME " ust-router",
 		parseOptions, preinitialize, 2);
 
 	CURLcode code = curl_global_init(CURL_GLOBAL_ALL);
@@ -539,5 +539,5 @@ loggingAgentMain(int argc, char *argv[]) {
 
 	setAgentsOptionsDefaults();
 	sanityCheckOptions();
-	return runLoggingAgent();
+	return runUstRouter();
 }
