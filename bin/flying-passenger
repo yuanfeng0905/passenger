@@ -64,7 +64,7 @@ class FlyingPassenger
     maybe_daemonize
     maybe_write_pidfile
     spawn
-    socket_filename = Base64.decode64(@watchdog_options[:server_addresses])
+    socket_filename = Base64.decode64(@watchdog_options[:core_addresses])
     @logger.info("Flying Passenger up and listening on #{socket_filename}!")
     return nil
   rescue Exit => e
@@ -111,7 +111,7 @@ private
 
       opts.separator "Options:"
       opts.on("--socket-file FILENAME", String, "The socket to listen on") do |val|
-        @watchdog_options[:server_addresses] = Base64.strict_encode64("unix:#{val}")
+        @watchdog_options[:core_addresses] = Base64.strict_encode64("unix:#{val}")
       end
       opts.on("--daemonize", "Daemonize into background") do
         @options[:daemonize] = true
@@ -166,7 +166,7 @@ private
       exit 0
     end
 
-    if !@watchdog_options[:server_addresses]
+    if !@watchdog_options[:core_addresses]
       STDERR.puts "You didn't specify a socket filename. Please set --socket-file."
       exit 1
     end
@@ -228,7 +228,7 @@ private
       "passenger_root"  => PhusionPassenger.install_spec,
       "ruby" => PlatformInfo.ruby_command,
       "setsid" => "true",
-      "server_password" => "-",
+      "core_password" => "-",
       "multi_app" => "true"
     }
     @watchdog_options.each_pair do |name, val|
