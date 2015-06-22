@@ -99,7 +99,7 @@ AGENT_OBJECTS = {
     'ext/common/agent/SpawnPreparer/Main.cpp'
   ],
   'SendCloudUsageMain.o' => [
-    'ext/common/agent/SendCloudUsage/main.cpp',
+    'ext/common/agent/SendCloudUsage/Main.cpp',
     'ext/common/CloudUsageTracker.h'
   ],
 }
