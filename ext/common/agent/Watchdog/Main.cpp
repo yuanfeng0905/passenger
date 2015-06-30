@@ -783,6 +783,10 @@ setAgentsOptionsDefaults() {
 		options.set("default_group",
 			inferDefaultGroup(options.get("default_user")));
 	}
+	options.setDefault("integration_mode", "standalone");
+	if (options.get("integration_mode") == "standalone") {
+		options.setDefault("standalone_engine", "builtin");
+	}
 	options.setDefault("server_software", SERVER_TOKEN_NAME "/" PASSENGER_VERSION);
 	options.setDefaultStrSet("cleanup_pidfiles", vector<string>());
 	options.setDefault("data_buffer_dir", getSystemTempDir());
@@ -972,7 +976,11 @@ initializeWorkingObjects(const WorkingObjectsPtr &wo, InstanceDirToucherPtr &ins
 	instanceOptions.defaultUid = wo->defaultUid;
 	instanceOptions.defaultGid = wo->defaultGid;
 	instanceOptions.properties["name"] = wo->randomGenerator.generateAsciiString(8);
+	instanceOptions.properties["integration_mode"] = options.get("integration_mode");
 	instanceOptions.properties["server_software"] = options.get("server_software");
+	if (options.get("integration_mode") == "standalone") {
+		instanceOptions.properties["standalone_engine"] = options.get("standalone_engine");
+	}
 	if (options.has("web_server_config_files")) {
 		vector<string> configFiles = options.getStrSet("web_server_config_files");
 		Json::Value array(Json::arrayValue);
@@ -1134,89 +1142,6 @@ initializeApiServer(const WorkingObjectsPtr &wo) {
 }
 
 static void
-createCompatSymlinks(const WorkingObjectsPtr &wo) {
-	/* To maintain backward compatibility with older versions of
-	 * passenger-status etc, we create compatibility symlinks.
-	 */
-	int ret, e;
-	string instanceDir = wo->instanceDir->getPath() + "/";
-	string prefix = wo->instanceDir->getPath() + "/agents.s/";
-
-	do {
-		ret = symlink("watchdog_api", (prefix + "watchdog").c_str());
-	} while (ret == -1 && errno == EAGAIN);
-	if (ret == -1) {
-		e = errno;
-		throw FileSystemException("Cannot create symlink: " + prefix + "watchdog",
-			e, prefix + "watchdog");
-	}
-
-	do {
-		ret = symlink("core", (prefix + "server").c_str());
-	} while (ret == -1 && errno == EAGAIN);
-	if (ret == -1) {
-		e = errno;
-		throw FileSystemException("Cannot create symlink: " + prefix + "server",
-			e, prefix + "server");
-	}
-
-	do {
-		ret = symlink("core_api", (prefix + "server_admin").c_str());
-	} while (ret == -1 && errno == EAGAIN);
-	if (ret == -1) {
-		e = errno;
-		throw FileSystemException("Cannot create symlink: " + prefix + "server_admin",
-			e, prefix + "server_admin");
-	}
-
-	do {
-		ret = symlink("core_api", (prefix + "server_api").c_str());
-	} while (ret == -1 && errno == EAGAIN);
-	if (ret == -1) {
-		e = errno;
-		throw FileSystemException("Cannot create symlink: " + prefix + "server_api",
-			e, prefix + "server_api");
-	}
-
-	do {
-		ret = symlink("ust_router", (prefix + "logging").c_str());
-	} while (ret == -1 && errno == EAGAIN);
-	if (ret == -1) {
-		e = errno;
-		throw FileSystemException("Cannot create symlink: " + prefix + "logging",
-			e, prefix + "logging");
-	}
-
-	do {
-		ret = symlink("ust_router_api", (prefix + "logging_admin").c_str());
-	} while (ret == -1 && errno == EAGAIN);
-	if (ret == -1) {
-		e = errno;
-		throw FileSystemException("Cannot create symlink: " + prefix + "logging_admin",
-			e, prefix + "logging_admin");
-	}
-
-	do {
-		ret = symlink("ust_router_api", (prefix + "logging_api").c_str());
-	} while (ret == -1 && errno == EAGAIN);
-	if (ret == -1) {
-		e = errno;
-		throw FileSystemException("Cannot create symlink: " + prefix + "logging_api",
-			e, prefix + "logging_api");
-	}
-
-
-	do {
-		ret = symlink("core.pid", (instanceDir + "server.pid").c_str());
-	} while (ret == -1 && errno == EAGAIN);
-	if (ret == -1) {
-		e = errno;
-		throw FileSystemException("Cannot create symlink: " + instanceDir + "logging_api",
-			e, instanceDir + "server.pid");
-	}
-}
-
-static void
 startAgents(const WorkingObjectsPtr &wo, vector<AgentWatcherPtr> &watchers) {
 	TRACE_POINT();
 	foreach (AgentWatcherPtr watcher, watchers) {
@@ -1346,7 +1271,6 @@ watchdogMain(int argc, char *argv[]) {
 		initializeWorkingObjects(wo, instanceDirToucher, uidBeforeLoweringPrivilege);
 		initializeAgentWatchers(wo, watchers);
 		initializeApiServer(wo);
-		createCompatSymlinks(wo);
 		UPDATE_TRACE_POINT();
 		runHookScriptAndThrowOnError("before_watchdog_initialization");
 	} catch (const std::exception &e) {

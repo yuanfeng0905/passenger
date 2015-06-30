@@ -80,6 +80,11 @@ module PhusionPassenger
             "default is to exit with an error") do
             options[:ignore_app_not_running] = true
           end
+          opts.on("--ignore-passenger-not-running", "Exit successfully if #{PROGRAM_NAME}#{nl}" +
+            "is not currently running. The default is to#{nl}" +
+            "exit with an error") do
+            options[:ignore_passenger_not_running] = true
+          end
           opts.on("--instance NAME", String, "The #{PROGRAM_NAME} instance to select") do |value|
             options[:instance] = value
           end
@@ -204,7 +209,7 @@ module PhusionPassenger
           request.body = PhusionPassenger::Utils::JSON.generate(
             :name => group_name,
             :method => restart_method)
-          response = @instance.http_request("agents.s/server_api", request)
+          response = @instance.http_request("agents.s/core_api", request)
           if response.code.to_i / 100 == 2
             response.body
           elsif response.code.to_i == 401
@@ -230,7 +235,7 @@ module PhusionPassenger
       def query_pool_xml
         request = Net::HTTP::Get.new("/pool.xml")
         try_performing_ro_admin_basic_auth(request, @instance)
-        response = @instance.http_request("agents.s/server_api", request)
+        response = @instance.http_request("agents.s/core_api", request)
         if response.code.to_i / 100 == 2
           REXML::Document.new(response.body)
         elsif response.code.to_i == 401

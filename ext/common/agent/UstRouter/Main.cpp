@@ -484,7 +484,6 @@ setAgentsOptionsDefaults() {
 static void
 sanityCheckOptions() {
 	VariantMap &options = *agentsOptions;
-	string webServerType = options.get("web_server_type", false);
 	bool ok = true;
 
 	if (!options.has("passenger_root")) {

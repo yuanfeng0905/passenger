@@ -115,14 +115,14 @@ pp_variant_map_set_ngx_str(PP_VariantMap *m,
 }
 
 /**
- * Save the Nginx master process's PID into a file under the server instance directory.
+ * Save the Nginx master process's PID into a file in the instance directory.
+ * This PID file isn't currently used, but it might be useful for future tooling.
  *
- * A bug/limitation in Nginx doesn't allow us to create the server instance dir
- * *after* Nginx has daemonized, so the server instance dir's filename contains Nginx's
- * PID before daemonization. Normally PhusionPassenger::AdminTools::ServerInstance (used
- * by e.g. passenger-status) will think that the server instance dir is stale because the
- * PID in the filename doesn't exist. This PID file tells AdminTools::ServerInstance
- * what the actual PID is.
+ * The master process's PID is already passed to the Watchdog through the
+ * "web_server_control_process_pid" property, but that isn't enough. The Watchdog
+ * is started *before* Nginx has daemonized, so after Nginx has daemonized,
+ * the PID that we passed to the Watchdog is no longer valid. We fix that by
+ * creating this PID file after daemonization.
  */
 static ngx_int_t
 save_master_process_pid(ngx_cycle_t *cycle) {
@@ -130,7 +130,7 @@ save_master_process_pid(ngx_cycle_t *cycle) {
     u_char *last;
     FILE *f;
 
-    last = ngx_snprintf(filename, sizeof(filename) - 1, "%s/control_process.pid",
+    last = ngx_snprintf(filename, sizeof(filename) - 1, "%s/web_server_control_process.pid",
                         pp_agents_starter_get_instance_dir(pp_agents_starter, NULL));
     *last = (u_char) '\0';
 
@@ -279,7 +279,7 @@ start_watchdog(ngx_cycle_t *cycle) {
         }
     }
 
-    pp_variant_map_set_int    (params, "web_server_pid", getpid());
+    pp_variant_map_set_int    (params, "web_server_control_process_pid", getpid());
     pp_variant_map_set_strset (params, "web_server_config_files", (const char **) &config_file, 1);
     pp_variant_map_set        (params, "server_software", NGINX_VER, strlen(NGINX_VER));
     pp_variant_map_set_bool   (params, "multi_app", 1);
@@ -340,12 +340,12 @@ start_watchdog(ngx_cycle_t *cycle) {
         goto cleanup;
     }
 
-    /* Create the file instance_dir + "/control_process.pid"
+    /* Create the file instance_dir + "/web_server_control_process.pid"
      * and make it writable by the worker processes. This is because
      * save_master_process_pid is run after Nginx has lowered privileges.
      */
     last = ngx_snprintf(filename, sizeof(filename) - 1,
-                        "%s/control_process.pid",
+                        "%s/web_server_control_process.pid",
                         pp_agents_starter_get_instance_dir(pp_agents_starter, NULL));
     *last = (u_char) '\0';
     if (create_file(cycle, filename, (const u_char *) "", 0) != NGX_OK) {
