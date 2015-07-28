@@ -194,11 +194,6 @@ module PhusionPassenger
 
   ###### Other resource locations ######
 
-  INDEX_DOC_NAME      = "Users guide.html".freeze
-  APACHE2_DOC_NAME    = "Users guide Apache.html".freeze
-  NGINX_DOC_NAME      = "Users guide Nginx.html".freeze
-  STANDALONE_DOC_NAME = "Users guide Standalone.html".freeze
-
   def self.binaries_sites
     return [
       { :url => "https://oss-binaries.phusionpassenger.com/binaries/enterprise-NQLVwRlu10n13/by_release".freeze,
