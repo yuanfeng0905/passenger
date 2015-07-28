@@ -1,5 +1,5 @@
 #  Phusion Passenger - https://www.phusionpassenger.com/
-#  Copyright (c) 2010-2014 Phusion
+#  Copyright (c) 2010-2015 Phusion
 #
 #  "Phusion Passenger" is a trademark of Hongli Lai & Ninh Bui.
 #
@@ -33,6 +33,7 @@ module PhusionPassenger
   #   installer.run
   class AbstractInstaller
     PASSENGER_WEBSITE = "https://www.phusionpassenger.com"
+    PASSENGER_LIBRARY_URL = "https://www.phusionpassenger.com/library/"
     PHUSION_WEBSITE = "www.phusion.nl"
 
     # Create an AbstractInstaller. All options will be stored as instance
@@ -103,12 +104,12 @@ module PhusionPassenger
       STDOUT.flush
     end
 
-    def users_guide_path
-      return PhusionPassenger.index_doc_path
+    def install_doc_url
+      "https://www.phusionpassenger.com/library/install/"
     end
 
-    def users_guide_url
-      return INDEX_DOC_URL
+    def troubleshooting_doc_url
+      "https://www.phusionpassenger.com/library/admin/troubleshooting/"
     end
 
     def dependencies
@@ -154,10 +155,10 @@ module PhusionPassenger
           puts
         end
         puts "If the aforementioned instructions didn't solve your problem, then please take"
-        puts "a look at the Users Guide:"
+        puts "a look at our documentation for troubleshooting tips:"
         puts
-        puts "  <yellow>#{users_guide_path}</yellow>"
-        puts "  <yellow>#{users_guide_url}</yellow>"
+        puts "  <yellow>#{install_doc_url}</yellow>"
+        puts "  <yellow>#{troubleshooting_doc_url}</yellow>"
         return false
       end
     end
@@ -225,8 +226,7 @@ module PhusionPassenger
           :current => ram_mb + swap_mb,
           :ram => ram_mb,
           :swap => swap_mb,
-          :doc_path => users_guide_path,
-          :doc_url => users_guide_url
+          :install_doc_url => install_doc_url
         wait
       end
     end
