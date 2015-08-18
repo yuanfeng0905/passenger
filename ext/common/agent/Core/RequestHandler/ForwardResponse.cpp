@@ -820,6 +820,15 @@ logResponseHeaders(Client *client, Request *req, struct iovec *buffers,
 		SKC_TRACE(client, 3, "Sending response headers: \"" <<
 			cEscapeString(StaticString(buffer, dataSize)) << "\"");
 	}
+
+	if (req->useUnionStation()) {
+		const char *status = getStatusCodeAndReasonPhrase(req->appResponse.statusCode);
+		if (status != NULL) {
+			req->logMessage("Status: " + StaticString(status));
+		} else {
+			req->logMessage("Status: " + toString(req->appResponse.statusCode));
+		}
+	}
 }
 
 void
@@ -1022,6 +1031,6 @@ storeAppResponseInTurboCache(Client *client, Request *req) {
 
 void
 finalizeUnionStationWithSuccess(Client *client, Request *req) {
-	req->endScopeLog(&req->scopeLogs.requestProcessing, true);
-	req->endScopeLog(&req->scopeLogs.requestProxying, true);
+	req->endStopwatchLog(&req->stopwatchLogs.requestProcessing, true);
+	req->endStopwatchLog(&req->stopwatchLogs.requestProxying, true);
 }

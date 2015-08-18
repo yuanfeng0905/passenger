@@ -86,7 +86,7 @@ module PhusionPassenger
     end
     memoize :httpd_version
 
-    # Run `apache2ctl -V` and return its output.
+    # Run `apache2ctl -V` and return its output, or nil on failure.
     #
     # We used to run `httpd -V`, but on systems like Ubuntu it depends on various
     # environment variables or directories, wich apache2ctl loads or initializes.
@@ -121,16 +121,20 @@ module PhusionPassenger
           e_filename = Shellwords.escape(filename)
           output = `#{version_command} -V 2>#{e_filename}`
 
-          stderr_text = File.open(filename, "rb") do |f2|
-            f2.read
-          end
-          # This stderr message shows up on Ubuntu. We ignore it.
-          stderr_text.sub!(/.*Could not reliably determine the server's fully qualified domain name.*\r?\n?/, "")
-          # But we print the rest of stderr.
-          STDERR.write(stderr_text)
-          STDERR.flush
+          if $? && $?.exitstatus == 0
+            stderr_text = File.open(filename, "rb") do |f2|
+              f2.read
+            end
+            # This stderr message shows up on Ubuntu. We ignore it.
+            stderr_text.sub!(/.*Could not reliably determine the server's fully qualified domain name.*\r?\n?/, "")
+            # But we print the rest of stderr.
+            STDERR.write(stderr_text)
+            STDERR.flush
 
-          output
+            output
+          else
+            nil
+          end
         end
       else
         nil

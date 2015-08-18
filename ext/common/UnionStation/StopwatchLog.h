@@ -6,8 +6,8 @@
  *
  *  See LICENSE file for license information.
  */
-#ifndef _PASSENGER_UNION_STATION_SCOPE_LOG_H_
-#define _PASSENGER_UNION_STATION_SCOPE_LOG_H_
+#ifndef _PASSENGER_UNION_STATION_STOPWATCH_LOG_H_
+#define _PASSENGER_UNION_STATION_STOPWATCH_LOG_H_
 
 #include <boost/noncopyable.hpp>
 
@@ -28,7 +28,7 @@ using namespace std;
 using namespace boost;
 
 
-class ScopeLog: public noncopyable {
+class StopwatchLog: public noncopyable {
 private:
 	Transaction * const transaction;
 	union {
@@ -56,11 +56,11 @@ private:
 	}
 
 public:
-	ScopeLog()
+	StopwatchLog()
 		: transaction(NULL)
 		{ }
 
-	ScopeLog(const TransactionPtr &_transaction, const char *name)
+	StopwatchLog(const TransactionPtr &_transaction, const char *name)
 		: transaction(_transaction.get())
 	{
 		type = NAME;
@@ -91,7 +91,7 @@ public:
 		}
 	}
 
-	ScopeLog(const TransactionPtr &_transaction,
+	StopwatchLog(const TransactionPtr &_transaction,
 		const char *beginMessage,
 		const char *endMessage,
 		const char *abortMessage = NULL)
@@ -106,7 +106,7 @@ public:
 		}
 	}
 
-	~ScopeLog() {
+	~StopwatchLog() {
 		if (transaction == NULL) {
 			return;
 		}
@@ -153,4 +153,4 @@ public:
 } // namespace UnionStation
 } // namespace Passenger
 
-#endif /* _PASSENGER_UNION_STATION_SCOPE_LOG_H_ */
+#endif /* _PASSENGER_UNION_STATION_STOPWATCH_LOG_H_ */
