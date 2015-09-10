@@ -19,7 +19,8 @@ desc "Run all integration tests"
 task 'test:integration' => ['test:integration:apache2', 'test:integration:nginx'] do
 end
 
-dependencies = integration_test_dependencies(:_apache2) + ['test/support/allocate_memory']
+dependencies = integration_test_dependencies(:_apache2) +
+  ["#{TEST_OUTPUT_DIR}allocate_memory"]
 desc "Run Apache 2 integration tests"
 task 'test:integration:apache2' => dependencies do
   command = "bundle exec rspec -c -f s --tty integration_tests/apache2_tests.rb"
@@ -93,7 +94,7 @@ task 'test:integration:native_packaging' do
     # We should run the tests in /usr/bin/ruby too, so that native_support is compiled for
     # the same Ruby.
     prefix = "env NATIVE_PACKAGING_METHOD=homebrew " +
-      "LOCATIONS_INI=/usr/local/Cellar/passenger/#{VERSION_STRING}/libexec/lib/phusion_passenger/locations.ini"
+      "LOCATIONS_INI=/usr/local/Cellar/passenger/#{VERSION_STRING}/libexec/src/ruby_supportlib/phusion_passenger/locations.ini"
     if PlatformInfo.in_rvm?
       prefix << " rvm-exec system /usr/bin/ruby -S"
     end

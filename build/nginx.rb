@@ -1,17 +1,17 @@
 #  Phusion Passenger - https://www.phusionpassenger.com/
-#  Copyright (c) 2010-2014 Phusion
+#  Copyright (c) 2010-2015 Phusion
 #
 #  "Phusion Passenger" is a trademark of Hongli Lai & Ninh Bui.
 #
 #  See LICENSE file for license information.
 
-auto_generated_sources = [
-  'ext/nginx/ConfigurationCommands.c',
-  'ext/nginx/CreateLocationConfig.c',
-  'ext/nginx/MergeLocationConfig.c',
-  'ext/nginx/CacheLocationConfig.c',
-  'ext/nginx/ConfigurationFields.h'
-]
+auto_generated_sources = %w(
+  src/nginx_module/ConfigurationCommands.c
+  src/nginx_module/CreateLocationConfig.c
+  src/nginx_module/MergeLocationConfig.c
+  src/nginx_module/CacheLocationConfig.c
+  src/nginx_module/ConfigurationFields.h
+)
 
 desc "Build Nginx support files"
 task :nginx => [
@@ -24,7 +24,7 @@ task :_nginx => :nginx
 
 task :nginx_without_native_support => [
   auto_generated_sources,
-  AGENT_OUTPUT_DIR + AGENT_EXE,
+  AGENT_TARGET,
   COMMON_LIBRARY.only(*NGINX_LIBS_SELECTOR).link_objects
 ].flatten
 
@@ -37,7 +37,7 @@ end
 def create_nginx_auto_generated_source_task(source)
   dependencies = [
     "#{source}.erb",
-    'lib/phusion_passenger/nginx/config_options.rb'
+    'src/ruby_supportlib/phusion_passenger/nginx/config_options.rb'
   ]
   file(source => dependencies) do
     template = TemplateRenderer.new("#{source}.erb")

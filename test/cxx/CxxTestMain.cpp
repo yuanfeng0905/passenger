@@ -11,12 +11,12 @@
 #include <cstring>
 #include <unistd.h>
 
-#include <agent/Base.h>
+#include <Shared/Base.h>
 #include <Utils.h>
 #include <Utils/IOUtils.h>
 #include <Utils/StrIntUtils.h>
-#include <Utils/json.h>
-#include <Utils/License.c>
+#include <Utils/License.h>
+#include <jsoncpp/json.h>
 
 using namespace std;
 using namespace Passenger;

@@ -7,7 +7,8 @@
 
 ### Ruby components tests ###
 
-dependencies = [NATIVE_SUPPORT_TARGET, AGENT_OUTPUT_DIR + AGENT_EXE, 'test/support/allocate_memory'].compact
+dependencies = [NATIVE_SUPPORT_TARGET, AGENT_TARGET,
+  "#{TEST_OUTPUT_DIR}allocate_memory"].compact
 desc "Run unit tests for the Ruby libraries"
 task 'test:ruby' => dependencies do
   if maybe_grep = string_option('E')
