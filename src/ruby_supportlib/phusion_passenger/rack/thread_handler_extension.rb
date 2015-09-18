@@ -132,14 +132,7 @@ module PhusionPassenger
               log_exception_to_union_station(env, e)
             end
           ensure
-            begin
-              body.close if body && body.respond_to?(:close)
-            rescue => e
-              if !should_swallow_app_error?(e, socket_wrapper)
-                print_exception("Rack response body object's #close method", e)
-                log_exception_to_union_station(env, e)
-              end
-            end
+            close_body(body, env, socket_wrapper)
           end
           false
         ensure
@@ -149,6 +142,10 @@ module PhusionPassenger
 
     private
       def process_body(env, connection, socket_wrapper, status, is_head_request, headers, body)
+        if @ush_reporter
+          ush_log_id = @ush_reporter.log_writing_rack_body_begin
+        end
+
         # Fix up incompliant body objects. Ensure that the body object
         # can respond to #each.
         output_body = should_output_body?(status, is_head_request)
@@ -288,6 +285,28 @@ module PhusionPassenger
         end
 
         signal_keep_alive_allowed!
+      ensure
+        if @ush_reporter && ush_log_id
+          @ush_reporter.log_writing_rack_body_end(ush_log_id)
+        end
+      end
+
+      def close_body(body, env, socket_wrapper)
+        if @ush_reporter
+          ush_log_id = @ush_reporter.log_closing_rack_body_begin
+        end
+        begin
+          body.close if body && body.respond_to?(:close)
+        rescue => e
+          if !should_swallow_app_error?(e, socket_wrapper)
+            print_exception("Rack response body object's #close method", e)
+            log_exception_to_union_station(env, e)
+          end
+        ensure
+          if @ush_reporter && ush_log_id
+            @ush_reporter.log_closing_rack_body_end(ush_log_id)
+          end
+        end
       end
 
       def generate_headers_array(status, headers)
@@ -315,7 +334,7 @@ module PhusionPassenger
 
       def should_output_body?(status, is_head_request)
         return (status < 100 ||
-          (status >= 200 && status != 204 && status != 205 && status != 304)) &&
+          (status >= 200 && status != 204 && status != 304)) &&
           !is_head_request
       end
 

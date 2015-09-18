@@ -306,7 +306,7 @@ module PhusionPassenger
         end
 
         if @union_station_hooks_defined
-          UnionStationHooks.begin_rack_request(headers)
+          @ush_reporter = UnionStationHooks.begin_rack_request(headers)
         end
 
         #################
@@ -319,6 +319,7 @@ module PhusionPassenger
 
         if @union_station_hooks_defined
           UnionStationHooks.end_rack_request(headers, has_error)
+          @ush_reporter = nil
         end
 
         if !has_error && @keepalive_performed && connection

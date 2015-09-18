@@ -380,14 +380,23 @@ private:
 		vector<string>::const_iterator it;
 		list<ServerPtr> upServers;
 		vector<ServerPtr> downServers;
-		string dnsErrorMessage;
 
 		try {
 			ips = resolveHostname(gatewayAddress, gatewayPort);
 		} catch (const tracable_exception &e) {
 			P_ERROR(e.what());
-			dnsErrorMessage = e.what();
+			// DNS errors tend to be temporary, so retry
+			// after a short timeout.
+			scheduleNextCheckup(60);
+			// Take note of the error, but do not change the server
+			// list so that the RemoteSender can keep working with
+			// the last known server list.
+			boost::lock_guard<boost::mutex> l(syncher);
+			this->lastCheckupTime = SystemTime::get();
+			this->lastDnsErrorMessage = e.what();
+			return;
 		}
+
 
 		P_INFO(ips.size() << " Union Station gateway servers found");
 
@@ -414,7 +423,7 @@ private:
 		this->lastCheckupTime = SystemTime::get();
 		this->upServers = upServers;
 		this->downServers = downServers;
-		this->lastDnsErrorMessage = dnsErrorMessage;
+		this->lastDnsErrorMessage.clear();
 	}
 
 	void freeThreadData() {
