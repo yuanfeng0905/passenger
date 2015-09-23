@@ -597,8 +597,8 @@ task :fakeroot => [:apache2, :nginx, :doc] do
 
   # C++ support libraries
   sh "mkdir -p #{fake_libdir}"
-  sh "cp -R #{PhusionPassenger.lib_dir}/cxx_supportlib #{fake_libdir}/"
-  sh "rm -rf #{fake_libdir}/cxx_supportlib/libboost_oxt"
+  sh "cp -R #{COMMON_OUTPUT_DIR} #{fake_libdir}/"
+  sh "rm -rf #{fake_libdir}/common/libboost_oxt"
 
   # Ruby extension binaries
   sh "mkdir -p #{fake_native_support_dir}"
@@ -685,7 +685,7 @@ task :fakeroot => [:apache2, :nginx, :doc] do
 
   # Apache 2 module
   sh "mkdir -p #{File.dirname(fake_apache2_module_path)}"
-  sh "cp #{APACHE2_MODULE} #{fake_apache2_module_path}"
+  sh "cp #{APACHE2_TARGET} #{fake_apache2_module_path}"
 
   # Ruby extension sources
   sh "mkdir -p #{fake_ruby_extension_source_dir}"
