@@ -175,11 +175,21 @@ private:
 		int errcode)
 	{
 		size_t consumed = client->arrayReader.feed(buffer.start, buffer.size());
+
+		if (client->arrayReader.hasError()) {
+			disconnectWithError(&client,
+				string("Error processing message: array message parse error: ")
+				+ client->arrayReader.errorString());
+			return Channel::Result(consumed, true);
+		}
+
 		if (client->arrayReader.done()) {
+			// No error
 			const vector<StaticString> &message = client->arrayReader.value();
 			SKC_DEBUG(client, "Message received: " << toString(message));
 			if (message.size() < 1) {
-				disconnectWithError(&client, "Error processing message: too few parameters");
+				disconnectWithError(&client, "Error processing message:"
+					" too few parameters");
 				return Channel::Result(consumed, true);
 			}
 
@@ -193,7 +203,16 @@ private:
 		int errcode)
 	{
 		size_t consumed = client->scalarReader.feed(buffer.start, buffer.size());
+
+		if (client->scalarReader.hasError()) {
+			disconnectWithError(&client,
+				string("Error processing message: scalar message parse error: ")
+				+ client->scalarReader.errorString());
+			return Channel::Result(consumed, true);
+		}
+
 		if (client->scalarReader.done()) {
+			// No error
 			processLogMessageBody(client, client->scalarReader.value());
 			client->scalarReader.reset();
 		}
@@ -292,6 +311,23 @@ private:
 	void processLogMessageBody(Client *client, const StaticString &body) {
 		// In here we process the scalar message that's expected to come
 		// after the "log" command.
+
+		if (getLogLevel() == LVL_DEBUG) {
+			string truncatedBody;
+			if (body.size() > 97) {
+				string truncatedBody = body.substr(0, 97);
+				truncatedBody.append("...");
+				SKC_DEBUG(client, "Processing message body (" << body.size() <<
+					" bytes): " << truncatedBody);
+			} else {
+				SKC_DEBUG(client, "Processing message body (" << body.size() <<
+					" bytes): " << body);
+			}
+		} else if (getLogLevel() >= LVL_DEBUG2) {
+			SKC_TRACE(client, 2, "Processing message body (" << body.size() <<
+				" bytes): " << body);
+		}
+
 		writeLogEntry(client,
 			client->logCommandParams.transaction,
 			client->logCommandParams.timestamp,
@@ -983,7 +1019,7 @@ protected:
 	virtual void reinitializeClient(Client *client, int fd) {
 		ParentClass::reinitializeClient(client, fd);
 		client->arrayReader.setMaxSize(1024 * 16);
-		client->scalarReader.setMaxSize(1024 * 128);
+		client->scalarReader.setMaxSize(1024 * 1024);
 		client->state = Client::READING_AUTH_USERNAME;
 		client->type = Client::UNINITIALIZED;
 	}

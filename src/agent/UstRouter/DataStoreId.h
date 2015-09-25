@@ -40,6 +40,13 @@ private:
 	}
 
 public:
+	DataStoreId()
+		: id(NULL),
+		  groupNameSize(0),
+		  nodeNameSize(0),
+		  categorySize(0)
+		{ }
+
 	DataStoreId(const StaticString &groupName, const StaticString &nodeName,
 		const StaticString &category)
 	{
@@ -71,13 +78,12 @@ public:
 		*end = '\0';
 	}
 
-	DataStoreId() {
-		id = NULL;
-	}
-
 	DataStoreId(const DataStoreId &other) {
 		if (other.id == NULL) {
 			id = NULL;
+			groupNameSize = 0;
+			nodeNameSize = 0;
+			categorySize = 0;
 		} else {
 			id = new char[other.totalSize()];
 			memcpy(id, other.id, other.totalSize());
@@ -88,17 +94,17 @@ public:
 	}
 
 	~DataStoreId() {
-		delete id;
+		delete[] id;
 	}
 
 	DataStoreId &operator=(const DataStoreId &other) {
 		if (other.id == NULL) {
-			delete id;
+			delete[] id;
 			id = NULL;
 			return *this;
 		} else {
 			if (totalSize() != other.totalSize()) {
-				delete id;
+				delete[] id;
 				id = NULL;
 			}
 			if (id == NULL) {
