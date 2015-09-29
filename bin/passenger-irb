@@ -291,17 +291,17 @@ module PhusionPassenger
 
     def read_responses(channel)
       while true
-        header, body = channel.read
-        if !header
+        message = channel.read
+        if !message
           break
         end
-        body = body.unpack('m').first
-        case header
+
+        case message[0]
         when "puts"
-          STDOUT.write(body)
+          STDOUT.write(channel.read_scalar)
           STDOUT.flush
         when "end"
-          puts body
+          puts channel.read_scalar
           break
         else
           raise "Invalid header '#{header}'"

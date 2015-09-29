@@ -659,16 +659,16 @@ module PhusionPassenger
         @mutex.synchronize do
           io = StringIO.new
           io.puts(*args)
-          @channel.write('puts', [io.string].pack('m'))
+          @channel.write('puts')
+          @channel.write_scalar(io.string)
           return nil
         end
       end
 
       def p(object)
         @mutex.synchronize do
-          io = StringIO.new
-          io.puts(object.inspect)
-          @channel.write('puts', [io.string].pack('m'))
+          @channel.write('puts')
+          @channel.write_scalar(object.inspect)
           return nil
         end
       end
@@ -678,7 +678,8 @@ module PhusionPassenger
         @mutex.synchronize do
           io = StringIO.new
           PP.pp(object, io)
-          @channel.write('puts', [io.string].pack('m'))
+          @channel.write('puts')
+          @channel.write_scalar(io.string)
           return nil
         end
       end
@@ -733,7 +734,8 @@ module PhusionPassenger
           end
           result_str = e.backtrace_string("passenger-irb")
         end
-        channel.write('end', [result_str].pack('m'))
+        channel.write('end')
+        channel.write_scalar(result_str)
       end
     end
 
