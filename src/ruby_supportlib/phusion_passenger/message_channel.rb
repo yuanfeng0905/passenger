@@ -215,6 +215,11 @@ module PhusionPassenger
       args.each do |arg|
         message << arg.to_s << DELIMITER
       end
+
+      if message.size > 2 ** 16 - 1
+        raise ArgumentError, 'Message size too large'
+      end
+
       @io.write([message.size].pack('n') << message)
       @io.flush
     end
