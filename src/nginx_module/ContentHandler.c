@@ -226,8 +226,8 @@ set_upstream_server_address(ngx_http_upstream_t *upstream, ngx_http_upstream_con
             core_address_len = passenger_main_conf.fly_with.len;
         } else {
             core_address =
-                pp_agents_starter_get_core_address(pp_agents_starter,
-                                                   &core_address_len);
+                psg_watchdog_launcher_get_core_address(psg_watchdog_launcher,
+                                                       &core_address_len);
             core_address += sizeof("unix:") - 1;
             core_address_len -= sizeof("unix:") - 1;
         }
@@ -268,8 +268,8 @@ fix_peer_address(ngx_http_request_t *r) {
         core_address_len = passenger_main_conf.fly_with.len;
     } else {
         core_address =
-            pp_agents_starter_get_core_address(pp_agents_starter,
-                                                 &core_address_len);
+            psg_watchdog_launcher_get_core_address(psg_watchdog_launcher,
+                                                   &core_address_len);
     }
 
     while (peers != NULL) {
@@ -463,8 +463,8 @@ prepare_request_buffer_construction(ngx_http_request_t *r, passenger_context_t *
         state->core_password.data = (u_char *) "";
         state->core_password.len  = 0;
     } else {
-        state->core_password.data = (u_char *) pp_agents_starter_get_core_password(
-            pp_agents_starter, &len);
+        state->core_password.data = (u_char *) psg_watchdog_launcher_get_core_password(
+            psg_watchdog_launcher, &len);
         state->core_password.len  = len;
     }
 
