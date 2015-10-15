@@ -1,6 +1,9 @@
 #  Phusion Passenger - https://www.phusionpassenger.com/
 #  Copyright (c) 2010-2013 Phusion
 #
+#  "Passenger", "Phusion Passenger" and "Union Station" are registered
+#  trademarks of Phusion Holding B.V.
+#
 #  See LICENSE file for license information.
 require 'mkmf'
 
