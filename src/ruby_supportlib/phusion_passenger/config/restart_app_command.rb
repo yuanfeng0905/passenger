@@ -1,7 +1,8 @@
 #  Phusion Passenger - https://www.phusionpassenger.com/
-#  Copyright (c) 2013-2015 Phusion
+#  Copyright (c) 2013-2015 Phusion Holding B.V.
 #
-#  "Phusion Passenger" is a trademark of Hongli Lai & Ninh Bui.
+#  "Passenger", "Phusion Passenger" and "Union Station" are registered
+#  trademarks of Phusion Holding B.V.
 #
 #  See LICENSE file for license information.
 
@@ -208,7 +209,7 @@ module PhusionPassenger
           request.content_type = "application/json"
           request.body = PhusionPassenger::Utils::JSON.generate(
             :name => group_name,
-            :method => restart_method)
+            :restart_method => restart_method)
           response = @instance.http_request("agents.s/core_api", request)
           if response.code.to_i / 100 == 2
             response.body
