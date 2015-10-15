@@ -7,7 +7,7 @@ FILES = Dir[
   "src/**/*.{c,cpp,h,hpp,erb,rb,py,js}",
   "src/helper-scripts/**/*"
 ] - Dir["src/cxx_supportlib/vendor*/**/*"]
-LICENSE_START_SIGNATURE = '"Phusion Passenger" is a trademark of Hongli Lai & Ninh Bui.'
+LICENSE_START_SIGNATURE = 'trademarks of Phusion Holding B.V.'
 NEW_LICENSE = "See LICENSE file for license information."
 
 def change_license!(filename)
