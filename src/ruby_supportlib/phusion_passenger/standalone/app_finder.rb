@@ -68,10 +68,10 @@ module PhusionPassenger
             @options.merge(app)
           end
         else
-          dirs = @dirs.empty? ? [File.absolute_path_no_resolve(".")] : @dirs
+          dirs = @dirs.empty? ? [Dir.logical_pwd] : @dirs
           dirs.each do |dir|
             if looks_like_app_directory?(dir, @options)
-              app_root = File.absolute_path_no_resolve(dir)
+              app_root = File.absolute_logical_path(dir)
               server_names = filename_to_server_names(dir)
               apps << {
                 :server_names => server_names,
@@ -84,7 +84,7 @@ module PhusionPassenger
                 end
               end
             else
-              full_dir = File.absolute_path_no_resolve(dir)
+              full_dir = File.absolute_logical_path(dir)
               watchlist << full_dir
               Dir["#{full_dir}/*"].each do |subdir|
                 if looks_like_app_directory?(subdir, @options)

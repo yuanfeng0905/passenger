@@ -1,7 +1,7 @@
 # encoding: utf-8
 #
 #  Phusion Passenger - https://www.phusionpassenger.com/
-#  Copyright (c) 2014 Phusion Holding B.V.
+#  Copyright (c) 2014-2015 Phusion Holding B.V.
 #
 #  "Passenger", "Phusion Passenger" and "Union Station" are registered
 #  trademarks of Phusion Holding B.V.
@@ -57,7 +57,7 @@ private
 		elsif @argv.size > 1
 			abort "Please specify only a single output filename. See --help for more information."
 		else
-			@output_filename = File.absolute_path_no_resolve(@argv[0])
+			@output_filename = File.absolute_logical_path(@argv[0])
 		end
 	end
 
