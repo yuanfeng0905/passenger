@@ -531,7 +531,8 @@ sendHeaderToAppWithHttpProtocol(Client *client, Request *req) {
 		unsigned int nbuffers, dataSize;
 		bool ok;
 
-		ok = constructHeaderBuffersForHttpProtocol(req, NULL, 0, nbuffers, dataSize, cache);
+		ok = constructHeaderBuffersForHttpProtocol(req, NULL, 0,
+			nbuffers, dataSize, cache);
 		assert(ok);
 
 		buffers = (struct iovec *) psg_palloc(req->pool,
@@ -610,7 +611,7 @@ constructHeaderBuffersForHttpProtocol(Request *req, struct iovec *buffers,
 	if (!cache.cached) {
 		cache.methodStr  = http_method_str(req->method);
 		cache.remoteAddr = req->secureHeaders.lookup(REMOTE_ADDR);
-		cache.setCookie = req->headers.lookup(ServerKit::HTTP_SET_COOKIE);
+		cache.setCookie  = req->headers.lookup(ServerKit::HTTP_SET_COOKIE);
 		cache.cached     = true;
 	}
 
@@ -704,6 +705,7 @@ constructHeaderBuffersForHttpProtocol(Request *req, struct iovec *buffers,
 
 	if (req->https) {
 		PUSH_STATIC_BUFFER("X-Forwarded-Proto: https\r\n");
+		PUSH_STATIC_BUFFER("!~Passenger-Proto: https\r\n");
 	}
 
 	if (cache.remoteAddr != NULL && cache.remoteAddr->size > 0) {
@@ -722,10 +724,38 @@ constructHeaderBuffersForHttpProtocol(Request *req, struct iovec *buffers,
 		dataSize += cache.remoteAddr->size;
 
 		PUSH_STATIC_BUFFER("\r\n");
+
+		PUSH_STATIC_BUFFER("!~Passenger-Client-Address: ");
+
+		part = cache.remoteAddr->start;
+		while (part != NULL) {
+			if (buffers != NULL) {
+				BEGIN_PUSH_NEXT_BUFFER();
+				buffers[i].iov_base = (void *) part->data;
+				buffers[i].iov_len  = part->size;
+			}
+			INC_BUFFER_ITER(i);
+			part = part->next;
+		}
+		dataSize += cache.remoteAddr->size;
+
+		PUSH_STATIC_BUFFER("\r\n");
+	}
+
+	if (!req->options.environmentVariables.empty()) {
+		PUSH_STATIC_BUFFER("!~Passenger-Envvars: ");
+		if (buffers != NULL) {
+			BEGIN_PUSH_NEXT_BUFFER();
+			buffers[i].iov_base = (void *) req->options.environmentVariables.data();
+			buffers[i].iov_len = req->options.environmentVariables.size();
+		}
+		INC_BUFFER_ITER(i);
+		dataSize += req->options.environmentVariables.size();
+		PUSH_STATIC_BUFFER("\r\n");
 	}
 
 	if (req->options.analytics) {
-		PUSH_STATIC_BUFFER("Passenger-Txn-Id: ");
+		PUSH_STATIC_BUFFER("!~Passenger-Txn-Id: ");
 
 		if (buffers != NULL) {
 			BEGIN_PUSH_NEXT_BUFFER();

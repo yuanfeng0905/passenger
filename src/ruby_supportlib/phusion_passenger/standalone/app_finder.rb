@@ -177,9 +177,9 @@ module PhusionPassenger
 
       def find_app_root
         if @dirs.empty?
-          return File.absolute_path_no_resolve(".")
+          return File.absolute_logical_path(".")
         else
-          return File.absolute_path_no_resolve(@dirs[0])
+          return File.absolute_logical_path(@dirs[0])
         end
       end
 
@@ -208,11 +208,11 @@ module PhusionPassenger
           (@dirs.size == 1 && looks_like_app_directory?(@dirs[0], options))
         @mode = single ? :single : :multi
         if @dirs.empty?
-          @execution_root = Dir.pwd_no_resolve
+          @execution_root = Dir.logical_pwd
         elsif @dirs.size == 1
-          @execution_root = File.absolute_path_no_resolve(@dirs[0])
+          @execution_root = File.absolute_logical_path(@dirs[0])
         else
-          @execution_root = Dir.pwd_no_resolve
+          @execution_root = Dir.logical_pwd
         end
       end
 
