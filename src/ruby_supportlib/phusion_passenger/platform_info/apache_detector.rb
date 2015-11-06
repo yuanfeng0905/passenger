@@ -272,7 +272,7 @@ module PhusionPassenger
         if path
           begin
             Pathname.new(path).realpath.to_s
-          rescue Errno::ENOENT, Errno::EACCES
+          rescue Errno::ENOENT, Errno::EACCES, Errno::ENOTDIR
             path
           end
         else
