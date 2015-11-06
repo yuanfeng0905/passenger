@@ -23,6 +23,8 @@
 #include <Core/ResponseCache.h>
 
 namespace Passenger {
+namespace Core {
+
 
 using namespace std;
 
@@ -274,6 +276,7 @@ public:
 };
 
 
+} // namespace Core
 } // namespace Passenger
 
 #endif /* _PASSENGER_TURBO_CACHING_H_ */

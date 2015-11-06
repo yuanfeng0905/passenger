@@ -7,13 +7,31 @@
  *
  *  See LICENSE file for license information.
  */
+#include <Core/Controller.h>
 
-// This file is included inside the RequestHandler class.
+/*************************************************************************
+ *
+ * Implements Core::Controller methods pertaining buffering the request
+ * body.
+ *
+ *************************************************************************/
 
-private:
+namespace Passenger {
+namespace Core {
+
+using namespace std;
+using namespace boost;
+
+
+/****************************
+ *
+ * Private methods
+ *
+ ****************************/
+
 
 void
-beginBufferingBody(Client *client, Request *req) {
+Controller::beginBufferingBody(Client *client, Request *req) {
 	TRACE_POINT();
 	req->state = Request::BUFFERING_REQUEST_BODY;
 	req->bodyChannel.start();
@@ -22,8 +40,8 @@ beginBufferingBody(Client *client, Request *req) {
 	req->beginStopwatchLog(&req->stopwatchLogs.bufferingRequestBody, "buffering request body");
 }
 
-Channel::Result
-whenBufferingBody_onRequestBody(Client *client, Request *req,
+ServerKit::Channel::Result
+Controller::whenBufferingBody_onRequestBody(Client *client, Request *req,
 	const MemoryKit::mbuf &buffer, int errcode)
 {
 	TRACE_POINT();
@@ -81,3 +99,7 @@ whenBufferingBody_onRequestBody(Client *client, Request *req,
 		return Channel::Result(0, true);
 	}
 }
+
+
+} // namespace Core
+} // namespace Passenger

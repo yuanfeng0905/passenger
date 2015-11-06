@@ -24,6 +24,7 @@
 #include <DataStructures/LString.h>
 
 namespace Passenger {
+namespace Core {
 
 
 class HttpHeaderParser;
@@ -210,6 +211,7 @@ public:
 };
 
 
+} // namespace Core
 } // namespace Passenger
 
 #endif /* _PASSENGER_APP_RESPONSE_H_ */
