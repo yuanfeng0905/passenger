@@ -350,6 +350,8 @@ private:
 		bool end = true);
 	bool getBoolOption(Request *req, const HashedStaticString &name,
 		bool defaultValue = false);
+	unsigned int getUIntOption(Request *req, const HashedStaticString &name,
+		unsigned int defaultValue = 0);
 	template<typename Number> static Number clamp(Number value,
 		Number min, Number max);
 	static void gatherBuffers(char * restrict dest, unsigned int size,

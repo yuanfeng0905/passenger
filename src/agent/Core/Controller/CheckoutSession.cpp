@@ -365,14 +365,14 @@ void
 Controller::_onTimeout(EV_P_ struct ev_timer *timer, int revents) {
 	Request *req = static_cast<Request *>(timer->data);
 	Client *client = static_cast<Client *>(req->client);
-	RequestHandler *self = static_cast<RequestHandler *>(
-		RequestHandler::getServerFromClient(client));
+	Controller *self = static_cast<Controller *>(
+		Controller::getServerFromClient(client));
 	self->onTimeout(client, req);
 }
 
 void
 Controller::onTimeout(Client *client, Request *req) {
-	SKC_LOG_EVENT(RequestHandler, client, "onTimeout");
+	SKC_LOG_EVENT(Controller, client, "onTimeout");
 	if (req->session != NULL) {
 		SKC_ERROR(client, "Maximum request time of " << req->maxRequestTime <<
 			" seconds reached, killing process " << req->session->getPid());

@@ -174,7 +174,9 @@ Controller::getBoolOption(Request *req, const HashedStaticString &name,
 }
 
 unsigned int
-getUIntOption(Request *req, const HashedStaticString &name, unsigned int defaultValue = 0) {
+Controller::getUIntOption(Request *req, const HashedStaticString &name,
+	unsigned int defaultValue)
+{
 	const LString *value = req->secureHeaders.lookup(name);
 	if (value != NULL && value->size > 0) {
 		value = psg_lstr_make_contiguous(value, req->pool);
