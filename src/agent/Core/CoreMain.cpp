@@ -1105,6 +1105,7 @@ setAgentsOptionsDefaults() {
 	options.setDefaultInt("pool_idle_time", DEFAULT_POOL_IDLE_TIME);
 	options.setDefaultInt("min_instances", 1);
 	options.setDefaultInt("max_preloader_idle_time", DEFAULT_MAX_PRELOADER_IDLE_TIME);
+	options.setDefaultInt("max_request_queue_size", DEFAULT_MAX_REQUEST_QUEUE_SIZE);
 	options.setDefaultInt("stat_throttle_rate", DEFAULT_STAT_THROTTLE_RATE);
 	options.setDefault("server_software", SERVER_TOKEN_NAME "/" PASSENGER_VERSION);
 	options.setDefaultBool("show_version_in_header", true);
@@ -1119,6 +1120,7 @@ setAgentsOptionsDefaults() {
 	options.setDefaultInt("core_threads", boost::thread::hardware_concurrency());
 	options.setDefaultBool("core_cpu_affine", false);
 	options.setDefault("friendly_error_pages", "auto");
+	options.setDefaultUint("memory_limit", 0);
 	options.setDefaultBool("rolling_restarts", false);
 	options.setDefaultBool("resist_deployment_errors", false);
 
