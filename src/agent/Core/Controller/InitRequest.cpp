@@ -197,6 +197,7 @@ Controller::fillPoolOptionsFromAgentsOptions(Options &options) {
 	options.debugger = agentsOptions->getBool("debugger");
 	options.concurrencyModel = agentsOptions->get("concurrency_model");
 	options.threadCount = agentsOptions->getInt("app_thread_count");
+	options.memoryLimit = agentsOptions->getInt("memory_limit");
 	options.rollingRestart = agentsOptions->getBool("rolling_restarts");
 	options.ignoreSpawnErrors = agentsOptions->getBool("resist_deployment_errors");
 }
