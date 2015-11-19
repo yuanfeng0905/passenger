@@ -293,21 +293,42 @@ module PhusionPassenger
     def before_loading_app_code_step2(options)
       if options["debugger"]
         if RUBY_VERSION < "1.9.0"
-          debug_libname = 'ruby-debug'
+          load_ruby_debug_gem
         elsif RUBY_VERSION.start_with?('1.9')
-          debug_libname = 'debugger'
+          load_debugger_gem
         else
-          debug_libname = 'byebug'
+          load_byebug_gem
         end
-        require(debug_libname)
-        if defined?(Debugger)
-          up_to_date = Debugger.respond_to?(:ctrl_port)
-        else
-          up_to_date = Byebug.respond_to?(:actual_port)
-        end
-        if !up_to_date
-          raise "Your version of the '#{debug_libname}' gem is too old. Please upgrade to the latest version."
-        end
+      end
+    end
+
+    def load_ruby_debug_gem
+      require('ruby-debug')
+      if !Debugger.respond_to?(:ctrl_port)
+        raise "Your version of the 'ruby-debug' gem is too old. Please upgrade to the latest version."
+      end
+    end
+
+    def load_debugger_gem
+      require('debugger')
+      if !Debugger.respond_to?(:ctrl_port)
+        raise "Your version of the 'debugger' gem is too old. Please upgrade to the latest version."
+      end
+    end
+
+    def load_byebug_gem
+      require('byebug')
+      begin
+        # Since version 7.0.0, Byebug lazy loads the library when the
+        # `debugger` method is called. But we need it to be entirely
+        # loaded before that method is called.
+        # https://github.com/phusion/passenger/issues/1662
+        require('byebug/core')
+      rescue LoadError
+      end
+
+      if !Byebug.respond_to?(:actual_port)
+        raise "Your version of the 'byebug' gem is too old. Please upgrade to the latest version."
       end
     end
 

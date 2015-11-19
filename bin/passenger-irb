@@ -242,6 +242,14 @@ module PhusionPassenger
         rescue LoadError
           abort "*** ERROR: Cannot load the 'byebug' gem. Please ensure that this gem is installed for this Ruby interpreter."
         end
+        begin
+          # Since version 7.0.0, Byebug lazy loads the library when the
+          # `debugger` method is called. But we need it to be entirely
+          # loaded before that method is called.
+          # https://github.com/phusion/passenger/issues/1662
+          require 'byebug/core'
+        rescue LoadError
+        end
         puts "*** Attaching debugger to process #{pid}."
         puts "*** Attaching will succeed as soon as process #{pid} reaches a 'byebug' call."
         puts "*** Press Ctrl-D to exit debugger."
