@@ -31,6 +31,7 @@
 #include <StaticString.h>
 #include <Exceptions.h>
 #include <Utils/StrIntUtils.h>
+#include <Utils/ReleaseableScopedPointer.h>
 
 namespace Passenger {
 namespace FilterSupport {
@@ -767,7 +768,7 @@ private:
 
 	SimpleContext *parse() const {
 		if (parsedData == NULL) {
-			auto_ptr<SimpleContext> ctx(new SimpleContext());
+			ReleaseableScopedPointer<SimpleContext> ctx(new SimpleContext());
 			reallyParse(logData, *ctx.get());
 			parsedData = ctx.release();
 		}

@@ -472,8 +472,9 @@ private:
 					"already opened with a different node name (" <<
 					transaction->getNodeName() << " vs " << nodeName << ")");
 				if (ack) {
-					sendErrorToClient(client,
-						"Cannot open transaction: transaction already opened with a different node name");
+					sendErrorToClient(client, "Cannot open transaction: transaction "
+							"already opened with a different node name (" +
+							transaction->getNodeName() + " vs " + nodeName + ")");
 					if (client->connected()) {
 						disconnect(&client);
 					}
@@ -481,10 +482,12 @@ private:
 				goto done;
 			}
 			if (OXT_UNLIKELY(transaction->getCategory() != category)) {
-				SKC_ERROR(client, "Cannot open transaction: transaction already opened with a different category name");
+				SKC_ERROR(client, "Cannot open transaction: transaction already opened with a different category name (" <<
+						transaction->getCategory() << " vs " << category << ")");
 				if (ack) {
 					sendErrorToClient(client,
-						"Cannot open transaction: transaction already opened with a different category name");
+							"Cannot open transaction: transaction already opened with a different category name (" +
+							transaction->getCategory() + " vs " + category + ")");
 					if (client->connected()) {
 						disconnect(&client);
 					}
@@ -878,7 +881,8 @@ private:
 		return category == P_STATIC_STRING("requests")
 			|| category == P_STATIC_STRING("processes")
 			|| category == P_STATIC_STRING("exceptions")
-			|| category == P_STATIC_STRING("system_metrics");
+			|| category == P_STATIC_STRING("system_metrics")
+			|| category == P_STATIC_STRING("internal_information");
 	}
 
 	LogSinkPtr openLogFile(Client *client, const StaticString &category) {

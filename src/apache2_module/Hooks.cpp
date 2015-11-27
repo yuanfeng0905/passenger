@@ -45,6 +45,7 @@
 #include <Utils/Timer.h>
 #include <Utils/License.c>
 #include <Utils/HttpConstants.h>
+#include <Utils/ReleaseableScopedPointer.h>
 #include <Logging.h>
 #include <WatchdogLauncher.h>
 #include <Constants.h>
@@ -401,8 +402,8 @@ private:
 				return false;
 			}
 		} catch (const DocumentRootDeterminationError &e) {
-			auto_ptr<RequestNote> note(new RequestNote(mapper, config));
-			note->errorReport = new ReportDocumentRootDeterminationError(e);
+			ReleaseableScopedPointer<RequestNote> note(new RequestNote(mapper, config));
+			note.get()->errorReport = new ReportDocumentRootDeterminationError(e);
 			apr_pool_userdata_set(note.release(), "Phusion Passenger",
 				RequestNote::cleanup, r->pool);
 			return true;
@@ -421,8 +422,8 @@ private:
 			 * Phusion Passenger for the rest of the request.
 			 */
 			if (e.code() == EACCES || e.code() == EPERM) {
-				auto_ptr<RequestNote> note(new RequestNote(mapper, config));
-				note->errorReport = new ReportFileSystemError(e);
+				ReleaseableScopedPointer<RequestNote> note(new RequestNote(mapper, config));
+				note.get()->errorReport = new ReportFileSystemError(e);
 				apr_pool_userdata_set(note.release(), "Phusion Passenger",
 					RequestNote::cleanup, r->pool);
 				return true;

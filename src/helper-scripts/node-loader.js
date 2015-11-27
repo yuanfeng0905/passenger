@@ -16,6 +16,10 @@ var net = require('net');
 var http = require('http');
 
 var LineReader = require('phusion_passenger/line_reader').LineReader;
+var ustLog = require('phusion_passenger/ustrouter_connector');
+
+var instrumentModulePaths = [ 'phusion_passenger/log_express', 'phusion_passenger/log_mongodb'];
+var instrumentedModules = [];
 
 module.isApplicationLoader = true; // https://groups.google.com/forum/#!topic/compoundjs/4txxkNtROQg
 GLOBAL.PhusionPassenger = exports.PhusionPassenger = new EventEmitter();
@@ -60,13 +64,62 @@ function readOptions() {
 	readNextOption();
 }
 
+function passengerToWinstonLogLevel(passengerLogLevel) {
+	switch (passengerLogLevel) {
+		case "1":
+			return "error";
+		case "2":
+			return "warn";
+		case "3": // notice
+		case "4": // info
+			return "info";
+		case "5": // debug
+			return "verbose";
+		case "6": // debug2
+			return "debug";
+		case "7": // debug3
+			return "silly";
+		case "0": // crit
+		default:
+			break;
+	}
+	
+	return "none";
+}
+
 function setupEnvironment(options) {
 	PhusionPassenger.options = options;
 	PhusionPassenger.configure = configure;
 	PhusionPassenger._appInstalled = false;
+	
+	var logLevel = passengerToWinstonLogLevel(PhusionPassenger.options.log_level);
+	var winston = require("vendor-copy/winston");
+	var logger = new (winston.Logger)({
+  		transports: [ 
+  			new (winston.transports.Console)({ level: logLevel, debugStdout: true })
+  		]
+	});
+	
 	process.title = 'Passenger NodeApp: ' + options.app_root;
 	http.Server.prototype.originalListen = http.Server.prototype.listen;
 	http.Server.prototype.listen = installServer;
+	
+	ustLog.init(logger, PhusionPassenger.options.ust_router_address, PhusionPassenger.options.ust_router_username, 
+		PhusionPassenger.options.ust_router_password, PhusionPassenger.options.union_station_key, PhusionPassenger.options.app_group_name);
+
+	if (ustLog.isEnabled()) {
+		// must be first so other modules can use the cls context
+		require('vendor-copy/continuation-local-storage').createNamespace('passenger-request-ctx');
+		
+		global.phusion_passenger_ustReporter = require('phusion_passenger/ustreporter');
+		global.phusion_passenger_ustReporter.init(logger, options.app_root, ustLog);
+		
+		instrumentModulePaths.forEach(function(modulePath) {
+			var module = require(modulePath);
+			instrumentedModules.push(module);
+			module.initPreLoad(logger, options.app_root, ustLog);
+		});
+	}
 
 	stdinReader.close();
 	stdinReader = undefined;
@@ -74,6 +127,12 @@ function setupEnvironment(options) {
 	process.stdin.resume();
 
 	loadApplication();
+	
+	if (ustLog.isEnabled()) {
+		instrumentedModules.forEach(function(module) {
+			module.initPostLoad();
+		});
+	}
 }
 
 /**
