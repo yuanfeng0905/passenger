@@ -1,7 +1,7 @@
 #  encoding: utf-8
 #
 #  Phusion Passenger - https://www.phusionpassenger.com/
-#  Copyright (c) 2010-2013 Phusion
+#  Copyright (c) 2010-2015 Phusion
 #
 #  "Phusion Passenger" is a trademark of Hongli Lai & Ninh Bui.
 #
@@ -14,6 +14,7 @@ PhusionPassenger.require_passenger_lib 'packaging'
 PhusionPassenger.require_passenger_lib 'common_library'
 PhusionPassenger.require_passenger_lib 'platform_info'
 PhusionPassenger.require_passenger_lib 'platform_info/ruby'
+PhusionPassenger.require_passenger_lib 'platform_info/openssl'
 PhusionPassenger.require_passenger_lib 'platform_info/binary_compatibility'
 PhusionPassenger.require_passenger_lib 'standalone/utils'
 PhusionPassenger.require_passenger_lib 'utils/tmpio'
@@ -73,7 +74,7 @@ class RuntimeInstaller < AbstractInstaller
 			raise ArgumentError, ":lib_dir must be given" if !@lib_dir
 		end
 	end
-	
+
 protected
 	def dependencies
 		specs = [
@@ -99,7 +100,7 @@ protected
 		].compact
 		return [specs, ids]
 	end
-	
+
 	def users_guide_path
 		return PhusionPassenger.standalone_doc_path
 	end
@@ -163,7 +164,7 @@ private
 		if should_install_nginx?
 			nginx_binary_downloaded = download_nginx_binary
 		end
-		
+
 		should_compile_support_binaries = should_install_support_binaries? &&
 			!support_binaries_downloaded
 		should_compile_nginx = should_install_nginx? && !nginx_binary_downloaded
@@ -222,7 +223,7 @@ private
 			puts "     No binaries are available for your platform. Will compile them from source"
 			return false
 		end
-		
+
 		FileUtils.mkdir_p(@support_dir)
 		Dir.mkdir("#{@working_dir}/support")
 		Dir.chdir("#{@working_dir}/support") do
@@ -317,7 +318,7 @@ private
 			end
 		end
 		nginx_sources_name = "nginx-#{@nginx_version}"
-		
+
 		Dir.chdir(@working_dir) do
 			begin_progress_bar
 			begin
@@ -369,7 +370,7 @@ private
 			system "rm -rf '#{@support_dir}'/common/libboost_oxt"
 			system "rm -rf '#{@support_dir}'/*/{*.lo,*.h,*.log,Makefile,libtool,stamp-h1,config.status,.deps}"
 			system "rm -rf '#{@support_dir}'/{libeio,libev}/*.o"
-			
+
 			# Retain only the object files that are needed for linking the Phusion Passenger module into Nginx.
 			nginx_libs = COMMON_LIBRARY.
 				only(*NGINX_LIBS_SELECTOR).
@@ -389,7 +390,7 @@ private
 		end
 		puts
 	end
-	
+
 	def check_nginx_module_sources_available
 		if PhusionPassenger.natively_packaged? && !File.exist?(PhusionPassenger.nginx_module_source_dir)
 			case PhusionPassenger.native_packaging_method
@@ -438,14 +439,14 @@ private
 	ensure
 		File.unlink("#{dir}/__test__.txt") rescue nil
 	end
-	
+
 	def show_progress(progress, total, phase, total_phases, status_text = "")
 		if !phase.is_a?(Range)
 			phase = phase..phase
 		end
 		total_progress = (phase.first - 1).to_f / total_phases
 		total_progress += (progress.to_f / total) * ((phase.last - phase.first + 1).to_f / total_phases)
-		
+
 		max_width = 79
 		progress_bar_width = 45
 		text = sprintf("[%-#{progress_bar_width}s] %s",
@@ -466,24 +467,24 @@ private
 		end
 		@plugin.call_hook(:runtime_installer_progress, total_progress, status_text) if @plugin
 	end
-	
+
 	def myself
 		return `whoami`.strip
 	end
-	
+
 	def begin_progress_bar
 		if !@begun
 			@begun = true
 			puts "<banner>Installing #{PROGRAM_NAME} Standalone...</banner>"
 		end
 	end
-	
+
 	def show_possible_solutions_for_download_and_extraction_problems
 		new_screen
 		render_template "standalone/possible_solutions_for_download_and_extraction_problems"
 		puts
 	end
-	
+
 	def extract_tarball(filename)
 		File.open(filename, 'rb') do |f|
 			IO.popen("tar xzf -", "wb") do |io|
@@ -548,7 +549,7 @@ private
 			:logger => logger,
 			:use_cache => true)
 	end
-	
+
 	def run_command_with_throbber(command, status_text)
 		backlog = ""
 		IO.popen("#{command} 2>&1", "r") do |io|
@@ -567,7 +568,7 @@ private
 			exit 1
 		end
 	end
-	
+
 	def copy_files(files, target)
 		FileUtils.mkdir_p(target)
 		files.each_with_index do |filename, i|
@@ -580,15 +581,15 @@ private
 			yield(i + 1, files.size)
 		end
 	end
-	
+
 	def rake
 		return PlatformInfo.rake_command
 	end
-	
+
 	def run_rake_task!(target)
 		total_lines = `#{rake} #{target} --dry-run STDERR_TO_STDOUT=1`.split("\n").size - 1
 		backlog = ""
-		
+
 		IO.popen("#{rake} #{target} --trace STDERR_TO_STDOUT=1", "r") do |io|
 			progress = 1
 			while !io.eof?
@@ -609,7 +610,7 @@ private
 			exit 1
 		end
 	end
-	
+
 	def install_nginx_from_source(source_dir)
 		PhusionPassenger.require_passenger_lib 'platform_info/compiler'
 		Dir.chdir(source_dir) do
@@ -619,6 +620,8 @@ private
 			nginx_libs = COMMON_LIBRARY.only(*NGINX_LIBS_SELECTOR).
 				set_output_dir(lib_dir).
 				link_objects_as_string
+			extra_cflags = "-Wno-error #{PlatformInfo.openssl_extra_cflags}".strip
+			extra_ldflags = PlatformInfo.openssl_extra_ldflags
 			command << "env PASSENGER_INCLUDEDIR='#{PhusionPassenger.include_dir}' " <<
 				"PASSENGER_LIBS='#{nginx_libs} #{lib_dir}/../libboost_oxt.a' "
 			# RPM thinks it's being smart by scanning binaries for
@@ -631,11 +634,13 @@ private
 			# /tmp.
 			command << "#{shell} ./configure --prefix=/tmp " <<
 				"#{STANDALONE_NGINX_CONFIGURE_OPTIONS} " <<
+				"--with-cc-opt=#{Shellwords.escape extra_cflags} " <<
+				"--with-ld-opt=#{Shellwords.escape extra_ldflags} " <<
 				"'--add-module=#{PhusionPassenger.nginx_module_source_dir}'"
 			run_command_with_throbber(command, "Preparing web helper...") do |status_text|
 				yield(0, 1, status_text)
 			end
-			
+
 			backlog = ""
 
 			# Capture and index the `make --dry-run` output for
@@ -667,7 +672,7 @@ private
 				@stderr.puts backlog
 				exit 1
 			end
-			
+
 			yield(1, 1, 'Copying files...')
 			if !system("cp -pR objs/nginx '#{@nginx_dir}/PassengerWebHelper'")
 				@stderr.puts

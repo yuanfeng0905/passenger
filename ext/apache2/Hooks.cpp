@@ -791,6 +791,16 @@ private:
 			apr_strnatcasecmp(headerName + 1, "ransfer-encoding") == 0;
 	}
 
+	bool contains_non_alphanumdash(const char *current) {
+		while (*current != '\0') {
+			if (!apr_isalnum(*current) && *current != '-') {
+				return false;
+			}
+			current++;
+		}
+		return true;
+	}
+
 	/**
 	 * Convert an HTTP header name to a CGI environment name.
 	 */
@@ -799,10 +809,12 @@ private:
 		char *current = result + sizeof("HTTP_") - 1;
 
 		while (*current != '\0') {
-			if (*current == '-') {
+			if (apr_isalnum(*current)) {
+				*current = apr_toupper(*current);
+			} else if (*current == '-') {
 				*current = '_';
 			} else {
-				*current = apr_toupper(*current);
+				return NULL;
 			}
 			current++;
 		}
@@ -951,11 +963,18 @@ private:
 			if (hdrs[i].key == NULL) {
 				continue;
 			}
+
+			if (!contains_non_alphanumdash(hdrs[i].key)) {
+				continue;
+			}
+
 			size_t keylen = strlen(hdrs[i].key);
 			// We only pass the Transfer-Encoding header if PassengerBufferUpload is disabled,
 			// so that the HelperAgent and the app knows that there is a request body despite
 			// there not being a Content-Length header.
 			if (!headerIsTransferEncoding(hdrs[i].key, keylen) || config->bufferUpload == DirConfig::DISABLED) {
+				// httpToEnv can never return NULL here because of the
+				// earlier contains_non_alphanumdash() check.
 				addHeader(output, httpToEnv(r->pool, hdrs[i].key, keylen), hdrs[i].val);
 			}
 		}

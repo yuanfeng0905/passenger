@@ -2,7 +2,8 @@ define 'openssl-dev' do
 	name "OpenSSL development headers"
 	website "http://www.openssl.org/"
 	define_checker do
-		check_for_header('openssl/ssl.h')
+		check_for_header('openssl/ssl.h', :c,
+			PlatformInfo.openssl_extra_cflags)
 	end
 
 	on :debian do
@@ -19,7 +20,7 @@ define 'libcurl-dev' do
 	define_checker do
 		PhusionPassenger.require_passenger_lib 'platform_info/curl'
 		result = { :found => false }
-		
+
 		if !(curl_config = PlatformInfo.find_command('curl-config'))
 			result[:error] = "Cannot find the `curl-config` command."
 			next result
@@ -65,7 +66,7 @@ define 'libcurl-dev' do
 
 		result
 	end
-	
+
 	install_instructions "Please download Curl from <b>#{website}</b> " +
 		"and make sure you install it <b>with SSL support</b>."
 	on :debian do
