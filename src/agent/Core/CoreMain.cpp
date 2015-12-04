@@ -692,25 +692,18 @@ initializeCloudUsageTracker() {
 		VariantMap &options = *agentsOptions;
 		WorkingObjects *wo = workingObjects;
 
-		string licensingServerCert = options.get("licensing_server_cert", false);
 		string licensingBaseUrl = options.get("licensing_base_url", false);
 		string licensingProxy   = options.get("licensing_proxy", false);
+		bool   checkCert        = options.getBool("licensing_server_check_cert",
+			false, true);
 		bool   autoSend         = options.getBool("licensing_data_points_auto_send",
 			false, true);
-
-		string certificate;
-		if (licensingServerCert.empty()) {
-			certificate = wo->resourceLocator.getResourcesDir() + "/licensing_server.crt";
-		} else if (licensingServerCert != "-") {
-			certificate = licensingServerCert;
-		}
 
 		string licensingDataDir = options.get("licensing_data_dir", false,
 			getHomeDir() + "/.passenger-enterprise/usage_data");
 
 		P_INFO("Starting Phusion Passenger usage tracker using data directory " <<
-			licensingDataDir << " and certificate " <<
-			(certificate.empty() ? "(none)" : certificate));
+			licensingDataDir);
 		makeDirTree(licensingDataDir);
 
 		CURLcode code = curl_global_init(CURL_GLOBAL_ALL);
@@ -722,8 +715,8 @@ initializeCloudUsageTracker() {
 		wo->tracker = new CloudUsageTracker(
 			licensingDataDir,
 			licensingBaseUrl,
-			certificate,
 			licensingProxy,
+			checkCert,
 			autoSend);
 		wo->tracker->start();
 	}

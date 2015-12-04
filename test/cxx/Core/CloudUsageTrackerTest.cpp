@@ -20,7 +20,7 @@ namespace tut {
 		int flushResult;
 
 		TestTracker(const string &dir, bool autoSend)
-			: CloudUsageTracker(dir, string(), string(), string(), autoSend),
+			: CloudUsageTracker(dir, string(), string(), false, autoSend),
 			  defaultCurlCode(CURLE_OK),
 			  defaultResponseData("{\"status\": \"ok\"}"),
 			  flushResult(0)
