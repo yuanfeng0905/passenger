@@ -570,18 +570,10 @@ public:
 		/* Initialize cloud usage tracker. */
 		UPDATE_TRACE_POINT();
 		if (passenger_enterprise_should_track_usage()) {
-			string certificate;
-			if (options.licensingServerCert.empty()) {
-				certificate = resourceLocator.getResourcesDir() + "/licensing_server.crt";
-			} else if (options.licensingServerCert != "-") {
-				certificate = options.licensingServerCert;
-			}
-
 			string licensingDataDir = options.getLicensingDataDir();
 
 			P_INFO("Starting Phusion Passenger usage tracker using data directory " <<
-				licensingDataDir << " and certificate " <<
-				(certificate.empty() ? "(none)" : certificate));
+				licensingDataDir);
 			makeDirTree(licensingDataDir);
 
 			CURLcode code = curl_global_init(CURL_GLOBAL_ALL);
@@ -593,8 +585,8 @@ public:
 			CloudUsageTracker *tracker = new CloudUsageTracker(
 				licensingDataDir,
 				options.licensingBaseUrl,
-				certificate,
 				options.licensingProxy,
+				options.licensingServerCheckCert,
 				options.licensingDataPointsAutoSend);
 			tracker->start();
 		}

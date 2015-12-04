@@ -31,7 +31,6 @@ namespace {
 		string passengerRoot;
 		string datadir;
 		string baseUrl;
-		string certificate;
 		bool sslCertCheck;
 		bool dumpMachineProperties;
 		bool verbose;
@@ -158,9 +157,6 @@ initialize(Options &options) {
 
 	ResourceLocator resourceLocator(options.passengerRoot);
 	options.datadir = getHomeDir() + "/.passenger-enterprise/usage_data";
-	if (options.sslCertCheck) {
-		options.certificate = resourceLocator.getResourcesDir() + "/licensing_server.crt";
-	}
 }
 
 static void
@@ -174,7 +170,7 @@ main(int argc, char *argv[]) {
 	Options options = parseOptions(argc, argv);
 	initialize(options);
 
-	CloudUsageTracker tracker(options.datadir, options.baseUrl, options.certificate);
+	CloudUsageTracker tracker(options.datadir, options.baseUrl, string(), options.sslCertCheck);
 	if (options.dumpMachineProperties) {
 		cout << tracker.dumpMachineProperties().toStyledString();
 		return 0;

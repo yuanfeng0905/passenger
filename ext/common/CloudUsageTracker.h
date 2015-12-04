@@ -61,8 +61,8 @@ protected:
 
 	string datadir;
 	string url;
-	string certificate;
 	string hostname;
+	bool sslCertCheck;
 	bool machinePropertiesDetected;
 	MachineProperties savedMachineProperties;
 	CurlProxyInfo proxyInfo;
@@ -396,11 +396,8 @@ protected:
 		curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, lastErrorMessage);
 		curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, curlDataReceived);
 		curl_easy_setopt(curl, CURLOPT_WRITEDATA, &responseData);
-		if (certificate.empty()) {
+		if (!sslCertCheck) {
 			curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0);
-		} else {
-			curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1);
-			curl_easy_setopt(curl, CURLOPT_CAINFO, certificate.c_str());
 		}
 		setCurlProxy(curl, proxyInfo);
 
@@ -473,11 +470,11 @@ public:
 
 	CloudUsageTracker(const string &dir,
 		const string &baseUrl = string(),
-		const string &_certificate = string(),
 		const string &proxyAddress = string(),
+		bool _sslCertCheck = true,
 		bool _autoSend = true)
 		: datadir(dir),
-		  certificate(_certificate),
+		  sslCertCheck(_sslCertCheck),
 		  threshold(3 * 24 * 4),
 		  autoSend(_autoSend)
 	{

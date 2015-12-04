@@ -45,8 +45,8 @@ struct AgentOptions: public VariantMap {
 	bool testBinary;
 	string requestSocketLink;
 	string licensingBaseUrl;
-	string licensingServerCert;
 	string licensingProxy;
+	bool licensingServerCheckCert;
 	bool licensingDataPointsAutoSend;
 
 	AgentOptions() { }
@@ -87,9 +87,10 @@ struct AgentOptions: public VariantMap {
 		// Optional options.
 		prestartUrls          = options.getStrSet("prestart_urls", false);
 		requestSocketLink     = options.get("request_socket_link", false);
-		licensingServerCert = options.get("licensing_server_cert", false);
 		licensingBaseUrl = options.get("licensing_base_url", false);
 		licensingProxy   = options.get("licensing_proxy", false);
+		licensingServerCheckCert = options.getBool("licensing_server_check_cert",
+			false, true);
 		licensingDataPointsAutoSend = options.getBool(
 			"licensing_data_points_auto_send", false, true);
 	}
