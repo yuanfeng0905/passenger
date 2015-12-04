@@ -19,7 +19,7 @@
 #include <RandomGenerator.h>
 #include <Exceptions.h>
 #include <Utils/VariantMap.h>
-#include <Core/UnionStation/Core.h>
+#include <Core/UnionStation/Context.h>
 
 namespace Passenger {
 namespace ApplicationPool2 {
@@ -47,7 +47,7 @@ struct Config {
 	ErrorHandler errorHandler;
 
 	// Used for Union Station logging.
-	UnionStation::CorePtr unionStationCore;
+	UnionStation::ContextPtr unionStationContext;
 
 	// Used by SmartSpawner and DirectSpawner.
 	RandomGeneratorPtr randomGenerator;

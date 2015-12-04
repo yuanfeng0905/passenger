@@ -7,8 +7,8 @@
  *
  *  See LICENSE file for license information.
  */
-#ifndef _PASSENGER_UNION_STATION_CORE_H_
-#define _PASSENGER_UNION_STATION_CORE_H_
+#ifndef _PASSENGER_UNION_STATION_CONTEXT_H_
+#define _PASSENGER_UNION_STATION_CONTEXT_H_
 
 #include <boost/shared_ptr.hpp>
 #include <boost/enable_shared_from_this.hpp>
@@ -37,7 +37,7 @@ using namespace std;
 using namespace boost;
 
 
-class Core: public boost::enable_shared_from_this<Core> {
+class Context: public boost::enable_shared_from_this<Context> {
 private:
 	static const unsigned int CONNECTION_POOL_MAX_SIZE = 10;
 
@@ -63,14 +63,6 @@ private:
 	 * will fail. Calculated from reconnectTimeout.
 	 */
 	unsigned long long nextReconnectTime;
-
-	static string determineNodeName(const string &givenNodeName) {
-		if (givenNodeName.empty()) {
-			return getHostName();
-		} else {
-			return givenNodeName;
-		}
-	}
 
 	static bool isNetworkError(int code) {
 		return code == EPIPE || code == ECONNREFUSED || code == ECONNRESET
@@ -138,7 +130,11 @@ private:
 
 		// Initialize session.
 		UPDATE_TRACE_POINT();
-		writeArrayMessage(fd, &timeout, "init", nodeName.c_str(), NULL);
+		if (nodeName.empty()) {
+			writeArrayMessage(fd, &timeout, "init", NULL);
+		} else {
+			writeArrayMessage(fd, &timeout, "init", nodeName.c_str(), NULL);
+		}
 		if (!readArrayMessage(fd, args, &timeout)) {
 			throw SystemException("Cannot connect to the UstRouter", ECONNREFUSED);
 		} else if (args.size() < 2 || args[0] != "status") {
@@ -161,16 +157,16 @@ private:
 	}
 
 public:
-	Core() {
+	Context() {
 		initialize();
 	}
 
-	Core(const string &_serverAddress, const string &_username,
+	Context(const string &_serverAddress, const string &_username,
 	     const string &_password, const string &_nodeName = string())
 		: serverAddress(_serverAddress),
 		  username(_username),
 		  password(_password),
-		  nodeName(determineNodeName(_nodeName))
+		  nodeName(_nodeName)
 	{
 		initialize();
 	}
@@ -513,12 +509,12 @@ public:
 
 
 inline void
-_checkinConnection(const CorePtr &core, const ConnectionPtr &connection) {
-	core->checkinConnection(connection);
+_checkinConnection(const ContextPtr &ctx, const ConnectionPtr &connection) {
+	ctx->checkinConnection(connection);
 }
 
 
 } // namespace UnionStation
 } // namespace Passenger
 
-#endif /* _PASSENGER_UNION_STATION_CORE_H_ */
+#endif /* _PASSENGER_UNION_STATION_CONTEXT_H_ */

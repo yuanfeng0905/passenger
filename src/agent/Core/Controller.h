@@ -66,7 +66,7 @@
 #include <Core/Controller/Client.h>
 #include <Core/Controller/AppResponse.h>
 #include <Core/Controller/TurboCaching.h>
-#include <Core/UnionStation/Core.h>
+#include <Core/UnionStation/Context.h>
 
 namespace Passenger {
 
@@ -175,6 +175,8 @@ private:
 	void initializePoolOptions(Client *client, Request *req, RequestAnalysis &analysis);
 	void fillPoolOptionsFromAgentsOptions(Options &options);
 	static void fillPoolOption(Request *req, StaticString &field,
+		const HashedStaticString &name);
+	static void fillPoolOption(Request *req, int &field,
 		const HashedStaticString &name);
 	static void fillPoolOption(Request *req, bool &field,
 		const HashedStaticString &name);
@@ -373,7 +375,7 @@ protected:
 public:
 	ResourceLocator *resourceLocator;
 	PoolPtr appPool;
-	UnionStation::CorePtr unionStationCore;
+	UnionStation::ContextPtr unionStationContext;
 
 
 	/****** Initialization and shutdown ******/

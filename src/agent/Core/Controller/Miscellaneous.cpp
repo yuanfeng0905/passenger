@@ -43,6 +43,7 @@ Controller::disconnectLongRunningConnections(const StaticString &gupid) {
 			Request *req = client->currentRequest;
 			if (req->httpState >= Request::COMPLETE
 			 && req->upgraded()
+			 && req->options.abortWebsocketsOnProcessShutdown
 			 && req->session != NULL
 			 && req->session->getGupid() == gupid)
 			{

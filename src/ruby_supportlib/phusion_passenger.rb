@@ -197,8 +197,7 @@ module PhusionPassenger
 
   def self.binaries_sites
     return [
-      { :url => "https://oss-binaries.phusionpassenger.com/binaries/enterprise-NQLVwRlu10n13/by_release".freeze,
-        :cacert => "#{resources_dir}/oss-binaries.phusionpassenger.com.crt".freeze },
+      { :url => "https://oss-binaries.phusionpassenger.com/binaries/enterprise-NQLVwRlu10n13/by_release".freeze },
       { :url => "https://s3.amazonaws.com/phusion-passenger/binaries/enterprise-NQLVwRlu10n13/by_release".freeze }
     ]
   end
