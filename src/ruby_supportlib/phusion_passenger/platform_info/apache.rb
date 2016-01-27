@@ -101,7 +101,7 @@ module PhusionPassenger
       else
         apache2ctl = self.apache2ctl
       end
-      if os_name == "linux" &&
+      if os_name_simple == "linux" &&
          linux_distro_tags.include?(:gentoo) &&
          apache2ctl == "/usr/sbin/apache2ctl"
         # On Gentoo, `apache2ctl -V` doesn't forward the command to `apache2 -V`,
@@ -566,7 +566,7 @@ module PhusionPassenger
         apxs2_flags = `#{apxs2} -q CFLAGS`.strip << " -I" << `#{apxs2} -q INCLUDEDIR`.strip
         apxs2_flags.gsub!(/-O\d? /, '')
 
-        if os_name =~ /solaris/
+        if os_name_simple == "solaris"
           if (language == :c && !cc_is_sun_studio?) || (language == :cxx && !cxx_is_sun_studio?)
             # Remove flags not supported by GCC
             # The big problem is Coolstack apxs includes a bunch of solaris -x directives.
@@ -581,7 +581,7 @@ module PhusionPassenger
           end
         end
 
-        if os_name == "linux" &&
+        if os_name_simple == "linux" &&
            linux_distro_tags.include?(:redhat) &&
            apxs2 == "/usr/sbin/apxs" &&
            httpd_architecture_bits == 64
@@ -595,7 +595,7 @@ module PhusionPassenger
         apxs2_flags.strip!
         flags << apxs2_flags
       end
-      if !httpd.nil? && os_name == "macosx"
+      if !httpd.nil? && os_name_simple == "macosx"
         # The default Apache install on OS X is a universal binary.
         # Figure out which architectures it's compiled for and do the same
         # thing for mod_passenger. We use the 'file' utility to do this.
@@ -726,7 +726,7 @@ module PhusionPassenger
         flags = `#{apr_config} --cppflags --includes`.strip
         libs = `#{apr_config} --link-ld`.strip
         flags.gsub!(/-O\d? /, '')
-        if os_name =~ /solaris/
+        if os_name_simple == "solaris"
           if (language == :c && !cc_is_sun_studio?) || (language == :cxx && !cxx_is_sun_studio?)
             # Remove flags not supported by non-Sun Studio compilers
             flags = flags.split(/ +/).reject do |f|
@@ -734,7 +734,7 @@ module PhusionPassenger
             end
             flags = flags.join(' ')
           end
-        elsif os_name =~ /aix/
+        elsif os_name_simple == "aix"
           libs << " -Wl,-G -Wl,-brtl"
         end
         [flags, libs]
@@ -761,7 +761,7 @@ module PhusionPassenger
         flags = `#{apu_config} --includes`.strip
         libs = `#{apu_config} --link-ld`.strip
         flags.gsub!(/-O\d? /, '')
-        if os_name =~ /solaris/
+        if os_name_simple == "solaris"
           if (language == :c && !cc_is_sun_studio?) || (language == :cxx && !cxx_is_sun_studio?)
             # Remove flags not supported by non-Sun Studio compilers
             flags = flags.split(/ +/).reject do |f|
