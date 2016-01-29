@@ -1320,6 +1320,7 @@ public:
 			.setBool("load_shell_envvars", true)
 			.set    ("file_descriptor_log_file", (serverConfig.fileDescriptorLogFile == NULL)
 				? "" : serverConfig.fileDescriptorLogFile)
+			.setInt	("socket_backlog", serverConfig.socketBacklog)
 			.set    ("data_buffer_dir", serverConfig.dataBufferDir)
 			.set    ("instance_registry_dir", serverConfig.instanceRegistryDir)
 			.setBool("user_switching", serverConfig.userSwitching)

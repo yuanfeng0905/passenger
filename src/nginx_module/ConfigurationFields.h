@@ -79,6 +79,8 @@
 
 	ngx_int_t rolling_restarts;
 
+	ngx_int_t socket_backlog;
+
 	ngx_int_t start_timeout;
 
 	ngx_int_t sticky_sessions;
