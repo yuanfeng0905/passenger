@@ -572,12 +572,12 @@ module PhusionPassenger
 
       def should_check_hosts_file?
         require_platform_info_operating_system
-        return PlatformInfo.os_name == "macosx"
+        return PlatformInfo.os_name_simple == "macosx"
       end
 
       def require_platform_info_operating_system
         PhusionPassenger.require_passenger_lib 'platform_info/operating_system' \
-          if !defined?(PhusionPassenger::PlatformInfo) || !PlatformInfo.respond_to?(:os_name)
+          if !defined?(PhusionPassenger::PlatformInfo) || !PlatformInfo.respond_to?(:os_name_simple)
       end
 
       def require_hosts_file_parser
