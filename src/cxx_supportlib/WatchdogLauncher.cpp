@@ -25,6 +25,18 @@ psg_variant_map_new() {
 	return (PsgVariantMap *) new Passenger::VariantMap();
 }
 
+const char *
+psg_variant_map_get_optional(PsgVariantMap *m,
+	const char *name)
+{
+	Passenger::VariantMap *vm = (Passenger::VariantMap *) m;
+	string result = vm->get(name, false, "");
+	if (result.empty()) {
+		return (const char *) NULL;
+	}
+	return result.c_str();
+}
+
 void
 psg_variant_map_set(PsgVariantMap *m,
 	const char *name,
@@ -104,7 +116,7 @@ psg_watchdog_launcher_start(PsgWatchdogLauncher *l,
 		boost::function<void ()> afterForkFunctionObject;
 
 		if (afterFork != NULL) {
-			afterForkFunctionObject = boost::bind(afterFork, callbackArgument);
+			afterForkFunctionObject = boost::bind(afterFork, callbackArgument, extraParams);
 		}
 		launcher->start(passengerRoot,
 			*((Passenger::VariantMap *) extraParams),
