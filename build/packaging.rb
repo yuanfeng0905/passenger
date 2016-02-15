@@ -633,7 +633,6 @@ task :fakeroot => [:apache2, :nginx, :doc] do
     ["src/cxx_supportlib/Exceptions.h", "cxx_supportlib/Exceptions.h"],
     ["src/cxx_supportlib/vendor-modified/modp_b64.h", "cxx_supportlib/vendor-modified/modp_b64.h"],
     ["src/cxx_supportlib/vendor-modified/modp_b64_data.h", "cxx_supportlib/vendor-modified/modp_b64_data.h"],
-    ["src/cxx_supportlib/vendor-modified/boost/detail/endian.hpp", "cxx_supportlib/vendor-modified/boost/detail/endian.hpp"],
     ["src/cxx_supportlib/vendor-modified/boost/cstdint.hpp", "cxx_supportlib/vendor-modified/boost/cstdint.hpp"],
     ["src/cxx_supportlib/Utils/License.h", "cxx_supportlib/Utils/License.h"],
     ["src/cxx_supportlib/Utils/MD5.h", "cxx_supportlib/Utils/MD5.h"]
