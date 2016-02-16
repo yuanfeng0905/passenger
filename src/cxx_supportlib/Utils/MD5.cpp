@@ -52,7 +52,9 @@
  */
 
 #include "MD5.h"
-#include "../vendor-modified/boost/detail/endian.hpp" /* File is C compatible. */
+#ifndef MODP_B64_DONT_INCLUDE_BOOST_ENDIANNESS_HEADERS
+		#include <boost/detail/endian.hpp>
+#endif
 #ifdef __cplusplus
 		#include <string.h>
 		#include "StrIntUtils.h"
