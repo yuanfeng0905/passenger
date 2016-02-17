@@ -33,12 +33,13 @@ class Transaction {
 private:
 	BOOST_MOVABLE_BUT_NOT_COPYABLE(Transaction);
 
-	unsigned int unionStationKeyOffset;
+	unsigned int groupNameOffset;
 	unsigned int nodeNameOffset;
 	unsigned int categoryOffset;
+	unsigned int unionStationKeyOffset;
 	unsigned int filtersOffset;
 
-	unsigned short nodeNameSize, filtersSize;
+	unsigned short groupNameSize, nodeNameSize, filtersSize;
 	boost::uint8_t txnIdSize, unionStationKeySize, categorySize;
 
 	ev_tstamp createdAt;
@@ -61,9 +62,10 @@ private:
 	}
 
 public:
-	Transaction(const StaticString &txnId, const StaticString &unionStationKey,
+	Transaction(const StaticString &txnId, const StaticString &groupName,
 		const StaticString &nodeName, const StaticString &category,
-		ev_tstamp _createdAt, const StaticString &filters = StaticString(),
+		const StaticString &unionStationKey, ev_tstamp _createdAt,
+		const StaticString &filters = StaticString(),
 		unsigned int initialCapacity = 1024 * 8)
 		: createdAt(_createdAt),
 		  writeCount(0),
@@ -73,17 +75,20 @@ public:
 		  discarded(false)
 	{
 		internString(txnId, (boost::uint8_t *) NULL, &txnIdSize);
-		internString(unionStationKey, &unionStationKeyOffset, &unionStationKeySize);
+		internString(groupName, &groupNameOffset, &groupNameSize);
 		internString(nodeName, &nodeNameOffset, &nodeNameSize);
 		internString(category, &categoryOffset, &categorySize);
+		internString(unionStationKey, &unionStationKeyOffset, &unionStationKeySize);
 		internString(filters, &filtersOffset, &filtersSize);
 	}
 
 	Transaction(BOOST_RV_REF(Transaction) other)
-		: unionStationKeyOffset(other.unionStationKeyOffset),
+		: groupNameOffset(other.groupNameOffset),
 		  nodeNameOffset(other.nodeNameOffset),
 		  categoryOffset(other.categoryOffset),
+		  unionStationKeyOffset(other.unionStationKeyOffset),
 		  filtersOffset(other.filtersOffset),
+		  groupNameSize(other.groupNameSize),
 		  nodeNameSize(other.nodeNameSize),
 		  filtersSize(other.filtersSize),
 		  txnIdSize(other.txnIdSize),
@@ -95,12 +100,14 @@ public:
 		  bodyOffset(other.bodyOffset),
 		  crashProtect(other.crashProtect),
 		  discarded(other.discarded),
-		  storage(other.storage)
+		  storage(boost::move(other.storage))
 	{
-		other.unionStationKeyOffset = 0;
+		other.groupNameOffset = 0;
 		other.nodeNameOffset = 0;
 		other.categoryOffset = 0;
+		other.unionStationKeyOffset = 0;
 		other.filtersOffset = 0;
+		other.groupNameSize = 0;
 		other.nodeNameSize = 0;
 		other.filtersSize = 0;
 		other.txnIdSize = 0;
@@ -116,10 +123,12 @@ public:
 
 	Transaction &operator=(BOOST_RV_REF(Transaction) other) {
 		if (this != &other) {
-			unionStationKeyOffset = other.unionStationKeyOffset;
+			groupNameOffset = other.groupNameOffset;
 			nodeNameOffset = other.nodeNameOffset;
 			categoryOffset = other.categoryOffset;
+			unionStationKeyOffset = other.unionStationKeyOffset;
 			filtersOffset = other.filtersOffset;
+			groupNameSize = other.groupNameSize;
 			nodeNameSize = other.nodeNameSize;
 			filtersSize = other.filtersSize;
 			txnIdSize = other.txnIdSize;
@@ -131,12 +140,14 @@ public:
 			bodyOffset = other.bodyOffset;
 			crashProtect = other.crashProtect;
 			discarded = other.discarded;
-			storage = other.storage;
+			storage = boost::move(other.storage);
 
-			other.unionStationKeyOffset = 0;
+			other.groupNameOffset = 0;
 			other.nodeNameOffset = 0;
 			other.categoryOffset = 0;
+			other.unionStationKeyOffset = 0;
 			other.filtersOffset = 0;
+			other.groupNameSize = 0;
 			other.nodeNameSize = 0;
 			other.filtersSize = 0;
 			other.txnIdSize = 0;
@@ -148,8 +159,6 @@ public:
 			other.bodyOffset = 0;
 			other.crashProtect = false;
 			other.discarded = true;
-
-			storage.swap(other.storage);
 		}
 		return *this;
 	}
@@ -158,8 +167,8 @@ public:
 		return StaticString(storage.data(), txnIdSize);
 	}
 
-	StaticString getUnionStationKey() const {
-		return StaticString(storage.data() + unionStationKeyOffset, unionStationKeySize);
+	StaticString getGroupName() const {
+		return StaticString(storage.data() + groupNameOffset, groupNameSize);
 	}
 
 	StaticString getNodeName() const {
@@ -168,6 +177,10 @@ public:
 
 	StaticString getCategory() const {
 		return StaticString(storage.data() + categoryOffset, categorySize);
+	}
+
+	StaticString getUnionStationKey() const {
+		return StaticString(storage.data() + unionStationKeyOffset, unionStationKeySize);
 	}
 
 	StaticString getFilters() const {
@@ -230,10 +243,12 @@ public:
 		Json::Value doc;
 		doc["txn_id"] = getTxnId().toString();
 		doc["created_at"] = timeToJson(createdAt * 1000000.0);
-		doc["key"] = getUnionStationKey().toString();
+		doc["group"] = getGroupName().toString();
 		doc["node"] = getNodeName().toString();
 		doc["category"] = getCategory().toString();
+		doc["key"] = getUnionStationKey().toString();
 		doc["refcount"] = refCount;
+		doc["body_size"] = byteSizeToJson(getBody().size());
 		return doc;
 	}
 };
