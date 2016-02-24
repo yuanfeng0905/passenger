@@ -44,6 +44,7 @@ private:
 	string docDir;
 	string rubyLibDir;
 	string nodeLibDir;
+	string buildSystemDir;
 
 	static string getOption(const string &file, const IniFileSectionPtr &section, const string &key) {
 		if (section->hasKey(key)) {
@@ -53,13 +54,20 @@ private:
 		}
 	}
 
+	static string getOptionalSection(const string &file, const IniFileSectionPtr &section, const string &key) {
+		if (section->hasKey(key)) {
+			return section->get(key);
+		} else {
+			return string();
+		}
+	}
+
 public:
 	ResourceLocator() { }
 
-	ResourceLocator(const string &rootOrFile) {
-		root = rootOrFile;
-		if (getFileType(rootOrFile) == FT_REGULAR) {
-			string file = rootOrFile;
+	ResourceLocator(const string &installSpec) {
+		if (getFileType(installSpec) == FT_REGULAR) {
+			const string &file = installSpec;
 			IniFileSectionPtr options = IniFile(file).section("locations");
 			binDir              = getOption(file, options, "bin_dir");
 			supportBinariesDir  = getOption(file, options, "support_binaries_dir");
@@ -68,8 +76,9 @@ public:
 			docDir              = getOption(file, options, "doc_dir");
 			rubyLibDir          = getOption(file, options, "ruby_libdir");
 			nodeLibDir          = getOption(file, options, "node_libdir");
+			buildSystemDir      = getOptionalSection(file, options, "node_libdir");
 		} else {
-			string root = rootOrFile;
+			const string &root = installSpec;
 			binDir              = root + "/bin";
 			supportBinariesDir  = root + "/buildout/support-binaries";
 			helperScriptsDir    = root + "/src/helper-scripts";
@@ -77,14 +86,19 @@ public:
 			docDir              = root + "/doc";
 			rubyLibDir          = root + "/src/ruby_supportlib";
 			nodeLibDir          = root + "/src/nodejs_supportlib";
+			buildSystemDir      = root;
 		}
 	}
 
-	string getRoot() const {
+	const string &getRoot() const {
 		return root;
 	}
 
-	string getSupportBinariesDir() const {
+	const string &getBinDir() const {
+		return binDir;
+	}
+
+	const string &getSupportBinariesDir() const {
 		return supportBinariesDir;
 	}
 
@@ -116,25 +130,29 @@ public:
 		return result;
 	}
 
-	string getHelperScriptsDir() const {
+	const string &getHelperScriptsDir() const {
 		return helperScriptsDir;
 	}
 
-	string getResourcesDir() const {
+	const string &getResourcesDir() const {
 		return resourcesDir;
 	}
 
-	string getDocDir() const {
+	const string &getDocDir() const {
 		return docDir;
 	}
 
-	// Can be empty.
-	string getRubyLibDir() const {
+	const string &getRubyLibDir() const {
 		return rubyLibDir;
 	}
 
-	string getNodeLibDir() const {
+	const string &getNodeLibDir() const {
 		return nodeLibDir;
+	}
+
+	// Can be empty.
+	const string &getBuildSystemDir() const {
+		return buildSystemDir;
 	}
 
 	string findSupportBinary(const string &name) {
@@ -154,7 +172,8 @@ public:
 			return path;
 		}
 
-		throw RuntimeException("Support binary " + name + " not found (tried: " + getSupportBinariesDir() + "/" + name + " and " + path + ")");
+		throw RuntimeException("Support binary " + name + " not found (tried: "
+			+ getSupportBinariesDir() + "/" + name + " and " + path + ")");
 	}
 };
 

@@ -25,10 +25,12 @@
 #include <ServerKit/HttpRequestRef.h>
 #include <ServerKit/HttpHeaderParser.h>
 #include <ServerKit/HttpChunkedBodyParser.h>
+#include <Algorithms/ExpMovingAverage.h>
 #include <Utils/SystemTime.h>
 #include <Utils/StrIntUtils.h>
 #include <Utils/HttpConstants.h>
 #include <Utils/Hasher.h>
+#include <Utils/SystemTime.h>
 
 namespace Passenger {
 namespace ServerKit {
@@ -49,7 +51,9 @@ public:
 
 	FreeRequestList freeRequests;
 	unsigned int freeRequestCount, requestFreelistLimit;
-	unsigned long totalRequestsBegun;
+	unsigned long totalRequestsBegun, lastTotalRequestsBegun;
+	DiscExpMovingAverage<10, 60 * 1000000ull, 1000000> requestBeginSpeed1m;
+	DiscExpMovingAverage<10, 60 * 60 * 1000000ull, 60 * 1000000> requestBeginSpeed1h;
 
 private:
 	/***** Types and nested classes *****/
@@ -662,29 +666,34 @@ protected:
 		assert(client->currentRequest != NULL);
 		Request *req = client->currentRequest;
 		RequestRef ref(req, __FILE__, __LINE__);
+		bool ended = req->ended();
+
+		if (!ended) {
+			req->lastDataReceiveTime = ev_now(this->getLoop());
+		}
 
 		// Moved outside switch() so that the CPU branch predictor can do its work
 		if (req->httpState == Request::PARSING_HEADERS) {
-			assert(!req->ended());
+			assert(!ended);
 			return processClientDataWhenParsingHeaders(client, req, buffer, errcode);
 		} else {
 			switch (req->bodyType) {
 			case Request::RBT_CONTENT_LENGTH:
-				if (req->ended()) {
+				if (ended) {
 					assert(!req->wantKeepAlive);
 					return Channel::Result(buffer.size(), true);
 				} else {
 					return processClientDataWhenParsingBody(client, req, buffer, errcode);
 				}
 			case Request::RBT_CHUNKED:
-				if (req->ended()) {
+				if (ended) {
 					assert(!req->wantKeepAlive);
 					return Channel::Result(buffer.size(), true);
 				} else {
 					return processClientDataWhenParsingChunkedBody(client, req, buffer, errcode);
 				}
 			case Request::RBT_UPGRADE:
-				if (req->ended()) {
+				if (ended) {
 					assert(!req->wantKeepAlive);
 					return Channel::Result(buffer.size(), true);
 				} else {
@@ -760,6 +769,24 @@ protected:
 		}
 	}
 
+	virtual void onUpdateStatistics() {
+		ParentClass::onUpdateStatistics();
+		ev_tstamp now = ev_now(this->getLoop());
+		ev_tstamp duration = now - this->lastStatisticsUpdateTime;
+
+		requestBeginSpeed1m.update(
+			(totalRequestsBegun - lastTotalRequestsBegun) / duration,
+			now * 1000000);
+		requestBeginSpeed1h.update(
+			(totalRequestsBegun - lastTotalRequestsBegun) / duration,
+			now * 1000000);
+	}
+
+	virtual void onFinalizeStatisticsUpdate() {
+		ParentClass::onFinalizeStatisticsUpdate();
+		lastTotalRequestsBegun = totalRequestsBegun;
+	}
+
 	virtual void reinitializeClient(Client *client, int fd) {
 		ParentClass::reinitializeClient(client, fd);
 		client->requestsBegun = 0;
@@ -785,6 +812,8 @@ protected:
 		req->bodyChannel.reinitialize();
 		req->aux.bodyInfo.contentLength = 0; // Sets the entire union to 0.
 		req->bodyAlreadyRead = 0;
+		req->lastDataReceiveTime = 0;
+		req->lastDataSendTime = 0;
 		req->queryStringIndex = -1;
 	}
 
@@ -844,6 +873,9 @@ public:
 		  freeRequestCount(0),
 		  requestFreelistLimit(1024),
 		  totalRequestsBegun(0),
+		  lastTotalRequestsBegun(0),
+		  requestBeginSpeed1m(SystemTime::getUsec()),
+		  requestBeginSpeed1h(SystemTime::getUsec()),
 		  headerParserStatePool(16, 256)
 	{
 		STAILQ_INIT(&freeRequests);
@@ -912,6 +944,7 @@ public:
 
 	void writeResponse(Client *client, const MemoryKit::mbuf &buffer) {
 		client->currentRequest->responseBegun = true;
+		client->currentRequest->lastDataSendTime = ev_now(this->getLoop());
 		client->output.feedWithoutRefGuard(buffer);
 	}
 
@@ -1101,9 +1134,16 @@ public:
 	}
 
 	virtual Json::Value inspectStateAsJson() const {
+		ev_tstamp now = ev_now(this->getLoop());
 		Json::Value doc = ParentClass::inspectStateAsJson();
 		doc["free_request_count"] = freeRequestCount;
 		doc["total_requests_begun"] = (Json::UInt64) totalRequestsBegun;
+		doc["request_begin_speed"]["1m"] = averageSpeedToJson(
+			capFloatPrecision(requestBeginSpeed1m.average(now) * 60),
+			"minute", "1 minute");
+		doc["request_begin_speed"]["1h"] = averageSpeedToJson(
+			capFloatPrecision(requestBeginSpeed1h.average(now) * 60),
+			"minute", "1 hour");
 		return doc;
 	}
 
@@ -1133,6 +1173,8 @@ public:
 			doc["request_body_fully_read"] = req->bodyFullyRead();
 			doc["request_body_already_read"] = (Json::Value::UInt64) req->bodyAlreadyRead;
 			doc["response_begun"] = req->responseBegun;
+			doc["last_data_receive_time"] = timeToJson(req->lastDataReceiveTime * 1000000);
+			doc["last_data_send_time"] = timeToJson(req->lastDataSendTime * 1000000);
 			doc["method"] = http_method_str(req->method);
 			if (req->httpState != Request::ERROR) {
 				if (req->bodyType == Request::RBT_CONTENT_LENGTH) {

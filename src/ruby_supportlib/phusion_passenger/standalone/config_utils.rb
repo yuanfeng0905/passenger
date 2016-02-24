@@ -93,6 +93,7 @@ module PhusionPassenger
                 "(error in config option '#{key}': #{e.message})"
             end
           else
+            STDERR.puts "*** WARNING: #{filename}: configuration key '#{key}' is not supported"
             result[key] = val
           end
         end
