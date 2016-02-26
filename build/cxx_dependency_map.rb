@@ -115,8 +115,7 @@ CXX_DEPENDENCY_MAP =
    "src/cxx_supportlib/Utils/MD5.h",
    "src/cxx_supportlib/Utils/../vendor-modified/boost/cstdint.hpp",
    "src/cxx_supportlib/Utils/License.h",
-   "src/cxx_supportlib/Utils/MD5.cpp",
-   "src/cxx_supportlib/Utils/../vendor-modified/boost/detail/endian.hpp"],
+   "src/cxx_supportlib/Utils/MD5.cpp"],
  "src/nginx_module/StaticContentHandler.c"=>
   ["src/nginx_module/StaticContentHandler.h"],
  "src/ruby_native_extension/passenger_native_support.c"=>
@@ -3876,7 +3875,6 @@ CXX_DEPENDENCY_MAP =
    "src/cxx_supportlib/Utils/../vendor-modified/boost/cstdint.hpp",
    "src/cxx_supportlib/StaticString.h",
    "src/cxx_supportlib/oxt/macros.hpp",
-   "src/cxx_supportlib/Utils/../vendor-modified/boost/detail/endian.hpp",
    "src/cxx_supportlib/Utils/StrIntUtils.h"],
  "src/cxx_supportlib/Utils/StrIntUtils.cpp"=>
   ["src/cxx_supportlib/Exceptions.h",
