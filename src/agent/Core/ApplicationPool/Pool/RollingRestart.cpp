@@ -122,6 +122,20 @@ Pool::restarterThreadMain() {
 }
 
 void
+Pool::waitUntilOldProcessIsGone(const ProcessPtr &process, const string &name,
+	boost::unique_lock<boost::mutex> &l)
+{
+	P_DEBUG("Waiting until old process " << name << " is gone...");
+	restarterThreadStatus = "Waiting until old process " + name + " is gone...";
+	while (!process->isDead()) {
+		l.unlock();
+		syscalls::usleep(100000);
+		l.lock();
+	}
+	P_DEBUG("Old process " << name << " is now gone");
+}
+
+void
 Pool::restarterThreadRealMain() {
 	TRACE_POINT();
 	this_thread::disable_interruption di;
@@ -282,6 +296,10 @@ Pool::restarterThreadRealMain() {
 
 		UPDATE_TRACE_POINT();
 		fullVerifyInvariants();
+
+		if (oldProcess != NULL) {
+			waitUntilOldProcessIsGone(oldProcess, oldProcess->inspect(), l);
+		}
 
 		if (!actions.empty()) {
 			UPDATE_TRACE_POINT();

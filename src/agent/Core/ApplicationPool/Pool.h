@@ -380,6 +380,8 @@ public:
 		const set<string> &ignoreList) const;
 	ProcessPtr findProcessNeedingRollingRestart(const GroupPtr &group,
 		const ProcessList &list, const set<string> &ignoreList) const;
+	void waitUntilOldProcessIsGone(const ProcessPtr &process, const string &name,
+		boost::unique_lock<boost::mutex> &l);
 	void setRestarterThreadInactive(this_thread::disable_interruption *di,
 		this_thread::disable_syscall_interruption *dsi);
 	void restarterThreadMain();
