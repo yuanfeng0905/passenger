@@ -1,6 +1,6 @@
 /*
  *  Phusion Passenger - https://www.phusionpassenger.com/
- *  Copyright (c) 2010-2015 Phusion Holding B.V.
+ *  Copyright (c) 2010-2016 Phusion Holding B.V.
  *
  *  "Passenger", "Phusion Passenger" and "Union Station" are registered
  *  trademarks of Phusion Holding B.V.
@@ -50,6 +50,7 @@
 #endif
 
 #include <Exceptions.h>
+#include <Constants.h>
 #include <Utils/Timer.h>
 #include <Utils/IOUtils.h>
 #include <Utils/StrIntUtils.h>
@@ -396,6 +397,15 @@ createTcpServer(const char *address, unsigned short port, unsigned int backlogSi
 		throw SystemException("Cannot create a TCP socket file descriptor", e);
 	}
 
+	optval = 1;
+	if (syscalls::setsockopt(fd, SOL_SOCKET, SO_REUSEADDR,
+		&optval, sizeof(optval)) == -1)
+	{
+		int e = errno;
+		fprintf(stderr, "so_reuseaddr failed: %s\n", strerror(e));
+	}
+	// Ignore SO_REUSEADDR error, it's not fatal.
+
 	FdGuard guard(fd, file, line, true);
 	if (family == AF_INET) {
 		ret = syscalls::bind(fd, (const struct sockaddr *) &addr.v4, sizeof(struct sockaddr_in));
@@ -411,28 +421,8 @@ createTcpServer(const char *address, unsigned short port, unsigned int backlogSi
 		throw SystemException(message, e);
 	}
 
-	optval = 1;
-	if (syscalls::setsockopt(fd, SOL_SOCKET, SO_REUSEADDR,
-		&optval, sizeof(optval)) == -1)
-	{
-		int e = errno;
-		fprintf(stderr, "so_reuseaddr failed: %s\n", strerror(e));
-	}
-	// Ignore SO_REUSEADDR error, it's not fatal.
-
-	#ifdef SO_REUSEPORT
-		optval = 1;
-		if (syscalls::setsockopt(fd, SOL_SOCKET, SO_REUSEPORT,
-			&optval, sizeof(optval)) == -1)
-		{
-			int e = errno;
-			fprintf(stderr, "so_reuseport failed: %s\n", strerror(e));
-		}
-		// Ignore SO_REUSEPORT error, it's not fatal.
-	#endif
-
 	if (backlogSize == 0) {
-		backlogSize = 1024;
+		backlogSize = DEFAULT_SOCKET_BACKLOG;
 	}
 	ret = syscalls::listen(fd, backlogSize);
 	if (ret == -1) {

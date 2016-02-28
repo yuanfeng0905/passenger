@@ -1,6 +1,6 @@
 /*
  *  Phusion Passenger - https://www.phusionpassenger.com/
- *  Copyright (c) 2014-2015 Phusion Holding B.V.
+ *  Copyright (c) 2014-2016 Phusion Holding B.V.
  *
  *  "Passenger", "Phusion Passenger" and "Union Station" are registered
  *  trademarks of Phusion Holding B.V.
@@ -197,6 +197,7 @@ private:
 		assert(c->currentRequest != NULL);
 		Request *req = c->currentRequest;
 		bool keepAlive = canKeepAlive(req);
+		int nextRequestEarlyReadError = req->nextRequestEarlyReadError;
 
 		P_ASSERT_EQ(req->httpState, Request::WAITING_FOR_REFERENCES);
 		assert(req->pool != NULL);
@@ -209,6 +210,9 @@ private:
 		if (keepAlive) {
 			SKC_TRACE(c, 3, "Keeping alive connection, handling next request");
 			handleNextRequest(c);
+			if (nextRequestEarlyReadError != 0) {
+				onClientDataReceived(c, MemoryKit::mbuf(), nextRequestEarlyReadError);
+			}
 		} else {
 			SKC_TRACE(c, 3, "Not keeping alive connection, disconnecting client");
 			this->disconnect(client);
@@ -266,7 +270,7 @@ private:
 
 			switch (req->httpState) {
 			case Request::COMPLETE:
-				client->input.stop();
+				req->detectingNextRequestEarlyReadError = true;
 				onRequestBegin(client, req);
 				return Channel::Result(ret, false);
 			case Request::PARSING_BODY:
@@ -326,39 +330,34 @@ private:
 
 			boost::uint64_t maxRemaining, remaining;
 
+			assert(req->aux.bodyInfo.contentLength > 0);
 			maxRemaining = req->aux.bodyInfo.contentLength - req->bodyAlreadyRead;
+			assert(maxRemaining > 0);
 			remaining = std::min<boost::uint64_t>(buffer.size(), maxRemaining);
 			req->bodyAlreadyRead += remaining;
 			SKC_TRACE(client, 3, "Request body: " <<
 				req->bodyAlreadyRead << " of " <<
 				req->aux.bodyInfo.contentLength << " bytes already read");
 
-			if (remaining > 0) {
-				req->bodyChannel.feed(MemoryKit::mbuf(buffer, 0, remaining));
-				if (req->ended()) {
-					return Channel::Result(remaining, false);
-				}
+			req->bodyChannel.feed(MemoryKit::mbuf(buffer, 0, remaining));
+			if (req->ended()) {
+				return Channel::Result(remaining, false);
+			}
 
-				if (req->bodyChannel.acceptingInput()) {
-					if (req->bodyFullyRead()) {
-						SKC_TRACE(client, 2, "End of request body reached");
-						client->input.stop();
-						req->bodyChannel.feed(MemoryKit::mbuf());
-					}
-					return Channel::Result(remaining, false);
-				} else if (req->bodyChannel.mayAcceptInputLater()) {
-					client->input.stop();
-					req->bodyChannel.consumedCallback =
-						onRequestBodyChannelConsumed;
-					return Channel::Result(remaining, false);
-				} else {
-					return Channel::Result(remaining, true);
+			if (req->bodyChannel.acceptingInput()) {
+				if (req->bodyFullyRead()) {
+					SKC_TRACE(client, 2, "End of request body reached");
+					req->detectingNextRequestEarlyReadError = true;
+					req->bodyChannel.feed(MemoryKit::mbuf());
 				}
-			} else {
-				SKC_TRACE(client, 2, "End of request body reached");
+				return Channel::Result(remaining, false);
+			} else if (req->bodyChannel.mayAcceptInputLater()) {
 				client->input.stop();
-				req->bodyChannel.feed(MemoryKit::mbuf());
-				return Channel::Result(0, false);
+				req->bodyChannel.consumedCallback =
+					onRequestBodyChannelConsumed;
+				return Channel::Result(remaining, false);
+			} else {
+				return Channel::Result(remaining, true);
 			}
 		} else if (errcode == 0) {
 			// Premature EOF. This cannot be an expected EOF because we
@@ -418,7 +417,7 @@ private:
 				}
 			case HttpChunkedEvent::END:
 				assert(event.end);
-				client->input.stop();
+				req->detectingNextRequestEarlyReadError = true;
 				req->aux.bodyInfo.endChunkReached = true;
 				req->bodyChannel.feed(MemoryKit::mbuf());
 				return Channel::Result(event.consumed, false);
@@ -571,6 +570,38 @@ private:
 		createChunkedBodyParser(req).initialize();
 	}
 
+	bool detectNextRequestEarlyReadError(Client *client, Request *req, const MemoryKit::mbuf &buffer,
+		int errcode)
+	{
+		if (req->detectingNextRequestEarlyReadError) {
+			// When we have previously fully read the expected request body,
+			// the above flag is set to true. This tells us to detect whether
+			// an EOF or an error on the socket has occurred before we are done
+			// processing the request.
+
+			req->detectingNextRequestEarlyReadError = false;
+			client->input.stop();
+
+			if (!req->ended() && buffer.empty()) {
+				if (errcode == 0) {
+					SKC_TRACE(client, 3, "Early read EOF detected");
+					req->nextRequestEarlyReadError = EARLY_EOF_DETECTED;
+				} else {
+					SKC_TRACE(client, 3, "Early body receive error detected: "
+						<< getErrorDesc(errcode) << " (errno=" << errcode << ")");
+					req->nextRequestEarlyReadError = errcode;
+				}
+				onNextRequestEarlyReadError(client, req, req->nextRequestEarlyReadError);
+			} else {
+				SKC_TRACE(client, 3, "No early read EOF or body receive error detected");
+			}
+
+			return true;
+		} else {
+			return false;
+		}
+	}
+
 
 	/***** Channel callbacks *****/
 
@@ -671,6 +702,9 @@ protected:
 		if (!ended) {
 			req->lastDataReceiveTime = ev_now(this->getLoop());
 		}
+		if (detectNextRequestEarlyReadError(client, req, buffer, errcode)) {
+			return Channel::Result(0, false);
+		}
 
 		// Moved outside switch() so that the CPU branch predictor can do its work
 		if (req->httpState == Request::PARSING_HEADERS) {
@@ -700,7 +734,7 @@ protected:
 					return processClientDataWhenUpgraded(client, req, buffer, errcode);
 				}
 			default:
-				P_BUG("Invalid request HTTP state " << (int) req->httpState);
+				P_BUG("Invalid request body type " << (int) req->bodyType);
 				// Never reached
 				return Channel::Result(0, false);
 			}
@@ -730,6 +764,29 @@ protected:
 			|| client->currentRequest->upgraded();
 	}
 
+	virtual void onUpdateStatistics() {
+		ParentClass::onUpdateStatistics();
+		ev_tstamp now = ev_now(this->getLoop());
+		ev_tstamp duration = now - this->lastStatisticsUpdateTime;
+
+		// Statistics are updated about every 5 seconds, so about 12 updates
+		// per minute. We want the old average to decay to 5% after 1 minute
+		// and 1 hour, respectively, so:
+		// 1 minute: 1 - exp(ln(0.05) / 12) = 0.22092219194555585
+		// 1 hour  : 1 - exp(ln(0.05) / (60 * 12)) = 0.0041520953856636345
+		requestBeginSpeed1m = expMovingAverage(requestBeginSpeed1m,
+			(totalRequestsBegun - lastTotalRequestsBegun) / duration,
+			0.22092219194555585);
+		requestBeginSpeed1h = expMovingAverage(requestBeginSpeed1h,
+			(totalRequestsBegun - lastTotalRequestsBegun) / duration,
+			0.0041520953856636345);
+	}
+
+	virtual void onFinalizeStatisticsUpdate() {
+		ParentClass::onFinalizeStatisticsUpdate();
+		lastTotalRequestsBegun = totalRequestsBegun;
+	}
+
 
 	/***** New hooks *****/
 
@@ -755,6 +812,10 @@ protected:
 		return Channel::Result(buffer.size(), false);
 	}
 
+	virtual void onNextRequestEarlyReadError(Client *client, Request *req, int errcode) {
+		// Do nothing.
+	}
+
 	virtual bool supportsUpgrade(Client *client, Request *req) {
 		return false;
 	}
@@ -767,29 +828,6 @@ protected:
 		} else {
 			return LVL_WARN;
 		}
-	}
-
-	virtual void onUpdateStatistics() {
-		ParentClass::onUpdateStatistics();
-		ev_tstamp now = ev_now(this->getLoop());
-		ev_tstamp duration = now - this->lastStatisticsUpdateTime;
-
-		// Statistics are updated about every 5 seconds, so about 12 updates
-		// per minute. We want the old average to decay to 5% after 1 minute
-		// and 1 hour, respectively, so:
-		// 1 minute: 1 - exp(ln(0.05) / 12) = 0.22092219194555585
-		// 1 hour  : 1 - exp(ln(0.05) / (60 * 12)) = 0.0041520953856636345
-		requestBeginSpeed1m = expMovingAverage(requestBeginSpeed1m,
-			(totalRequestsBegun - lastTotalRequestsBegun) / duration,
-			0.22092219194555585);
-		requestBeginSpeed1h = expMovingAverage(requestBeginSpeed1h,
-			(totalRequestsBegun - lastTotalRequestsBegun) / duration,
-			0.0041520953856636345);
-	}
-
-	virtual void onFinalizeStatisticsUpdate() {
-		ParentClass::onFinalizeStatisticsUpdate();
-		lastTotalRequestsBegun = totalRequestsBegun;
 	}
 
 	virtual void reinitializeClient(Client *client, int fd) {
@@ -806,6 +844,7 @@ protected:
 		req->method    = HTTP_GET;
 		req->wantKeepAlive = false;
 		req->responseBegun = false;
+		req->detectingNextRequestEarlyReadError = false;
 		req->parserState.headerParser = headerParserStatePool.construct();
 		createRequestHeaderParser(this->getContext(), req).initialize();
 		if (OXT_UNLIKELY(req->pool == NULL)) {
@@ -820,6 +859,8 @@ protected:
 		req->lastDataReceiveTime = 0;
 		req->lastDataSendTime = 0;
 		req->queryStringIndex = -1;
+		req->bodyError = 0;
+		req->nextRequestEarlyReadError = 0;
 	}
 
 	/**
@@ -1190,6 +1231,11 @@ public:
 				}
 			} else {
 				doc["parse_error"] = getErrorDesc(req->aux.parseError);
+			}
+
+			if (req->nextRequestEarlyReadError != 0) {
+				doc["next_request_early_read_error"] = getErrorDesc(req->nextRequestEarlyReadError)
+					+ string(" (errno=") + toString(req->nextRequestEarlyReadError) + ")";
 			}
 
 			string str;

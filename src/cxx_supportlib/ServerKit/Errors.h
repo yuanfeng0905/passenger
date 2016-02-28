@@ -1,6 +1,6 @@
 /*
  *  Phusion Passenger - https://www.phusionpassenger.com/
- *  Copyright (c) 2012-2014 Phusion Holding B.V.
+ *  Copyright (c) 2012-2016 Phusion Holding B.V.
  *
  *  "Passenger", "Phusion Passenger" and "Union Station" are registered
  *  trademarks of Phusion Holding B.V.
@@ -35,6 +35,9 @@ enum Error {
 	SECURITY_PASSWORD_DUPLICATE                            = -1016,
 	ERROR_SECURE_HEADER_NOT_ALLOWED                        = -1017,
 	NORMAL_HEADER_NOT_ALLOWED_AFTER_SECURITY_PASSWORD      = -1018,
+
+	// HttpServer special errors
+	EARLY_EOF_DETECTED          = -1020,
 
 	// Error codes below -2000 are http_parser errors
 	HTTP_PARSER_ERRNO_BEGIN     = -2000,
@@ -71,6 +74,8 @@ getErrorDesc(int errcode) {
 		return "A secure header was provided, but no security password was provided";
 	case NORMAL_HEADER_NOT_ALLOWED_AFTER_SECURITY_PASSWORD:
 		return "A normal header was encountered after the security password header";
+	case EARLY_EOF_DETECTED:
+		return "The client connection is closed before the request is done processing";
 	default:
 		if (errcode <= HTTP_PARSER_ERRNO_BEGIN) {
 			return http_errno_description((enum http_errno)

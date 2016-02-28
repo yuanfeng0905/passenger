@@ -326,6 +326,11 @@ Session::requestOOBW() {
 	process->getGroup()->requestOOBW(process);
 }
 
+void
+Session::killProcess(int signo) {
+	getProcess()->kill(signo);
+}
+
 
 } // namespace ApplicationPool2
 } // namespace Passenger
