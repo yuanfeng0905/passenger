@@ -69,6 +69,13 @@ namespace tut {
 			options.set("spawn_method", DEFAULT_SPAWN_METHOD);
 			options.setBool("load_shell_envvars", false);
 
+			options.setBool("debugger", false);
+			options.set("concurrency_model", DEFAULT_CONCURRENCY_MODEL);
+			options.setInt("app_thread_count", DEFAULT_APP_THREAD_COUNT);
+			options.setInt("memory_limit", 0);
+			options.setBool("rolling_restarts", false);
+			options.setBool("resist_deployment_errors", false);
+
 			setLogLevel(LVL_WARN);
 			controller = NULL;
 			serverSocket = createUnixServer("tmp.server");
