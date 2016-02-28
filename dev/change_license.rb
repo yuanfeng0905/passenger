@@ -6,7 +6,9 @@ FILES = Dir[
   "build/*.rb",
   "src/**/*.{c,cpp,h,hpp,erb,rb,py,js}",
   "src/helper-scripts/**/*"
-] - Dir["src/cxx_supportlib/vendor*/**/*"]
+] -
+Dir["src/cxx_supportlib/vendor*/**/*"] -
+Dir["src/ruby_supportlib/phusion_passenger/vendor/**/*"]
 LICENSE_START_SIGNATURE = 'trademarks of Phusion Holding B.V.'
 NEW_LICENSE = "See LICENSE file for license information."
 
