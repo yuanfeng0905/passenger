@@ -30,6 +30,14 @@ void generated_set_conf_part(passenger_loc_conf_t  *conf) {
 	
 
 	
+		conf->core_file_descriptor_ulimit = NGX_CONF_UNSET_UINT;
+	
+
+	
+		conf->app_file_descriptor_ulimit = NGX_CONF_UNSET_UINT;
+	
+
+	
 		conf->enabled = NGX_CONF_UNSET;
 	
 
