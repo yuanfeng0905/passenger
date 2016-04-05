@@ -1,6 +1,6 @@
 /*
  *  Phusion Passenger - https://www.phusionpassenger.com/
- *  Copyright (c) 2010 Phusion Holding B.V.
+ *  Copyright (c) 2010-2016 Phusion Holding B.V.
  *
  *  "Passenger", "Phusion Passenger" and "Union Station" are registered
  *  trademarks of Phusion Holding B.V.
@@ -12,8 +12,7 @@
 
 #include <boost/thread.hpp>
 #include <oxt/system_calls.hpp>
-#include <sys/time.h>
-#include <cerrno>
+#include <Utils/SystemTime.h>
 
 namespace Passenger {
 
@@ -33,10 +32,12 @@ using namespace oxt;
  * timer.elapsed();   // => about 10000 (msec)
  * @endcode
  */
+template<SystemTime::Granularity granularity = SystemTime::GRAN_1USEC>
 class Timer {
 private:
-	struct timeval startTime;
+	MonotonicTimeUsec startTime;
 	mutable boost::mutex lock;
+
 public:
 	/**
 	 * Creates a new Timer object.
@@ -56,14 +57,8 @@ public:
 	 * restart the timer.
 	 */
 	void start() {
-		// TODO: We really use should clock_gettime() and the monotonic
-		// clock whenever possible, instead of gettimeofday()...
-		// On OS X we can use mach_absolute_time()
 		boost::lock_guard<boost::mutex> l(lock);
-		int ret;
-		do {
-			ret = gettimeofday(&startTime, NULL);
-		} while (ret == -1 && errno == EINTR);
+		startTime = SystemTime::getMonotonicUsecWithGranularity<granularity>();
 	}
 
 	/**
@@ -73,8 +68,7 @@ public:
 	 */
 	void stop() {
 		boost::lock_guard<boost::mutex> l(lock);
-		startTime.tv_sec = 0;
-		startTime.tv_usec = 0;
+		startTime = 0;
 	}
 
 	/**
@@ -83,11 +77,8 @@ public:
 	 */
 	void reset() {
 		boost::lock_guard<boost::mutex> l(lock);
-		if (startTime.tv_sec != 0 || startTime.tv_usec != 0) {
-			int ret;
-			do {
-				ret = gettimeofday(&startTime, NULL);
-			} while (ret == -1 && errno == EINTR);
+		if (startTime != 0) {
+			startTime = SystemTime::getMonotonicUsecWithGranularity<granularity>();
 		}
 	}
 
@@ -97,19 +88,10 @@ public:
 	 */
 	unsigned long long elapsed() const {
 		boost::lock_guard<boost::mutex> l(lock);
-		if (startTime.tv_sec == 0 && startTime.tv_usec == 0) {
+		if (startTime == 0) {
 			return 0;
 		} else {
-			struct timeval t;
-			unsigned long long now, beginning;
-			int ret;
-
-			do {
-				ret = gettimeofday(&t, NULL);
-			} while (ret == -1 && errno == EINTR);
-			now = (unsigned long long) t.tv_sec * 1000 + t.tv_usec / 1000;
-			beginning = (unsigned long long) startTime.tv_sec * 1000 + startTime.tv_usec / 1000;
-			return now - beginning;
+			return (SystemTime::getMonotonicUsecWithGranularity<granularity>() - startTime) / 1000;
 		}
 	}
 
@@ -117,21 +99,12 @@ public:
 	 * Returns the amount of time that has elapsed since the timer was last started,
 	 * in microseconds. If the timer is currently stopped, then 0 is returned.
 	 */
-	unsigned long long usecElapsed() const {
+	MonotonicTimeUsec usecElapsed() const {
 		boost::lock_guard<boost::mutex> l(lock);
-		if (startTime.tv_sec == 0 && startTime.tv_usec == 0) {
+		if (startTime == 0) {
 			return 0;
 		} else {
-			struct timeval t;
-			unsigned long long now, beginning;
-			int ret;
-
-			do {
-				ret = gettimeofday(&t, NULL);
-			} while (ret == -1 && errno == EINTR);
-			now = (unsigned long long) t.tv_sec * 1000000 + t.tv_usec;
-			beginning = (unsigned long long) startTime.tv_sec * 1000000 + startTime.tv_usec;
-			return now - beginning;
+			return SystemTime::getMonotonicUsecWithGranularity<granularity>() - startTime;
 		}
 	}
 

@@ -137,6 +137,7 @@ private
       :include_paths => CXX_SUPPORTLIB_INCLUDE_PATHS,
       :flags => [
         LIBEV_CFLAGS,
+        LIBUV_CFLAGS,
         optimize,
         extra_compiler_flags
       ]
@@ -298,6 +299,9 @@ COMMON_LIBRARY = CommonLibraryBuilder.new do
     :source   => 'ServerKit/Implementation.cpp',
     :category => :other,
     :optimize => true
+  define_component 'DataStructures/LString.o',
+    :source   => 'DataStructures/LString.cpp',
+    :category => :other
 
   define_component 'Utils/Hasher.o',
     :source   => 'Utils/Hasher.cpp',

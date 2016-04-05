@@ -1276,6 +1276,9 @@ coreMain(int argc, char *argv[]) {
 		preinitialize, 2);
 	setAgentsOptionsDefaults();
 	sanityCheckOptions();
+
+	restoreOomScore(agentsOptions);
+
 	ret = runCore();
 	shutdownAgent(agentsOptions);
 	return ret;

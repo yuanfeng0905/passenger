@@ -1,6 +1,6 @@
 /*
  *  Phusion Passenger - https://www.phusionpassenger.com/
- *  Copyright (c) 2010-2015 Phusion Holding B.V.
+ *  Copyright (c) 2010-2016 Phusion Holding B.V.
  *
  *  "Passenger", "Phusion Passenger" and "Union Station" are registered
  *  trademarks of Phusion Holding B.V.
@@ -16,7 +16,6 @@
 
 #include <string>
 
-#include <uv.h>
 #include <StaticString.h>
 #include <Exceptions.h>
 #include <Utils/StrIntUtils.h>
@@ -66,7 +65,7 @@ public:
 		pos = appendData(pos, end, "BEGIN: ");
 		pos = appendData(pos, end, id);
 		pos = appendData(pos, end, " (");
-		pos = appendData(pos, end, usecToString(uv_hrtime() / 1000));
+		pos = appendData(pos, end, usecToString(SystemTime::getMonotonicUsec()));
 		pos = appendData(pos, end, ",");
 		if (getrusage(RUSAGE_SELF, &usage) == -1) {
 			int e = errno;
@@ -106,7 +105,7 @@ public:
 		}
 		pos = appendData(pos, end, id);
 		pos = appendData(pos, end, " (");
-		pos = appendData(pos, end, usecToString(uv_hrtime() / 1000));
+		pos = appendData(pos, end, usecToString(SystemTime::getMonotonicUsec()));
 		pos = appendData(pos, end, ",");
 		if (getrusage(RUSAGE_SELF, &usage) == -1) {
 			int e = errno;

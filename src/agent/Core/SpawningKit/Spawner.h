@@ -254,7 +254,7 @@ private:
 		try {
 			const size_t UNIX_PATH_MAX = sizeof(((struct sockaddr_un *) 0)->sun_path);
 			string data = "You have control 1.0\n"
-				"passenger_root: " + config->resourceLocator->getRoot() + "\n"
+				"passenger_root: " + config->resourceLocator->getInstallSpec() + "\n"
 				"passenger_version: " PASSENGER_VERSION "\n"
 				"ruby_libdir: " + config->resourceLocator->getRubyLibDir() + "\n"
 				"gupid: " + details.gupid + "\n"
@@ -445,7 +445,7 @@ protected:
 	 * <em>timeout</em> miliseconds for the process to exit.
 	 */
 	static int timedWaitpid(pid_t pid, int *status, unsigned long long timeout) {
-		Timer timer;
+		Timer<SystemTime::GRAN_10MSEC> timer;
 		int ret;
 
 		do {

@@ -85,6 +85,7 @@ module PhusionPassenger
       '.gitignore',
       '.gitattributes',
       '.gitmodules',
+      '.github/*',
       '.travis.yml',
       '.settings/*',
       '.externalToolBuilders/*',

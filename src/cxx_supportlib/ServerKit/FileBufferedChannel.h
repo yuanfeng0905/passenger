@@ -1012,6 +1012,7 @@ private:
 
 		if (req->result == UV_ECANCELED) {
 			uv_fs_req_cleanup(req);
+			free(req);
 			delete fcContext;
 			return;
 		}
@@ -1026,6 +1027,7 @@ private:
 		}
 
 		uv_fs_req_cleanup(req);
+		free(req);
 		delete fcContext;
 	}
 

@@ -187,7 +187,7 @@ protected:
 	 * <em>timeout</em> miliseconds for the process to exit.
 	 */
 	static int timedWaitPid(pid_t pid, int *status, unsigned long long timeout) {
-		Timer timer;
+		Timer<SystemTime::GRAN_10MSEC> timer;
 		int ret;
 
 		do {
@@ -291,8 +291,6 @@ public:
 			 * agent as well as all its descendant processes, and so that a Ctrl-C
 			 * only affects the watchdog but not agents. */
 			setpgid(getpid(), getpid());
-
-			setOomScore(oldOomScore);
 
 			try {
 				execProgram();
