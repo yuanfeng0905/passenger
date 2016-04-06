@@ -2072,7 +2072,7 @@ namespace tut {
 		// In the mean time, all get() commands should immediately hit
 		// the old process without blocking on the restart.
 		ensure_equals(number, 0);
-		Timer timer;
+		Timer<> timer;
 		int expectedNumber = 1;
 		while (timer.elapsed() < 500) {
 			pool->asyncGet(options, callback);
