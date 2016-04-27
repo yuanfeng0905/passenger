@@ -323,13 +323,13 @@ void printAppOutput(pid_t pid, const char *channelName, const char *message, uns
 void setPrintAppOutputAsDebuggingMessages(bool enabled);
 
 /** Print a [BUG] error message and abort with a stack trace. */
-#define P_BUG(expr) \
+#define P_BUG_WITH_FORMATTER_CODE(varname, code) \
 	do { \
 		TRACE_POINT(); \
 		const char *_exprStr; \
-		Passenger::FastStringStream<> sstream; \
-		sstream << expr; \
-		_exprStr = Passenger::_strdupFastStringStream(sstream); \
+		Passenger::FastStringStream<> varname; \
+		code \
+		_exprStr = Passenger::_strdupFastStringStream(varname); \
 		Passenger::lastAssertionFailure.filename = __FILE__; \
 		Passenger::lastAssertionFailure.line = __LINE__; \
 		Passenger::lastAssertionFailure.function = __PRETTY_FUNCTION__; \
@@ -338,13 +338,13 @@ void setPrintAppOutputAsDebuggingMessages(bool enabled);
 		abort(); \
 	} while (false)
 
-#define P_BUG_UTP(expr) \
+#define P_BUG_UTP_WITH_FORMATTER_CODE(varname, code) \
 	do { \
 		UPDATE_TRACE_POINT(); \
 		const char *_exprStr; \
-		Passenger::FastStringStream<> sstream; \
-		sstream << expr; \
-		_exprStr = Passenger::_strdupFastStringStream(sstream); \
+		Passenger::FastStringStream<> varname; \
+		code \
+		_exprStr = Passenger::_strdupFastStringStream(varname); \
 		Passenger::lastAssertionFailure.filename = __FILE__; \
 		Passenger::lastAssertionFailure.line = __LINE__; \
 		Passenger::lastAssertionFailure.function = __PRETTY_FUNCTION__; \
@@ -352,6 +352,9 @@ void setPrintAppOutputAsDebuggingMessages(bool enabled);
 		P_CRITICAL("[BUG] " << _exprStr); \
 		abort(); \
 	} while (false)
+
+#define P_BUG(expr) P_BUG_WITH_FORMATTER_CODE( _sstream , _sstream << expr; )
+#define P_BUG_UTP(expr) P_BUG_UTP_WITH_FORMATTER_CODE( _sstream , _sstream << expr; )
 
 #define P_ASSERT_EQ(value, expected) \
 	do { \
