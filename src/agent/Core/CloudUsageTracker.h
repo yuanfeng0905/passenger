@@ -347,7 +347,6 @@ protected:
 		curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, curlDataReceived);
 		curl_easy_setopt(curl, CURLOPT_WRITEDATA, &responseData);
 		CURLcode code = curl_easy_perform(curl);
-		curl_easy_cleanup(curl);
 
 		if (code == 0) {
 			long responseCode;
@@ -355,8 +354,11 @@ protected:
 			if (curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &responseCode) != CURLE_OK) {
 				P_ERROR("Cannot not autodetect Amazon instance type (internal error: could "
 					"not query libcurl response code). Assuming this is not an Amazon instance");
+				curl_easy_cleanup(curl);
 				return false;
 			}
+
+			curl_easy_cleanup(curl);
 
 			// On some machines, we get a responseCode of 0 even though the response body
 			// is correct. The reason is unknown.
@@ -379,6 +381,7 @@ protected:
 		} else {
 			P_DEBUG("Cannot contact Amazon metadata server (HTTP error: " << lastErrorMessage <<
 				"). Assuming this is not an Amazon instance");
+			curl_easy_cleanup(curl);
 			return false;
 		}
 	}
