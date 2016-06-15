@@ -5,7 +5,7 @@
  * "Passenger", "Phusion Passenger" and "Union Station" are registered
  * trademarks of Phusion Holding B.V.
  *
- *  See LICENSE file for license information.
+ * See LICENSE file for license information.
  */
 
 /*
@@ -45,23 +45,31 @@ typedef struct {
     ngx_uint_t headers_hash_max_size;
     ngx_array_t *headers_source;
     ngx_int_t load_shell_envvars;
+    ngx_int_t max_instances;
     ngx_int_t max_instances_per_app;
     ngx_int_t max_preloader_idle_time;
     ngx_int_t max_request_queue_size;
+    ngx_int_t max_request_time;
     ngx_int_t max_requests;
+    ngx_int_t memory_limit;
     ngx_int_t min_instances;
     ngx_int_t request_queue_overflow_status_code;
+    ngx_int_t resist_deployment_errors;
+    ngx_int_t rolling_restarts;
     ngx_int_t socket_backlog;
     ngx_int_t start_timeout;
     ngx_int_t sticky_sessions;
+    ngx_int_t thread_count;
     ngx_array_t *union_station_filters;
     ngx_int_t union_station_support;
     ngx_str_t app_group_name;
     ngx_str_t app_rights;
     ngx_str_t app_root;
     ngx_str_t app_type;
+    ngx_str_t concurrency_model;
     ngx_str_t document_root;
     ngx_str_t environment;
+    ngx_str_t fly_with;
     ngx_str_t group;
     ngx_str_t meteor_app_settings;
     ngx_str_t nodejs;
