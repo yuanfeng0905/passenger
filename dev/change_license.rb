@@ -4,7 +4,7 @@
 FILES = Dir[
   "bin/*",
   "build/*.rb",
-  "src/**/*.{c,cpp,h,hpp,erb,rb,py,js}",
+  "src/**/*.{c,cpp,h,hpp,erb,rb,py,js,cxxcodebuilder}",
   "src/helper-scripts/**/*"
 ] -
 Dir["src/cxx_supportlib/vendor*/**/*"] -

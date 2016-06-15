@@ -1,0 +1,111 @@
+#  Phusion Passenger - https://www.phusionpassenger.com/
+#  Copyright (c) 2010-2016 Phusion Holding B.V.
+#
+#  "Passenger", "Phusion Passenger" and "Union Station" are registered
+#  trademarks of Phusion Holding B.V.
+#
+#  See LICENSE file for license information.
+
+# This file uses the cxxcodebuilder API. Learn more at:
+# https://github.com/phusion/passenger/cxxcodebuilder
+
+require 'phusion_passenger/apache2/config_options'
+
+def main
+  comment copyright_header_for(__FILE__)
+
+  separator
+
+  comment %q{
+    ConfigurationCommands.cpp is automatically generated from ConfigurationCommands.cpp.cxxcodebuilder,
+    using definitions from src/ruby_supportlib/phusion_passenger/apache2/config_options.rb.
+    Edits to ConfigurationCommands.cpp will be lost.
+
+    To update ConfigurationCommands.cpp:
+      rake apache2
+
+    To force regeneration of ConfigurationCommands.cpp:
+      rm -f src/apache2_module/ConfigurationCommands.cpp
+      rake src/apache2_module/ConfigurationCommands.cpp
+  }
+
+  separator
+
+  APACHE2_DIRECTORY_CONFIGURATION_OPTIONS.each do |option|
+    option = resolve_possible_alias(option)
+    format =
+      "%s(%s,\n" \
+      "\t(%s) %s,\n" \
+      "\tNULL,\n" \
+      "\t%s,\n" \
+      "\t%s),\n"
+    code = sprintf(format,
+      macro_for(option),
+      name_for(option),
+      function_type_for(option),
+      function_for(option),
+      context_for(option),
+      description_for(option))
+    add_code(code)
+  end
+end
+
+def resolve_possible_alias(option)
+  if option[:alias_for]
+    the_alias = APACHE2_DIRECTORY_CONFIGURATION_OPTIONS.find do |o|
+      o[:name] == option[:alias_for]
+    end.dup
+    the_alias[:aliased_for] = option[:name]
+    the_alias
+  else
+    option
+  end
+end
+
+def macro_for(option)
+  case option[:type]
+  when :string, :integer
+    "AP_INIT_TAKE1"
+  when :flag
+    "AP_INIT_FLAG"
+  else
+    raise "Unknown type #{option[:type].inspect} for option #{option[:name].inspect}"
+  end
+end
+
+def name_for(option)
+  str_val(option[:aliased_for] || option[:name])
+end
+
+def function_type_for(option)
+  case option[:type]
+  when :string, :integer
+    "Take1Func"
+  when :flag
+    "FlagFunc"
+  else
+    raise "Unknown type #{option[:type].inspect}"
+  end
+end
+
+def function_for(option)
+  if option[:function]
+    option[:function]
+  else
+    function_name = option[:name].gsub(/[A-Z]/) do |letter|
+      "_" + letter[0..0].downcase
+    end
+    "cmd#{function_name}"
+  end
+end
+
+def context_for(option)
+  context = option[:context] || ["OR_OPTIONS", "ACCESS_CONF", "RSRC_CONF"]
+  context.join(" | ")
+end
+
+def description_for(option)
+  option[:desc].inspect
+end
+
+main
