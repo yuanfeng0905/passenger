@@ -2122,6 +2122,7 @@ CXX_DEPENDENCY_MAP =
    "src/cxx_supportlib/FileDescriptor.h",
    "src/cxx_supportlib/Hooks.h",
    "src/cxx_supportlib/Logging.h",
+   "src/cxx_supportlib/LveLoggingDecorator.h",
    "src/cxx_supportlib/MemoryKit/palloc.h",
    "src/cxx_supportlib/RandomGenerator.h",
    "src/cxx_supportlib/ResourceLocator.h",
