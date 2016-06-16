@@ -307,19 +307,6 @@ private:
 		return conn;
 	}
 
-	vector<string> getConfigFiles(server_rec *s) const {
-		server_rec *server;
-		vector<string> result;
-
-		for (server = s; server != NULL; server = server->next) {
-			if (server->defn_name != NULL) {
-				result.push_back(server->defn_name);
-			}
-		}
-
-		return result;
-	}
-
 	bool hasModRewrite() {
 		if (m_hasModRewrite == UNKNOWN) {
 			if (ap_find_linked_module("mod_rewrite.c")) {
@@ -1314,7 +1301,6 @@ public:
 		VariantMap params;
 		params
 			.setPid ("web_server_control_process_pid", getpid())
-			.setStrSet("web_server_config_files", getConfigFiles(s))
 			.set    ("server_software", webServerDesc)
 			.setBool("multi_app", true)
 			.setBool("load_shell_envvars", true)

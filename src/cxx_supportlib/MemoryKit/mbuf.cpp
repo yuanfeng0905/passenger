@@ -25,12 +25,13 @@
 #include <ostream>
 #include <MemoryKit/mbuf.h>
 #include <Logging.h>
+#include <StaticString.h>
 #include <Utils/StrIntUtils.h>
 
 namespace Passenger {
 namespace MemoryKit {
 
-//#define MBUF_DEBUG
+//#define MBUF_DEBUG_REFCOUNTS
 
 #define ASSERT_MBUF_BLOCK_PROPERTY(mbuf_block, expr) \
 	do { \
@@ -55,6 +56,7 @@ _mbuf_block_mark_as_active(struct mbuf_pool *pool, struct mbuf_block *mbuf_block
 	#ifdef MBUF_ENABLE_BACKTRACES
 		mbuf_block->backtrace = strdup(oxt::thread::current_backtrace().c_str());
 	#endif
+	mbuf_block->refcount = 1;
 	pool->nactive_mbuf_blockq++;
 }
 
@@ -111,7 +113,6 @@ _mbuf_block_init(struct mbuf_pool *pool, char *buf, size_t block_offset)
 	mbuf_block = (struct mbuf_block *)(buf + block_offset);
 	mbuf_block->magic = MBUF_BLOCK_MAGIC;
 	mbuf_block->pool  = pool;
-	mbuf_block->refcount = 1;
 	mbuf_block->offset = 0;
 
 	_mbuf_block_mark_as_active(pool, mbuf_block);
@@ -128,10 +129,11 @@ _mbuf_block_get(struct mbuf_pool *pool)
 		assert(pool->nfree_mbuf_blockq > 0);
 
 		mbuf_block = STAILQ_FIRST(&pool->free_mbuf_blockq);
+		ASSERT_MBUF_BLOCK_PROPERTY(mbuf_block, mbuf_block->magic == MBUF_BLOCK_MAGIC);
+		ASSERT_MBUF_BLOCK_PROPERTY(mbuf_block, mbuf_block->refcount == 0);
+
 		pool->nfree_mbuf_blockq--;
 		STAILQ_REMOVE_HEAD(&pool->free_mbuf_blockq, next);
-
-		ASSERT_MBUF_BLOCK_PROPERTY(mbuf_block, mbuf_block->magic == MBUF_BLOCK_MAGIC);
 		_mbuf_block_mark_as_active(pool, mbuf_block);
 		return mbuf_block;
 	}
@@ -163,7 +165,7 @@ mbuf_block_get(struct mbuf_pool *pool)
 		mbuf_block->end - mbuf_block->start == (int) pool->mbuf_block_offset);
 	ASSERT_MBUF_BLOCK_PROPERTY(mbuf_block, mbuf_block->start < mbuf_block->end);
 
-	#ifdef MBUF_DEBUG
+	#ifdef MBUF_DEBUG_REFCOUNTS
 		printf("[%p] mbuf_block get %p\n", oxt::thread_signature, mbuf_block);
 	#endif
 
@@ -193,7 +195,7 @@ mbuf_block_new_standalone(struct mbuf_pool *pool, size_t size)
 	ASSERT_MBUF_BLOCK_PROPERTY(mbuf_block,
 		mbuf_block->start < mbuf_block->end);
 
-	#ifdef MBUF_DEBUG
+	#ifdef MBUF_DEBUG_REFCOUNTS
 		printf("[%p] mbuf_block new standalone %p\n", oxt::thread_signature, mbuf_block);
 	#endif
 
@@ -205,7 +207,7 @@ mbuf_block_free(struct mbuf_block *mbuf_block)
 {
 	char *buf;
 
-	#ifdef MBUF_DEBUG
+	#ifdef MBUF_DEBUG_REFCOUNTS
 		printf("[%p] mbuf_block free %p\n", oxt::thread_signature, mbuf_block);
 	#endif
 
@@ -230,7 +232,7 @@ mbuf_block_free(struct mbuf_block *mbuf_block)
 void
 mbuf_block_put(struct mbuf_block *mbuf_block)
 {
-	#ifdef MBUF_DEBUG
+	#ifdef MBUF_DEBUG_REFCOUNTS
 		printf("[%p] mbuf_block put %p\n", oxt::thread_signature, mbuf_block);
 	#endif
 
@@ -240,7 +242,6 @@ mbuf_block_put(struct mbuf_block *mbuf_block)
 	ASSERT_MBUF_BLOCK_PROPERTY(mbuf_block, mbuf_block->pool->nactive_mbuf_blockq > 0);
 	ASSERT_MBUF_BLOCK_PROPERTY(mbuf_block, mbuf_block->offset == 0);
 
-	mbuf_block->refcount = 1;
 	mbuf_block->pool->nfree_mbuf_blockq++;
 	mbuf_block->pool->nactive_mbuf_blockq--;
 	STAILQ_INSERT_HEAD(&mbuf_block->pool->free_mbuf_blockq, mbuf_block, next);
@@ -260,6 +261,11 @@ mbuf_block_remove(struct mhdr *mhdr, struct mbuf_block *mbuf_block)
 
 	STAILQ_REMOVE(mhdr, mbuf_block, struct mbuf_block, next);
 	STAILQ_NEXT(mbuf_block, next) = NULL;
+}
+
+void
+_mbuf_block_assert_refcount_at_least_two(struct mbuf_block *mbuf_block) {
+	ASSERT_MBUF_BLOCK_PROPERTY(mbuf_block, mbuf_block->refcount >= 2);
 }
 
 void
@@ -312,11 +318,12 @@ mbuf_pool_compact(struct mbuf_pool *pool)
 void
 mbuf_block_ref(struct mbuf_block *mbuf_block)
 {
-	#ifdef MBUF_DEBUG
+	#ifdef MBUF_DEBUG_REFCOUNTS
 		printf("[%p] mbuf_block ref %p: %u -> %u\n",
 			oxt::thread_signature, mbuf_block,
 			mbuf_block->refcount, mbuf_block->refcount + 1);
 	#endif
+	ASSERT_MBUF_BLOCK_PROPERTY(mbuf_block, mbuf_block->refcount > 0);
 	#ifdef MBUF_ENABLE_BACKTRACES
 		mbuf_block->backtrace = strdup(oxt::thread::current_backtrace().c_str());
 	#endif
@@ -331,7 +338,7 @@ mbuf_block_ref(struct mbuf_block *mbuf_block)
 void
 mbuf_block_unref(struct mbuf_block *mbuf_block)
 {
-	#ifdef MBUF_DEBUG
+	#ifdef MBUF_DEBUG_REFCOUNTS
 		printf("[%p] mbuf_block unref %p: %u -> %u\n",
 			oxt::thread_signature, mbuf_block,
 			mbuf_block->refcount, mbuf_block->refcount - 1);
@@ -345,6 +352,7 @@ mbuf_block_unref(struct mbuf_block *mbuf_block)
 	mbuf_block->refcount--;
 	if (mbuf_block->refcount == 0) {
 		if (mbuf_block->offset > 0) {
+			ASSERT_MBUF_BLOCK_PROPERTY(mbuf_block, mbuf_block->pool->nactive_mbuf_blockq > 0);
 			mbuf_block->pool->nactive_mbuf_blockq--;
 			mbuf_block_free(mbuf_block);
 		} else {
@@ -368,8 +376,7 @@ mbuf_get(struct mbuf_pool *pool)
 	}
 
 	ASSERT_MBUF_BLOCK_PROPERTY(block, block->refcount == 1);
-	block->refcount--;
-	return mbuf(block, 0, block->end - block->start);
+	return mbuf(block, 0, block->end - block->start, mbuf::just_created_t());
 }
 
 mbuf
@@ -386,8 +393,7 @@ mbuf_get_with_size(struct mbuf_pool *pool, size_t size)
 	}
 
 	ASSERT_MBUF_BLOCK_PROPERTY(block, block->refcount == 1);
-	block->refcount--;
-	return mbuf(block, 0, size);
+	return mbuf(block, 0, size, mbuf::just_created_t());
 }
 
 static void
@@ -431,18 +437,34 @@ mbuf::initialize_with_block(unsigned int start, unsigned int len) {
 }
 
 void
-mbuf::initialize_with_mbuf(const mbuf &mbuf, unsigned int start, unsigned int len) {
-	mbuf_block = mbuf.mbuf_block;
+mbuf::initialize_with_block_just_created(unsigned int start, unsigned int len) {
 	this->start = clamp<char *>(
-		mbuf.start + start,
-		mbuf.start,
-		mbuf.end);
+		mbuf_block->start + start,
+		mbuf_block->start,
+		mbuf_block->end);
 	this->end = clamp<char *>(
-		mbuf.start + start + len,
-		mbuf.start,
-		mbuf.end);
-	if (mbuf.mbuf_block != NULL) {
-		mbuf_block_ref(mbuf.mbuf_block);
+		mbuf_block->start + start + len,
+		mbuf_block->start,
+		mbuf_block->end);
+	ASSERT_MBUF_BLOCK_PROPERTY(mbuf_block, mbuf_block->refcount == 1);
+	#ifdef MBUF_ENABLE_BACKTRACES
+		mbuf_block->backtrace = strdup(oxt::thread::current_backtrace().c_str());
+	#endif
+}
+
+void
+mbuf::initialize_with_mbuf(const mbuf &other, unsigned int start, unsigned int len) {
+	mbuf_block = other.mbuf_block;
+	this->start = clamp<char *>(
+		other.start + start,
+		other.start,
+		other.end);
+	this->end = clamp<char *>(
+		other.start + start + len,
+		other.start,
+		other.end);
+	if (other.mbuf_block != NULL) {
+		mbuf_block_ref(other.mbuf_block);
 	}
 }
 
