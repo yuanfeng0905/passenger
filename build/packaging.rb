@@ -8,8 +8,8 @@
 
 desc "List directories in the Phusion Passenger Enterprise customer area"
 task 'package:list_enterprise' do
-  dir = "/u/apps/passenger_website/shared"
-  sh "ssh app@shell.phusion.nl ls \"#{dir}/assets\""
+  dir = "/var/www/passenger_website/shared"
+  sh "ssh passenger_website@shell.phusion.nl ls \"#{dir}/assets\""
 end
 
 ORIG_TARBALL_FILES = lambda { PhusionPassenger::Packaging.files }
@@ -203,11 +203,11 @@ task 'package:release' => ['package:set_official', 'package:gem', 'package:tarba
       puts "--------------"
       puts "All done."
     else
-      dir = "/u/apps/passenger_website/shared"
+      dir = "/var/www/passenger_website/shared"
       subdir = string_option('NAME', version)
 
-      sh "scp #{PKG_DIR}/#{basename}.{gem,tar.gz,gem.asc,tar.gz.asc} app@shell.phusion.nl:#{dir}/"
-      sh "ssh app@shell.phusion.nl 'mkdir -p \"#{dir}/assets/#{subdir}\" && mv #{dir}/#{basename}.{gem,tar.gz,gem.asc,tar.gz.asc} \"#{dir}/assets/#{subdir}/\"'"
+      sh "scp #{PKG_DIR}/#{basename}.{gem,tar.gz,gem.asc,tar.gz.asc} passenger_website@shell.phusion.nl:#{dir}/"
+      sh "ssh passenger_website@shell.phusion.nl 'mkdir -p \"#{dir}/assets/#{subdir}\" && mv #{dir}/#{basename}.{gem,tar.gz,gem.asc,tar.gz.asc} \"#{dir}/assets/#{subdir}/\"'"
       command = "curl -F file=@#{PKG_DIR}/#{basename}.gem --user admin:'#{website_config['admin_password']}' " +
         "--output /dev/stderr --write-out '%{http_code}' --silent " +
         "https://www.phusionpassenger.com/enterprise_gems/upload"
