@@ -1,6 +1,6 @@
 /*
  *  Phusion Passenger - http://www.modrails.com/
- *  Copyright (c) 2012-2013 Phusion Holding B.V.
+ *  Copyright (c) 2012-2016 Phusion Holding B.V.
  *
  *  "Passenger", "Phusion Passenger" and "Union Station" are registered
  *  trademarks of Phusion Holding B.V.
@@ -21,6 +21,10 @@ namespace Passenger {
 
 #define MAX_LICENSE_LINES 30
 #define LICENSE_SECRET "An error occurred while fetching this page. Please contact an administrator if this problem persists."
+/* N.B. there is a legacy field named "Valid until:" that used to signify the fastspring license expiration and might still be present
+ * in old certificates, so "Expires after:" was deliberately chosen to avoid that legacy.
+ */
+#define EXPIRES_AFTER_KEY "Expires after:"
 
 /* Workaround to shut up compiler warnings about return values */
 #define IGNORE_RETVAL(val) \
@@ -39,6 +43,45 @@ hexNibbleToByte(char hexNibble) {
 	} else {
 		return hexNibble - 'A' + 10;
 	}
+}
+
+/*
+ * Returns pointer to EXPIRES_AFTER_KEY date value (yyyy-mm-dd) within licenseKey, or NULL if not there.
+ */
+const char *
+findExpiresAfterDate(const char *licenseKey) {
+	const char *expiresAfterChars = strstr(licenseKey, EXPIRES_AFTER_KEY);
+	if (expiresAfterChars == NULL) {
+		return NULL;
+	}
+
+	expiresAfterChars += sizeof(EXPIRES_AFTER_KEY);
+	while (*expiresAfterChars == ' ') {
+		expiresAfterChars++;
+	}
+
+	return expiresAfterChars;
+}
+
+/*
+ * Returns 0 if expired, 1 otherwise
+ */
+int
+compareDates(const char *expiresAfterChars, struct tm checkDate) {
+	// A license without Expires after is valid forever.
+	if (expiresAfterChars == NULL) {
+		return 1;
+	}
+
+	// Otherwise, valid until the date specified in the license is in the past
+	char checkDateChars[20];
+	snprintf(checkDateChars, sizeof(checkDateChars), "%d-%02d-%02d", checkDate.tm_year + 1900, checkDate.tm_mon + 1, checkDate.tm_mday);
+
+	if (strcmp(expiresAfterChars, checkDateChars) >= 0) {
+		return 1;
+	}
+
+	return 0;
 }
 
 void
@@ -101,6 +144,9 @@ passenger_enterprise_license_check() {
 	md5_byte_t digest[MD5_SIZE], readDigest[MD5_SIZE], *readDigestCursor;
 	const char *data, *dataEnd;
 	char *dataEnd2;
+	time_t t = time(NULL);
+	struct tm dateTimeNow;
+	const char *expiresAfter;
 
 	if (licenseKey != NULL) {
 		return strdup("Phusion Passenger Enterprise license key already checked.");
@@ -182,6 +228,18 @@ passenger_enterprise_license_check() {
 		dataEnd2 += len;
 	}
 	*dataEnd2 = '\0';
+
+	// If there is a validity limit, check it
+	expiresAfter = findExpiresAfterDate(licenseKey);
+	dateTimeNow = *localtime(&t);
+	if (compareDates(expiresAfter, dateTimeNow) == 0) {
+		free(licenseKey);
+		licenseKey = NULL;
+		int messageLen = sizeof("The Phusion Passenger Enterprise license file is invalid: expired since .\n") + strlen(expiresAfter) + sizeof(EXPIRED_APPEAL_MESSAGE) + 1;
+		message = (char *) malloc(messageLen);
+		snprintf(message, messageLen, "The Phusion Passenger Enterprise license file is invalid: expired since %s.\n%s", expiresAfter, EXPIRED_APPEAL_MESSAGE);
+		goto finish;
+	}
 
 	finish:
 	fclose(f);

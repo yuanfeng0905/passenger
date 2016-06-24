@@ -9518,6 +9518,10 @@ CXX_DEPENDENCY_MAP =
    "src/cxx_supportlib/oxt/tracable_exception.hpp",
    "test/cxx/../tut/tut.h",
    "test/cxx/TestSupport.h"],
+ "test/cxx/Utils/LicenseTest.cpp"=>
+   ["src/cxx_supportlib/Utils/License.h",
+    "test/cxx/../tut/tut.h",
+    "test/cxx/TestSupport.h"],
  "test/cxx/Utils/StrIntUtilsTest.cpp"=>
   ["src/cxx_supportlib/BackgroundEventLoop.h",
    "src/cxx_supportlib/Constants.h",

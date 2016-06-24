@@ -1,6 +1,6 @@
 /*
  *  Phusion Passenger - http://www.modrails.com/
- *  Copyright (c) 2012-2013 Phusion Holding B.V.
+ *  Copyright (c) 2012-2016 Phusion Holding B.V.
  *
  *  "Passenger", "Phusion Passenger" and "Union Station" are registered
  *  trademarks of Phusion Holding B.V.
@@ -28,11 +28,25 @@ namespace Passenger {
 	"Thank you for your support.\n" \
 	"- Hongli, Ninh, and the rest of the Phusion team"
 
+#define EXPIRED_APPEAL_MESSAGE \
+	"The license is considered invalid if the \"Expires after\" date in your license file is in the past. " \
+	"Please contact support@phusion.nl if you believe the license should be valid, or to obtain a new one.\n" \
+	"We kindly ask you not to try to crack this software, obtain it illegally, or violate the validity period. " \
+	"We're trying to make a living out of this and the profits are used to fund the development of the " \
+	"open source version of Phusion Passenger. We can only do this with your support. If you don't have " \
+	"a valid license, please buy it from www.phusionpassenger.com.\n" \
+	"Thank you for your support.\n" \
+	"- Hongli, Ninh, and the rest of the Phusion team"
+
 extern char *licenseKey;
 
 void passenger_enterprise_license_init();
 char *passenger_enterprise_license_check();
 int passenger_enterprise_should_track_usage();
+
+// exposed for test only
+const char *findExpiresAfterDate(const char *licenseKey);
+int compareDates(const char *expiresAfterChars, struct tm checkDate);
 
 #ifdef __cplusplus
 } // namespace Passenger

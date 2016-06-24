@@ -89,6 +89,8 @@ TEST_CXX_OBJECTS = {
     "test/cxx/DateParsingTest.cpp",
   "#{TEST_OUTPUT_DIR}cxx/UtilsTest.o" =>
     "test/cxx/UtilsTest.cpp",
+  "#{TEST_OUTPUT_DIR}cxx/Utils/LicenseTest.o" =>
+    "test/cxx/Utils/LicenseTest.cpp",
   "#{TEST_OUTPUT_DIR}cxx/Utils/StrIntUtilsTest.o" =>
     "test/cxx/Utils/StrIntUtilsTest.cpp",
   "#{TEST_OUTPUT_DIR}cxx/IOUtilsTest.o" =>
