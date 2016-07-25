@@ -15,13 +15,13 @@ module PhusionPassenger
 
   PACKAGE_NAME = 'passenger-enterprise-server'
   # Run 'rake src/cxx_supportlib/Constants.h' after changing this number.
-  VERSION_STRING = '5.0.29'
+  VERSION_STRING = '5.0.30'
 
   PREFERRED_NGINX_VERSION = '1.10.1'
   NGINX_SHA256_CHECKSUM = '1fd35846566485e03c0e318989561c135c598323ff349c503a6c14826487a801'
 
   PREFERRED_PCRE_VERSION  = '8.39'
-  PCRE_SHA256_CHECKSUM = '1dd78994c81e44ac41cf30b2a21d4b4cc6d76ccde7fc6e77713ed51d7bddca47'
+  PCRE_SHA256_CHECKSUM = 'ccdf7e788769838f8285b3ee672ed573358202305ee361cfec7a4a4fb005bbc7'
 
   STANDALONE_INTERFACE_VERSION  = 1
 

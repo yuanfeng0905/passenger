@@ -224,6 +224,11 @@ public:
 	}
 
 	OXT_FORCE_INLINE
+	void clearBuffersFlushedCallback() {
+		FileBufferedChannel::clearBuffersFlushedCallback();
+	}
+
+	OXT_FORCE_INLINE
 	void setBuffersFlushedCallback(Callback callback) {
 		FileBufferedChannel::setBuffersFlushedCallback(callback);
 	}

@@ -106,6 +106,7 @@ public:
 	// headers is variable, but the number of secure headers is more or less
 	// constant.
 	HeaderTable secureHeaders;
+	// HttpServer feeds all body data received via client->input to bodyChannel
 	Channel bodyChannel;
 
 	union {
