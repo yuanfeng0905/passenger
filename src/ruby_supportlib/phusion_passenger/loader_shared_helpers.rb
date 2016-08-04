@@ -335,6 +335,14 @@ module PhusionPassenger
     # This method is to be called after loading the application code but
     # before forking a worker process.
     def after_loading_app_code(options)
+      if defined?(::Rails) &&
+         ::Rails.respond_to?(:logger) &&
+         ::Rails.logger.respond_to?(:tagged) &&
+         options["concurrency_model"] == "thread" &&
+         options.fetch("thread_count", 1).to_i > 1
+        PhusionPassenger.require_passenger_lib 'rack/active_support_tagged_logger_support'
+      end
+
       UnionStationHooks.check_initialized
     end
 

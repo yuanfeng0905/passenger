@@ -78,7 +78,7 @@ module PhusionPassenger
           is_head_request = env[REQUEST_METHOD] == HEAD
 
           begin
-            status, headers, body = @app.call(env)
+            status, headers, body = maybe_tag_logger { @app.call(env) }
           rescue => e
             if !should_swallow_app_error?(e, socket_wrapper)
               # It's a good idea to catch application exceptions here because
@@ -359,6 +359,12 @@ module PhusionPassenger
       # keep-alive the connection if we can.
       def signal_keep_alive_allowed!
         @keepalive_performed = @can_keepalive
+      end
+
+      # This method is overridden by the possible loading
+      # of active_support_tagged_logger_support.rb.
+      def maybe_tag_logger
+        yield
       end
 
       if "".respond_to?(:bytesize)
