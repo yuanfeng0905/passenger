@@ -75,6 +75,7 @@
 #include <Core/ApplicationPool/Pool.h>
 #include <Core/UnionStation/Context.h>
 #include <Core/CloudUsageTracker.h>
+#include <Core/LicenseChecker.h>
 
 using namespace boost;
 using namespace oxt;
@@ -138,12 +139,16 @@ namespace Core {
 		oxt::thread *prestarterThread;
 
 		CloudUsageTracker *tracker;
+		LicenseChecker *licenseChecker;
 
 		WorkingObjects()
 			: exitEvent(__FILE__, __LINE__, "WorkingObjects: exitEvent"),
 			  allClientsDisconnectedEvent(__FILE__, __LINE__, "WorkingObjects: allClientsDisconnectedEvent"),
 			  terminationCount(0),
-			  shutdownCounter(0)
+			  shutdownCounter(0),
+			  prestarterThread(NULL),
+			  tracker(NULL),
+			  licenseChecker(NULL)
 		{
 			for (unsigned int i = 0; i < SERVER_KIT_MAX_SERVER_ENDPOINTS; i++) {
 				serverFds[i] = -1;
@@ -153,6 +158,7 @@ namespace Core {
 
 		~WorkingObjects() {
 			delete prestarterThread;
+			delete licenseChecker;
 
 			vector<ThreadWorkingObjects>::iterator it, end = threadWorkingObjects.end();
 			for (it = threadWorkingObjects.begin(); it != end; it++) {
@@ -184,6 +190,7 @@ static void abortLongRunningConnections(const ApplicationPool2::ProcessPtr &proc
 static void controllerShutdownFinished(Controller *controller);
 static void apiServerShutdownFinished(Core::ApiServer::ApiServer *server);
 static void printInfoInThread();
+static void licenseInvalidCallback(const string &reason);
 
 static void
 initializePrivilegedWorkingObjects() {
@@ -526,19 +533,6 @@ onTerminationSignal(EV_P_ struct ev_signal *watcher, int revents) {
 }
 
 static void
-initializeLicense() {
-	TRACE_POINT();
-	passenger_enterprise_license_init();
-
-	char *error = passenger_enterprise_license_check();
-	if (error != NULL) {
-		string message = error;
-		free(error);
-		throw RuntimeException(message);
-	}
-}
-
-static void
 spawningKitErrorHandler(const SpawningKit::ConfigPtr &config, SpawnException &e, const Options &options) {
 	ApplicationPool2::processAndLogNewSpawnException(e, options, config);
 }
@@ -708,6 +702,32 @@ initializeNonPrivilegedWorkingObjects() {
 	for (unsigned int i = 0; i < apiAddresses.size(); i++) {
 		wo->apiWorkingObjects.apiServer->listen(wo->apiServerFds[i]);
 	}
+}
+
+static void
+disableControllerSync(Core::Controller *controller, const string &reason) {
+	controller->disable(reason);
+}
+
+static void
+licenseInvalidCallback(const string &reason) {
+	TRACE_POINT();
+
+	P_ERROR(reason); // for the user
+
+	vector<ThreadWorkingObjects> threadWorkingObjects = workingObjects->threadWorkingObjects;
+	vector<ThreadWorkingObjects>::iterator it, end = threadWorkingObjects.end();
+	for (it = threadWorkingObjects.begin(); it != end; it++) {
+		it->bgloop->safe->runLater(boost::bind(disableControllerSync, it->controller, "License invalid or expired."));
+	}
+}
+
+static void
+initializeLicenseChecker() {
+	TRACE_POINT();
+
+	workingObjects->licenseChecker = new LicenseChecker();
+	workingObjects->licenseChecker->start(24 * 60 * 60, &licenseInvalidCallback);
 }
 
 static void
@@ -1027,7 +1047,7 @@ runCore() {
 		startListening();
 		createPidFile();
 		lowerPrivilege();
-		initializeLicense();
+		initializeLicenseChecker();
 		initializeNonPrivilegedWorkingObjects();
 		initializeCloudUsageTracker();
 		prestartWebApps();

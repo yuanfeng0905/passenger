@@ -422,7 +422,7 @@ init_module(ngx_cycle_t *cycle) {
      && !ngx_test_config)
     {
         passenger_enterprise_license_init();
-        error_message = passenger_enterprise_license_check();
+        error_message = passenger_enterprise_license_recheck();
         if (error_message != NULL) {
             ngx_errno = 0;
             ngx_log_error(NGX_LOG_CRIT, cycle->log, ngx_errno, "%s", error_message);

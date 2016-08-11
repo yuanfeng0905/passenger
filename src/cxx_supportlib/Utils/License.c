@@ -35,6 +35,17 @@ namespace Passenger {
 	} while (0)
 
 char *licenseKey = (char *) 0;
+/**
+ * 2	Checksum OK, has expiry date
+ * 1	Checksum OK, valid forever
+ * 0	Not initialized
+ * -1	License file not found or openable
+ * -2	I/O error while reading
+ * -3	Corrupted file
+ * -4	Invalid checksum (corrupt or hack)
+ * -10	Checksum OK, but expired
+ */
+int licenseState = 0;
 
 static md5_byte_t
 hexNibbleToByte(char hexNibble) {
@@ -92,6 +103,7 @@ passenger_enterprise_license_init() {
 	 * "Not loading after installing 4.0.7", July 5 2013.
 	 */
 	licenseKey = NULL;
+	licenseState = 0;
 }
 
 static FILE *
@@ -104,7 +116,7 @@ open_license_file() {
 
 		if (fd == -1) {
 			int e = errno;
-			fprintf(stderr, "Error: Phusion Passenger Enterprise license detected "
+			fprintf(stderr, "Error: " PROGRAM_NAME " Enterprise license detected "
 				"in environment variable PASSENGER_ENTERPRISE_LICENSE_DATA, "
 				"but unable to create a temporary file: %s (errno=%d)\n",
 				strerror(e), e);
@@ -133,7 +145,7 @@ open_license_file() {
 }
 
 char *
-passenger_enterprise_license_check() {
+passenger_enterprise_license_recheck() {
 	FILE *f;
 	char *lines[MAX_LICENSE_LINES];
 	char line[1024];
@@ -149,12 +161,14 @@ passenger_enterprise_license_check() {
 	const char *expiresAfter;
 
 	if (licenseKey != NULL) {
-		return strdup("Phusion Passenger Enterprise license key already checked.");
+		free(licenseKey);
+		passenger_enterprise_license_init();
 	}
 
 	f = open_license_file();
 	if (f == NULL) {
-		return strdup("Could not open the Phusion Passenger Enterprise license file. "
+		licenseState = -1;
+		return strdup("Could not open the " PROGRAM_NAME " Enterprise license file. "
 			"Please check whether it's installed correctly and whether it's world-readable.\n"
 			APPEAL_MESSAGE);
 	}
@@ -163,8 +177,9 @@ passenger_enterprise_license_check() {
 	while (1) {
 		if (fgets(line, sizeof(line), f) == NULL) {
 			if (ferror(f)) {
+				licenseState = -2;
 				message = strdup(
-					"An I/O error occurred while reading the Phusion Passenger Enterprise license file.\n"
+					"An I/O error occurred while reading the " PROGRAM_NAME " Enterprise license file.\n"
 					APPEAL_MESSAGE);
 				goto finish;
 			} else {
@@ -174,7 +189,8 @@ passenger_enterprise_license_check() {
 
 		len = strlen(line);
 		if (len == 0 || line[len - 1] != '\n' || count >= MAX_LICENSE_LINES) {
-			message = strdup("The Phusion Passenger Enterprise license file appears to be corrupted. Please reinstall it.\n"
+			licenseState = -3;
+			message = strdup("The " PROGRAM_NAME " Enterprise license file appears to be corrupted. Please reinstall it.\n"
 				APPEAL_MESSAGE);
 			goto finish;
 		}
@@ -185,7 +201,8 @@ passenger_enterprise_license_check() {
 	}
 
 	if (count == 0) {
-		message = strdup("The Phusion Passenger Enterprise license file appears to be corrupted. Please reinstall it.\n"
+		licenseState = -3;
+		message = strdup("The " PROGRAM_NAME " Enterprise license file appears to be corrupted. Please reinstall it.\n"
 			APPEAL_MESSAGE);
 		goto finish;
 	}
@@ -213,7 +230,8 @@ passenger_enterprise_license_check() {
 
 	// Validate MD5 checksum.
 	if (memcmp(digest, readDigest, MD5_SIZE) != 0) {
-		message = strdup("The Phusion Passenger Enterprise license file is invalid.\n"
+		licenseState = -4;
+		message = strdup("The " PROGRAM_NAME " Enterprise license file is invalid.\n"
 			APPEAL_MESSAGE);
 		goto finish;
 	}
@@ -231,14 +249,21 @@ passenger_enterprise_license_check() {
 
 	// If there is a validity limit, check it
 	expiresAfter = findExpiresAfterDate(licenseKey);
-	dateTimeNow = *localtime(&t);
-	if (compareDates(expiresAfter, dateTimeNow) == 0) {
-		free(licenseKey);
-		licenseKey = NULL;
-		int messageLen = sizeof("The Phusion Passenger Enterprise license file is invalid: expired since .\n") + strlen(expiresAfter) + sizeof(EXPIRED_APPEAL_MESSAGE) + 1;
-		message = (char *) malloc(messageLen);
-		snprintf(message, messageLen, "The Phusion Passenger Enterprise license file is invalid: expired since %s.\n%s", expiresAfter, EXPIRED_APPEAL_MESSAGE);
-		goto finish;
+	if (expiresAfter == NULL) {
+		licenseState = 1;
+	} else {
+		dateTimeNow = *localtime(&t);
+		if (compareDates(expiresAfter, dateTimeNow) == 0) {
+			licenseState = -10;
+			free(licenseKey);
+			licenseKey = NULL;
+			int messageLen = sizeof("The " PROGRAM_NAME " Enterprise license file is invalid: expired since .\n") + strlen(expiresAfter) + sizeof(EXPIRED_APPEAL_MESSAGE) + 1;
+			message = (char *) malloc(messageLen);
+			snprintf(message, messageLen, "The " PROGRAM_NAME " Enterprise license file is invalid: expired since %s.\n%s", expiresAfter, EXPIRED_APPEAL_MESSAGE);
+			goto finish;
+		} else {
+			licenseState = 2;
+		}
 	}
 
 	finish:
@@ -247,6 +272,16 @@ passenger_enterprise_license_check() {
 		free(lines[i]);
 	}
 	return message;
+}
+
+int
+passenger_enterprise_license_invalid() {
+	return licenseState <= 0;
+}
+
+int
+passenger_enterprise_license_has_expiration() {
+	return licenseState == 2 || licenseState == -10;
 }
 
 static int

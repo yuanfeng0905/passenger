@@ -1596,7 +1596,7 @@ init_module(apr_pool_t *pconf, apr_pool_t *plog, apr_pool_t *ptemp, server_rec *
 	char *errorMessage;
 
 	passenger_enterprise_license_init();
-	errorMessage = passenger_enterprise_license_check();
+	errorMessage = passenger_enterprise_license_recheck();
 	if (errorMessage != NULL) {
 		ap_log_error(APLOG_MARK, APLOG_ERR, 0, s,
 			"%s",

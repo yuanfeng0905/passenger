@@ -40,6 +40,7 @@ Controller::Controller(ServerKit::Context *context, const VariantMap *_agentsOpt
 	  showVersionInHeader(_agentsOptions->getBool("show_version_in_header")),
 	  stickySessions(_agentsOptions->getBool("sticky_sessions")),
 	  gracefulExit(_agentsOptions->getBool("core_graceful_exit")),
+	  controllerDisabled(false),
 
 	  agentsOptions(_agentsOptions),
 	  stringPool(psg_create_pool(1024 * 4)),

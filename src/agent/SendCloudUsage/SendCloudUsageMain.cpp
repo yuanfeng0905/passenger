@@ -138,7 +138,7 @@ initialize(Options &options) {
 	}
 
 	passenger_enterprise_license_init();
-	char *error = passenger_enterprise_license_check();
+	char *error = passenger_enterprise_license_recheck();
 	if (error != NULL) {
 		string message = error;
 		free(error);

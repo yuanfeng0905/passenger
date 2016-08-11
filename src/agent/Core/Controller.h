@@ -114,6 +114,7 @@ private:
 	bool showVersionInHeader: 1;
 	bool stickySessions: 1;
 	bool gracefulExit: 1;
+	bool controllerDisabled: 1;
 
 	const VariantMap *agentsOptions;
 	psg_pool_t *stringPool;
@@ -168,7 +169,7 @@ private:
 	#endif
 
 
-	/****** Stage: initiatelize request ******/
+	/****** Stage: initialize request ******/
 
 	struct RequestAnalysis;
 
@@ -355,7 +356,7 @@ private:
 
 
 protected:
-	/****** Stage: initiatelize request ******/
+	/****** Stage: initialize request ******/
 
 	virtual void onRequestBegin(Client *client, Request *req);
 
@@ -387,6 +388,10 @@ public:
 	PoolPtr appPool;
 	UnionStation::ContextPtr unionStationContext;
 
+
+	/****** Stage: initialize request ******/
+
+	void disable(const string &reason);
 
 	/****** Initialization and shutdown ******/
 

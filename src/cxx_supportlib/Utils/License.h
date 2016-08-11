@@ -23,7 +23,7 @@ namespace Passenger {
 	"If the problem persists, please contact support@phusion.nl.\n" \
 	"If you do not have a valid license, then we kindly ask you not to try to crack this software or to obtain it illegally. " \
 	"We're trying to make a living out of this and the profits are used to fund the development of the " \
-	"open source version of Phusion Passenger. We can only do this with your support. If you don't have " \
+	"open source version of " PROGRAM_NAME ". We can only do this with your support. If you don't have " \
 	"a valid license, please buy it from www.phusionpassenger.com.\n" \
 	"Thank you for your support.\n" \
 	"- Hongli, Ninh, and the rest of the Phusion team"
@@ -33,7 +33,7 @@ namespace Passenger {
 	"Please contact support@phusion.nl if you believe the license should be valid, or to obtain a new one.\n" \
 	"We kindly ask you not to try to crack this software, obtain it illegally, or violate the validity period. " \
 	"We're trying to make a living out of this and the profits are used to fund the development of the " \
-	"open source version of Phusion Passenger. We can only do this with your support. If you don't have " \
+	"open source version of " PROGRAM_NAME ". We can only do this with your support. If you don't have " \
 	"a valid license, please buy it from www.phusionpassenger.com.\n" \
 	"Thank you for your support.\n" \
 	"- Hongli, Ninh, and the rest of the Phusion team"
@@ -41,7 +41,9 @@ namespace Passenger {
 extern char *licenseKey;
 
 void passenger_enterprise_license_init();
-char *passenger_enterprise_license_check();
+char *passenger_enterprise_license_recheck();
+int passenger_enterprise_license_invalid();
+int passenger_enterprise_license_has_expiration();
 int passenger_enterprise_should_track_usage();
 
 // exposed for test only

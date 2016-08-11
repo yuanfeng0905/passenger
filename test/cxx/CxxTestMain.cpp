@@ -153,7 +153,7 @@ main(int argc, char *argv[]) {
 	setenv("TESTING_PASSENGER", "1", 1);
 	setenv("PYTHONDONTWRITEBYTECODE", "1", 1);
 	unsetenv("TMPDIR");
-	Passenger::passenger_enterprise_license_check();
+	Passenger::passenger_enterprise_license_recheck();
 	oxt::initialize();
 	oxt::setup_syscall_interruption_support();
 	SystemTime::initialize();

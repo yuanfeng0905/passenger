@@ -500,6 +500,10 @@ Controller::onRequestBegin(Client *client, Request *req) {
 		req->bodyChannel.stop();
 
 		initializeFlags(client, req, analysis);
+		if (OXT_UNLIKELY(controllerDisabled)) {
+			endRequestWithSimpleResponse(&client, &req, SHORT_PROGRAM_NAME " application server disabled; see logfile for further information.", 500);
+			return;
+		}
 		if (respondFromTurboCache(client, req)) {
 			return;
 		}
@@ -521,6 +525,23 @@ Controller::onRequestBegin(Client *client, Request *req) {
 		beginBufferingBody(client, req);
 	}
 }
+
+
+/****************************
+ *
+ * Public methods
+ *
+ ****************************/
+
+
+/**
+ * Causes requests to be bounced with error 500 (see onRequestBegin). The reason is logged.
+ */
+void
+Controller::disable(const string &reason) {
+	P_ERROR("Disabled controller " << this << " with reason: " << reason);
+	controllerDisabled = true;
+};
 
 
 } // namespace Core
