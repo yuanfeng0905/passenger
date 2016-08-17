@@ -57,21 +57,30 @@ hexNibbleToByte(char hexNibble) {
 }
 
 /*
- * Returns pointer to EXPIRES_AFTER_KEY date value (yyyy-mm-dd) within licenseKey, or NULL if not there.
+ * Searches licenseKey for EXPIRES_AFTER_KEY and returns date value (yyyy-mm-dd)
+ * as new char *, or NULL otherwise.
  */
-const char *
-findExpiresAfterDate(const char *licenseKey) {
-	const char *expiresAfterChars = strstr(licenseKey, EXPIRES_AFTER_KEY);
-	if (expiresAfterChars == NULL) {
+char *
+copyExpiresAfterDate(const char *licenseKey) {
+	const char *valueStart = strstr(licenseKey, EXPIRES_AFTER_KEY);
+	if (valueStart == NULL) {
 		return NULL;
 	}
 
-	expiresAfterChars += sizeof(EXPIRES_AFTER_KEY);
-	while (*expiresAfterChars == ' ') {
-		expiresAfterChars++;
+	valueStart += sizeof(EXPIRES_AFTER_KEY);
+	while (*valueStart == ' ') {
+		valueStart++;
 	}
 
-	return expiresAfterChars;
+	const char *valueEnd = valueStart;
+	while (*valueEnd != '\n') {
+		valueEnd++;
+	}
+	int len = valueEnd - valueStart;
+	char *expiresAfter = (char *) malloc(len + 1);
+	strncpy(expiresAfter, valueStart, len);
+	expiresAfter[len] = '\0';
+	return expiresAfter;
 }
 
 /*
@@ -87,7 +96,6 @@ compareDates(const char *expiresAfterChars, struct tm checkDate) {
 	// Otherwise, valid until the date specified in the license is in the past
 	char checkDateChars[20];
 	snprintf(checkDateChars, sizeof(checkDateChars), "%d-%02d-%02d", checkDate.tm_year + 1900, checkDate.tm_mon + 1, checkDate.tm_mday);
-
 	if (strcmp(expiresAfterChars, checkDateChars) >= 0) {
 		return 1;
 	}
@@ -158,7 +166,7 @@ passenger_enterprise_license_recheck() {
 	char *dataEnd2;
 	time_t t = time(NULL);
 	struct tm dateTimeNow;
-	const char *expiresAfter;
+	char *expiresAfter;
 
 	if (licenseKey != NULL) {
 		free(licenseKey);
@@ -248,7 +256,7 @@ passenger_enterprise_license_recheck() {
 	*dataEnd2 = '\0';
 
 	// If there is a validity limit, check it
-	expiresAfter = findExpiresAfterDate(licenseKey);
+	expiresAfter = copyExpiresAfterDate(licenseKey);
 	if (expiresAfter == NULL) {
 		licenseState = 1;
 	} else {
@@ -260,10 +268,10 @@ passenger_enterprise_license_recheck() {
 			int messageLen = sizeof("The " PROGRAM_NAME " Enterprise license file is invalid: expired since .\n") + strlen(expiresAfter) + sizeof(EXPIRED_APPEAL_MESSAGE) + 1;
 			message = (char *) malloc(messageLen);
 			snprintf(message, messageLen, "The " PROGRAM_NAME " Enterprise license file is invalid: expired since %s.\n%s", expiresAfter, EXPIRED_APPEAL_MESSAGE);
-			goto finish;
 		} else {
 			licenseState = 2;
 		}
+		free(expiresAfter);
 	}
 
 	finish:

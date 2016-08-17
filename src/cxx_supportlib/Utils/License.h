@@ -47,7 +47,7 @@ int passenger_enterprise_license_has_expiration();
 int passenger_enterprise_should_track_usage();
 
 // exposed for test only
-const char *findExpiresAfterDate(const char *licenseKey);
+char *copyExpiresAfterDate(const char *licenseKey);
 int compareDates(const char *expiresAfterChars, struct tm checkDate);
 
 #ifdef __cplusplus
