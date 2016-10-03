@@ -513,6 +513,9 @@ public:
 		}
 	}
 
+	/*
+	 * Assumes curl_global_init() was already performed.
+	 */
 	void start() {
 		thr = new oxt::thread(
 			boost::bind(&CloudUsageTracker::threadMain, this),

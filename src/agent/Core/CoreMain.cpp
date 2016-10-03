@@ -782,12 +782,6 @@ initializeCloudUsageTracker() {
 			licensingDataDir);
 		makeDirTree(licensingDataDir);
 
-		CURLcode code = curl_global_init(CURL_GLOBAL_ALL);
-		if (code != CURLE_OK) {
-			P_CRITICAL("Could not initialize libcurl: " << curl_easy_strerror(code));
-			exit(1);
-		}
-
 		wo->tracker = new CloudUsageTracker(
 			licensingDataDir,
 			licensingBaseUrl,
