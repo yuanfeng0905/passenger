@@ -52,6 +52,7 @@
 #include "ContentHandler.h"
 #include "cxx_supportlib/Constants.h"
 #include "cxx_supportlib/vendor-modified/modp_b64.cpp" /* File is C compatible. */
+#include "cxx_supportlib/vendor-modified/modp_b64_strict_aliasing.cpp" /* File is C compatible. */
 #include "cxx_supportlib/Utils/License.c"
 #include "cxx_supportlib/Utils/MD5.cpp" /* File is C compatible. */
 
@@ -264,6 +265,8 @@ start_watchdog(ngx_cycle_t *cycle) {
     psg_variant_map_set_int    (params, "socket_backlog", passenger_main_conf.socket_backlog);
     psg_variant_map_set_ngx_str(params, "data_buffer_dir", &passenger_main_conf.data_buffer_dir);
     psg_variant_map_set_ngx_str(params, "instance_registry_dir", &passenger_main_conf.instance_registry_dir);
+    psg_variant_map_set_bool   (params, "disable_security_update_check", passenger_main_conf.disable_security_update_check);
+    psg_variant_map_set_ngx_str(params, "security_update_check_proxy", &passenger_main_conf.security_update_check_proxy);
     psg_variant_map_set_bool   (params, "user_switching", passenger_main_conf.user_switching);
     psg_variant_map_set_bool   (params, "show_version_in_header", passenger_main_conf.show_version_in_header);
     psg_variant_map_set_bool   (params, "turbocaching", passenger_main_conf.turbocaching);

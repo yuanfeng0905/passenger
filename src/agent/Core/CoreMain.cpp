@@ -43,6 +43,8 @@
 #include <sstream>
 #include <stdexcept>
 
+#include <curl/curl.h>
+
 #include <boost/thread.hpp>
 #include <boost/shared_ptr.hpp>
 #include <boost/make_shared.hpp>
@@ -74,6 +76,7 @@
 #include <Core/ApiServer.h>
 #include <Core/ApplicationPool/Pool.h>
 #include <Core/UnionStation/Context.h>
+#include <Core/SecurityUpdateChecker.h>
 #include <Core/CloudUsageTracker.h>
 #include <Core/LicenseChecker.h>
 
@@ -138,6 +141,7 @@ namespace Core {
 		boost::atomic<unsigned int> shutdownCounter;
 		oxt::thread *prestarterThread;
 
+		SecurityUpdateChecker *securityUpdateChecker;
 		CloudUsageTracker *tracker;
 		LicenseChecker *licenseChecker;
 
@@ -147,6 +151,7 @@ namespace Core {
 			  terminationCount(0),
 			  shutdownCounter(0),
 			  prestarterThread(NULL),
+			  securityUpdateChecker(NULL),
 			  tracker(NULL),
 			  licenseChecker(NULL)
 		{
@@ -158,6 +163,9 @@ namespace Core {
 
 		~WorkingObjects() {
 			delete prestarterThread;
+			if (securityUpdateChecker) {
+				delete securityUpdateChecker;
+			}
 			delete licenseChecker;
 
 			vector<ThreadWorkingObjects>::iterator it, end = threadWorkingObjects.end();
@@ -538,6 +546,16 @@ spawningKitErrorHandler(const SpawningKit::ConfigPtr &config, SpawnException &e,
 }
 
 static void
+initializeCurl() {
+	TRACE_POINT();
+	CURLcode code = curl_global_init(CURL_GLOBAL_ALL); // Initializes underlying TLS stack
+	if (code != CURLE_OK) {
+		P_CRITICAL("Could not initialize libcurl: " << curl_easy_strerror(code));
+		exit(1);
+	}
+}
+
+static void
 initializeNonPrivilegedWorkingObjects() {
 	TRACE_POINT();
 	VariantMap &options = *agentsOptions;
@@ -701,6 +719,19 @@ initializeNonPrivilegedWorkingObjects() {
 	}
 	for (unsigned int i = 0; i < apiAddresses.size(); i++) {
 		wo->apiWorkingObjects.apiServer->listen(wo->apiServerFds[i]);
+	}
+}
+
+static void
+initializeSecurityUpdateChecker() {
+	TRACE_POINT();
+
+	VariantMap &options = *agentsOptions;
+	if (options.getBool("disable_security_update_check", false, false)) {
+		P_NOTICE("Security update check disabled.");
+	} else {
+		workingObjects->securityUpdateChecker = new SecurityUpdateChecker(workingObjects->resourceLocator, options.get("security_update_check_proxy", false));
+		workingObjects->securityUpdateChecker->start(24 * 60 * 60);
 	}
 }
 
@@ -1047,8 +1078,10 @@ runCore() {
 		startListening();
 		createPidFile();
 		lowerPrivilege();
+		initializeCurl();
 		initializeLicenseChecker();
 		initializeNonPrivilegedWorkingObjects();
+		initializeSecurityUpdateChecker();
 		initializeCloudUsageTracker();
 		prestartWebApps();
 

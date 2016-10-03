@@ -276,6 +276,9 @@ struct ServerConfig {
 	string dataBufferDir;
 	string instanceRegistryDir;
 
+	bool disableSecurityUpdateCheck;
+	string securityUpdateCheckProxy;
+
 	bool unionStationSupport;
 	string unionStationGatewayAddress;
 	int unionStationGatewayPort;
@@ -303,6 +306,8 @@ struct ServerConfig {
 		responseBufferHighWatermark = DEFAULT_RESPONSE_BUFFER_HIGH_WATERMARK;
 		statThrottleRate   = DEFAULT_STAT_THROTTLE_RATE;
 		userSwitching      = true;
+		disableSecurityUpdateCheck = false;
+		securityUpdateCheckProxy = string();
 		defaultUser        = DEFAULT_WEB_APP_USER;
 		unionStationSupport        = false;
 		unionStationGatewayAddress = DEFAULT_UNION_STATION_GATEWAY_ADDRESS;

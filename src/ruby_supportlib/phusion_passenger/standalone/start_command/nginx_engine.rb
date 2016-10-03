@@ -14,6 +14,7 @@ PhusionPassenger.require_passenger_lib 'platform_info/ruby'
 PhusionPassenger.require_passenger_lib 'standalone/control_utils'
 PhusionPassenger.require_passenger_lib 'utils/tmpio'
 PhusionPassenger.require_passenger_lib 'utils/shellwords'
+PhusionPassenger.require_passenger_lib 'utils/json'
 
 module PhusionPassenger
   module Standalone
@@ -245,6 +246,10 @@ module PhusionPassenger
         # Method exists for backward compatibility with old Nginx config templates
         def boolean_config_value(val)
           val ? "on" : "off"
+        end
+
+        def json_config_value(value)
+          value.is_a?(Hash) || value.is_a?(Array) ? Utils::JSON.generate(value) : value
         end
 
         def include_passenger_internal_template(name, indent = 0, fix_existing_indenting = true, the_binding = get_binding)

@@ -1631,6 +1631,11 @@ shutdownAgent(VariantMap *agentOptions) {
 	oxt::shutdown();
 }
 
+/**
+ * Linux-only way to change OOM killer configuration for
+ * current process. Requires root privileges, which we
+ * should have.
+ */
 void
 restoreOomScore(VariantMap *agentOptions) {
 	TRACE_POINT();

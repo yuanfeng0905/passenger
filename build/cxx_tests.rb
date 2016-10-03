@@ -32,6 +32,8 @@ TEST_CXX_OBJECTS = {
     "test/cxx/Core/ResponseCacheTest.cpp",
   "#{TEST_OUTPUT_DIR}cxx/Core/CloudUsageTrackerTest.o" =>
     "test/cxx/Core/CloudUsageTrackerTest.cpp",
+  "#{TEST_OUTPUT_DIR}cxx/Core/SecurityUpdateCheckerTest.o" =>
+      "test/cxx/Core/SecurityUpdateCheckerTest.cpp",
   "#{TEST_OUTPUT_DIR}cxx/Core/ControllerTest.o" =>
     "test/cxx/Core/ControllerTest.cpp",
 
@@ -96,7 +98,9 @@ TEST_CXX_OBJECTS = {
   "#{TEST_OUTPUT_DIR}cxx/IOUtilsTest.o" =>
     "test/cxx/IOUtilsTest.cpp",
   "#{TEST_OUTPUT_DIR}cxx/TemplateTest.o" =>
-    "test/cxx/TemplateTest.cpp"
+    "test/cxx/TemplateTest.cpp",
+  "#{TEST_OUTPUT_DIR}cxx/Base64DecodingTest.o" =>
+    "test/cxx/Base64DecodingTest.cpp"
 }
 
 def basic_test_cxx_flags
@@ -135,6 +139,7 @@ def test_cxx_ldflags
       "#{TEST_BOOST_OXT_LIBRARY} #{libev_libs} #{libuv_libs} " <<
       "#{PlatformInfo.curl_libs} " <<
       "#{PlatformInfo.zlib_libs} " <<
+      "#{PlatformInfo.crypto_libs} " <<
       "#{PlatformInfo.portability_cxx_ldflags}"
     result << " #{PlatformInfo.dmalloc_ldflags}" if USE_DMALLOC
     result << " #{PlatformInfo.adress_sanitizer_flag}" if USE_ASAN
