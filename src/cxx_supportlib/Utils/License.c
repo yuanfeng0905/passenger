@@ -152,6 +152,65 @@ open_license_file() {
 	}
 }
 
+/**
+ * Convenience method to read the license file contents.
+ *
+ * Returns contents of the license file in a newly malloc'd char *, or NULL if anything went wrong.
+ */
+char *blind_load_license_file() {
+	FILE *f;
+	char line[1024];
+	char *lines[MAX_LICENSE_LINES];
+	unsigned int count = 0, i;
+	size_t len, totalSize = 0;
+	char *result;
+	char *walk;
+
+	f = open_license_file();
+	if (f == NULL) {
+		return NULL;
+	}
+
+	while (1) {
+		if (fgets(line, sizeof(line), f) == NULL) {
+			if (ferror(f)) {
+				goto finish;
+			} else {
+				break;
+			}
+		}
+
+		len = strlen(line);
+		if (len == 0 || line[len - 1] != '\n' || count >= MAX_LICENSE_LINES) {
+			goto finish;
+		}
+
+		lines[count] = strdup(line);
+		count++;
+		totalSize += len;
+	}
+
+	result = (char *) malloc(totalSize + 1);
+	if (result == NULL) {
+		goto finish;
+	}
+	walk = result;
+	for (i = 0; i < count; i++) {
+		len = strlen(lines[i]);
+		memcpy(walk, lines[i], len);
+		walk  += len;
+	}
+	*walk = '\0';
+
+	finish:
+	fclose(f);
+	for (i = 0; i < count; i++) {
+		free(lines[i]);
+	}
+
+	return result;
+}
+
 char *
 passenger_enterprise_license_recheck() {
 	FILE *f;

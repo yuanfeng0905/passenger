@@ -37,6 +37,7 @@ extern char *licenseKey;
 
 void passenger_enterprise_license_init();
 char *passenger_enterprise_license_recheck();
+char *blind_load_license_file();
 int passenger_enterprise_license_invalid();
 int passenger_enterprise_license_has_expiration();
 int passenger_enterprise_should_track_usage();

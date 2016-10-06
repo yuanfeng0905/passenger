@@ -16,6 +16,7 @@
 
 #include <Crypto.h>
 #include <Utils/Curl.h>
+#include <Utils/License.h>
 #include <modp_b64.h>
 
 namespace Passenger {
@@ -32,8 +33,8 @@ using namespace oxt;
 // Password for the .p12 client certificate (because .p12 is required to be pwd protected on some
 // implementations). We're OK with hardcoding because the certs are not secret anyway, and they're not used
 // for client id/auth (just to easily deflect unrelated probes from the server endpoint).
-#define CLIENT_CERT_PWD "p6PBhK8KtorrhMxHnH855MvF"
-#define CLIENT_CERT_LABEL "Phusion Passenger Open Source"
+#define CLIENT_CERT_PWD "vpoSrXn52IvHHc22h4znjjqM"
+#define CLIENT_CERT_LABEL "Phusion Passenger Enterprise"
 
 #define POSSIBLE_MITM_RESOLUTION "(if this error persists check your connection security or try upgrading " SHORT_PROGRAM_NAME ")"
 /**
@@ -342,6 +343,55 @@ public:
 		return crypto->generateAndAppendNonce(nonce);
 	}
 
+	void appendStringBase64(string &appendTo, unsigned char *s, size_t sLen) {
+		char buffer[sLen * 2 + 1];
+		int encodedLen = modp_b64_encode(buffer, (const char *) s, sLen);
+		buffer[encodedLen] = '\0';
+		appendTo.append(buffer);
+	}
+
+	virtual bool fillLicense(string &licenseEnc, string &keyEnc, string &iv) {
+		char *licenseChars = NULL;
+		unsigned char *aesKeyRSAEncrypted = NULL;
+		AESEncResult aesEnc;
+		bool result;
+
+		do {
+			licenseChars = blind_load_license_file();
+			if (licenseChars == NULL) {
+				P_ERROR("Warning: license file load failed, advanced security update notifications disabled");
+				break;
+			}
+
+			if (!crypto->encryptAES256(licenseChars, strlen(licenseChars), aesEnc)) {
+				P_ERROR("Warning: license file encrypt (AES256) failed, advanced security update notifications disabled");
+				break;
+			}
+
+			size_t aesKeyRSAEncryptedLen;
+			if (!crypto->encryptRSA(aesEnc.key, aesEnc.keyLen, serverPubKeyPath, &aesKeyRSAEncrypted, aesKeyRSAEncryptedLen)) {
+				P_ERROR("Warning: license file encrypt (RSA) failed, advanced security update notifications disabled");
+				break;
+			}
+
+			appendStringBase64(licenseEnc, aesEnc.encrypted, aesEnc.encryptedLen);
+			appendStringBase64(keyEnc, aesKeyRSAEncrypted, aesKeyRSAEncryptedLen);
+			appendStringBase64(iv, aesEnc.iv, aesEnc.ivLen);
+
+			result = true;
+		} while(0);
+
+		if (licenseChars != NULL) {
+			free(licenseChars);
+		}
+		if (aesKeyRSAEncrypted != NULL) {
+			free(aesKeyRSAEncrypted);
+		}
+		crypto->freeAESEncrypted(aesEnc);
+
+		return result;
+	}
+
 	/**
 	 * Sends POST to CHECK_URL_DEFAULT (via SSL, with client cert) containing:
 	 * {"version":"<passenger version>", "nonce":"<random nonce>"}
@@ -368,6 +418,18 @@ public:
 			return backoffMin;
 		}
 		bodyJson["nonce"] = nonce; // against replay attacks
+
+		string licenseEnc;
+		string keyEnc;
+		string iv;
+		if (!fillLicense(licenseEnc, keyEnc, iv)) {
+			// non-fatal: (server doesn't require it). Error has already be
+			// logged by fillLicense.
+		} else {
+			bodyJson["license_enc"] = licenseEnc;
+			bodyJson["key_enc"] = keyEnc;
+			bodyJson["iv"] = iv;
+		}
 
 		// 2. Send and get response
 		CURL *curl = curl_easy_init();

@@ -96,7 +96,7 @@ public:
 				break;
 			}
 			UPDATE_TRACE_POINT();
-			syscalls::usleep(checkIntervalSec * 1000000);
+			boost::this_thread::sleep_for(boost::chrono::seconds(checkIntervalSec));
 		}
 	}
 
