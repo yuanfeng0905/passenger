@@ -29,14 +29,9 @@ namespace Passenger {
 	"- Hongli, Ninh, and the rest of the Phusion team"
 
 #define EXPIRED_APPEAL_MESSAGE \
-	"The license is considered invalid if the \"Expires after\" date in your license file is in the past. " \
-	"Please contact support@phusion.nl if you believe the license should be valid, or to obtain a new one.\n" \
-	"We kindly ask you not to try to crack this software, obtain it illegally, or violate the validity period. " \
-	"We're trying to make a living out of this and the profits are used to fund the development of the " \
-	"open source version of " PROGRAM_NAME ". We can only do this with your support. If you don't have " \
-	"a valid license, please buy it from www.phusionpassenger.com.\n" \
-	"Thank you for your support.\n" \
-	"- Hongli, Ninh, and the rest of the Phusion team"
+	"If you are using Passenger Enterprise on a trial, then please purchase a paid subscription by logging " \
+	"into the Customer Portal: https://www.phusionpassenger.com/customers.\n" \
+	"If you believe that your license should be valid, then please contact support@phusionpassenger.com."
 
 extern char *licenseKey;
 
