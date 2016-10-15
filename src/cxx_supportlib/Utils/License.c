@@ -163,7 +163,7 @@ char *blind_load_license_file() {
 	char *lines[MAX_LICENSE_LINES];
 	unsigned int count = 0, i;
 	size_t len, totalSize = 0;
-	char *result;
+	char *result = NULL;
 	char *walk;
 
 	f = open_license_file();
