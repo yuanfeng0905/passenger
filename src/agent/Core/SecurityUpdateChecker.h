@@ -71,7 +71,7 @@ private:
 			if (backoffSec > MAX_CHECK_BACKOFF_SEC) {
 				backoffSec = MAX_CHECK_BACKOFF_SEC;
 			}
-			syscalls::usleep(backoffSec * 1000000);
+			boost::this_thread::sleep_for(boost::chrono::seconds(backoffSec));
 		}
 	}
 
@@ -338,8 +338,8 @@ public:
 		return curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, responseCode);
 	}
 
-	virtual void fillNonce(string &nonce) {
-		crypto->generateAndAppendNonce(nonce);
+	virtual bool fillNonce(string &nonce) {
+		return crypto->generateAndAppendNonce(nonce);
 	}
 
 	/**
@@ -363,7 +363,10 @@ public:
 		bodyJson["version"] = PASSENGER_VERSION;
 
 		string nonce;
-		fillNonce(nonce);
+		if (!fillNonce(nonce)) {
+			logUpdateFail("fillNonce() error");
+			return backoffMin;
+		}
 		bodyJson["nonce"] = nonce; // against replay attacks
 
 		// 2. Send and get response
