@@ -354,7 +354,7 @@ public:
 		char *licenseChars = NULL;
 		unsigned char *aesKeyRSAEncrypted = NULL;
 		AESEncResult aesEnc;
-		bool result;
+		bool result = false;
 
 		do {
 			licenseChars = blind_load_license_file();
@@ -379,7 +379,7 @@ public:
 			appendStringBase64(iv, aesEnc.iv, aesEnc.ivLen);
 
 			result = true;
-		} while(0);
+		} while (false);
 
 		if (licenseChars != NULL) {
 			free(licenseChars);
