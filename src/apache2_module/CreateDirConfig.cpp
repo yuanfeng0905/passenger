@@ -1,11 +1,11 @@
 /*
- * Phusion Passenger - https://www.phusionpassenger.com/
- * Copyright (c) 2010-2016 Phusion Holding B.V.
+ *  Phusion Passenger - https://www.phusionpassenger.com/
+ *  Copyright (c) 2010-2016 Phusion Holding B.V.
  *
- * "Passenger", "Phusion Passenger" and "Union Station" are registered
- * trademarks of Phusion Holding B.V.
+ *  "Passenger", "Phusion Passenger" and "Union Station" are registered
+ *  trademarks of Phusion Holding B.V.
  *
- * See LICENSE file for license information.
+ *  See LICENSE file for license information.
  */
 
 /*
