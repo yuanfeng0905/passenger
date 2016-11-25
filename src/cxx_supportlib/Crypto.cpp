@@ -651,7 +651,7 @@ void Crypto::freePubKey(PUBKEY_TYPE pubKey) {
 	}
 }
 
-void Crypto::logFreeErrorExtended(string prefix, CFErrorRef &error) {
+void Crypto::logFreeErrorExtended(const StaticString &prefix, CFErrorRef &error) {
 	if (error) {
 		CFStringRef description = CFErrorCopyDescription((CFErrorRef) error);
 		CFStringRef failureReason = CFErrorCopyFailureReason((CFErrorRef) error);
@@ -941,7 +941,7 @@ void Crypto::freePubKey(PUBKEY_TYPE pubKey) {
 	}
 }
 
-void Crypto::logErrorExtended(string prefix) {
+void Crypto::logErrorExtended(const StaticString &prefix) {
 	char err[500];
 	ERR_load_crypto_strings();
 	ERR_error_string(ERR_get_error(), err);
@@ -951,7 +951,7 @@ void Crypto::logErrorExtended(string prefix) {
 
 #endif
 
-void Crypto::logError(string error) {
+void Crypto::logError(const StaticString &error) {
 	P_ERROR(error);
 }
 
