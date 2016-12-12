@@ -1769,4 +1769,3 @@ passenger_register_hooks(apr_pool_t *p) {
 /**
  * @}
  */
-
