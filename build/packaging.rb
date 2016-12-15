@@ -345,7 +345,7 @@ task 'package:update_homebrew' do
   sh "cd #{homebrew_dir} && git commit -a -m 'passenger #{version}'"
   sh "cd #{homebrew_dir} && git push -f"
   if boolean_option('HOMEBREW_TEST', true)
-    sh "cp /tmp/homebrew/Formula/passenger.rb /usr/local/Library/Formula/passenger.rb"
+    sh "cp /tmp/homebrew/Formula/passenger.rb /usr/local/Homebrew/Library/Taps/homebrew/homebrew-core/Formula/passenger.rb"
     if `brew info passenger` !~ /^Not installed$/
       sh "brew uninstall passenger"
     end
@@ -497,7 +497,8 @@ task 'package:initiate_rpm_building' do
 end
 
 task 'package:build_osx_binaries' do
-  sh "env ENTERPRISE=#{is_enterprise?} TESTING=false " \
+  sh "env ENTERPRISE=#{!!is_enterprise?} TESTING=false " \
+    "PASSENGER_ROOT=#{Shellwords.shellescape Dir.pwd} " \
     "./packaging/binaries/integration/publish/macos.sh"
 end
 
