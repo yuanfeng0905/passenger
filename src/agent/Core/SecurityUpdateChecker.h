@@ -118,7 +118,7 @@ private:
 			case CURLE_SSL_CACERT_BADFILE:
 				error.append(" while connecting to " CHECK_URL_DEFAULT " " +
 						(proxyAddress.empty() ? "" : "using proxy " + proxyAddress) + "; this might happen if the nss backend "
-						"is installed for libcurl instead of gnutls or openssl. If the problem persists, you can also try upgrading "
+						"is installed for libcurl instead of GnuTLS or OpenSSL. If the problem persists, you can also try upgrading "
 						"or reinstalling " SHORT_PROGRAM_NAME);
 				break;
 
@@ -192,9 +192,9 @@ private:
 	 */
 	CURLcode prepareCurlPOST(CURL *curl, string &bodyJsonString, string *responseData, struct curl_slist **chunk) {
 		CURLcode code;
-		
+
 		// Hint for advanced debugging: curl_easy_setopt(curl, CURLOPT_VERBOSE, 1L);
-		
+
 		if (CURLE_OK != (code = curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1))) {
 			return code;
 		}
@@ -439,6 +439,7 @@ public:
 
 		bodyJson["server_integration"] = serverIntegration;
 		bodyJson["server_version"] = serverVersion;
+		bodyJson["curl_static"] = isCurlStaticallyLinked();
 
 		string nonce;
 		if (!fillNonce(nonce)) {
@@ -478,6 +479,12 @@ public:
 				logUpdateFail("File not readable: " + clientCertPath);
 				break;
 			}
+
+			if (CURLE_OK != (code = setCurlDefaultCaInfo(curl))) {
+				logUpdateFailCurl(code);
+				break;
+			}
+
 			// string localApprovedCert = "/your/ca.crt"; // for testing against a local server
 			// curl_easy_setopt(curl, CURLOPT_CAINFO, localApprovedCert.c_str());
 
@@ -493,6 +500,7 @@ public:
 				break;
 			}
 
+			P_DEBUG("sending: " << bodyJsonString);
 			if (CURLE_OK != (code = sendAndReceive(curl, &responseData, &responseCode))) {
 				logUpdateFailCurl(code);
 				break;
@@ -510,6 +518,7 @@ public:
 				logUpdateFailResponse("json parse", responseData);
 				break;
 			}
+			P_DEBUG("received: " << responseData);
 
 			// 3b. Verify response: signature
 			if (!responseJson.isObject() || !responseJson["data"].isString() || !responseJson["signature"].isString()) {
@@ -552,6 +561,7 @@ public:
 				logUpdateFailResponse("unparseable data", responseData);
 				break;
 			}
+			P_DEBUG("data content (signature OK): " << responseDataJson.toStyledString());
 
 			if (!responseDataJson.isObject() || !responseDataJson["update"].isInt() || !responseDataJson["nonce"].isString()) {
 				logUpdateFailResponse("missing data fields", responseData);
