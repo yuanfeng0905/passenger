@@ -1,3 +1,14 @@
+Release 5.1.2
+-------------
+
+ * Improve curl check for passenger-install- scripts to catch (very old) curl versions that won't compile against 5.1+.
+ * Fixes remaining false positives (logging) from the new Meteor cluster warning system. Closes GH-1905.
+ * Create a private keychain on macOS when the system keychain is defaulted to, this avoids a permissions issue with the system keychain when performing the Security Update Check. This is necessary because the system keychain is the default keychain of daemon users and root on macOS.
+ * Improve `passenger-memory-stats` to include JRuby processes that fail to rename as expected. Closes GH-1878.
+ * [Standalone] Don't download or compile Nginx when using the builtin engine. Closes GH-1910.
+ * [Standalone] Fixes `--nginx-tarball` option of `passenger start` and `passenger-config install-standalone-runtime` (wasn't working). Also verifies that `--nginx-version` is explicitly specified as it should be.
+
+
 Release 5.1.1
 -------------
 
@@ -39,6 +50,7 @@ Release 5.1.0
  * [Nginx] The preferred Nginx version is now 1.10.2 (previously 1.10.1).
  * RPM pkg builder fix for breaking SELinux change in RHEL 7.3.
  * RPM pkg builder fix for RHEL6/CentOS6 incompatibility and replacement in Passenger.
+ * Adds Ubuntu 16.10 "Yakkety" packages.
 
 
 Release 5.0.30
@@ -61,6 +73,7 @@ Release 5.0.29
  * [Nginx] The preferred Nginx version is now 1.10.1 (previously 1.10.0).
  * [Nginx] The preferred PCRE version is now 8.39 (previously 8.34).
  * [Standalone] Passenger Standalone now supports /dev/stdout and /dev/stderr as log file path (via `--log-file` or Passengerfile.json). This is especially useful in Docker containers. In previous versions logging to those paths did not work, resulting in nothing getting logged at all.
+ * Adds Ubuntu 16.04 "Xenial" packages, deprecates Ubuntu 15.10 “Wily” packages (in accordance with LTS support policy).
 
 
 Release 5.0.28

@@ -74,7 +74,7 @@ module PhusionPassenger
       # Phusion Passenger is not running.
       def passenger_processes
         @passenger_processes ||= list_processes(:match =>
-          /((^| )Passenger|(^| )Rails:|(^| )Rack:|wsgi-loader.py|(.*)PassengerAgent|flying-passenger)/)
+          /((^| )Passenger|(^| )Rails:|(^| )Rack:|wsgi-loader.py|(.*)PassengerAgent|flying-passenger|rack-loader.rb)/)
       end
 
       # Returns the sum of the memory usages of all given processes.
