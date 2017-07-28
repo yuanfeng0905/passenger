@@ -114,7 +114,7 @@ There is also `ConfigKit::Store`. This is a class that stores configuration valu
 
 ### Translators
 
-And finally there is a "translator" class: `ConfigKit::TableTranslator`. The role of translators are described in the section "The special problem of conflicting overlapping configuration names and translation".
+And finally there are "translator" classes: `ConfigKit::TableTranslator` and `ConfigKit::PrefixTranslator`. The role of translators are described in the section "The special problem of conflicting overlapping configuration names and translation".
 
 ## Using the schema
 
