@@ -90,6 +90,7 @@
 #include <Core/OptionParser.h>
 #include <Core/Controller.h>
 #include <Core/ApiServer.h>
+#include <Core/Schema.h>
 #include <Core/ApplicationPool/Pool.h>
 #include <Core/UnionStation/Context.h>
 #include <Core/SecurityUpdateChecker.h>
