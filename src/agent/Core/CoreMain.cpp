@@ -1425,6 +1425,13 @@ sanityCheckOptions() {
 }
 
 int
+printCoreConfigSchemaMain(int argc, char *argv[]) {
+	Json::Value doc = Passenger::Core::Schema().inspect();
+	std::cout << doc.toStyledString() << std::endl;
+	return 0;
+}
+
+int
 coreMain(int argc, char *argv[]) {
 	int ret;
 
