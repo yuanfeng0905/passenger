@@ -290,8 +290,6 @@ Controller::onConfigChange(const ConfigKit::Store *oldConfig) {
 	ParentClass::onConfigChange(oldConfig);
 	mainConfigCache.update(config);
 	requestConfigCache.reset(new ControllerRequestConfigCache(config));
-	getContext()->defaultFileBufferedChannelConfig.bufferDir =
-		config["data_buffer_dir"].asString();
 }
 
 

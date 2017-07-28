@@ -29,10 +29,12 @@
 #include <boost/make_shared.hpp>
 #include <string>
 #include <cstddef>
-#include <jsoncpp/json.h>
 #include <MemoryKit/mbuf.h>
+#include <ConfigKit/ConfigKit.h>
+#include <ConfigKit/PrefixTranslator.h>
 #include <SafeLibev.h>
 #include <Constants.h>
+#include <Utils.h>
 #include <Utils/StrIntUtils.h>
 #include <Utils/JsonUtils.h>
 
@@ -45,6 +47,36 @@ namespace ServerKit {
 
 
 struct FileBufferedChannelConfig {
+private:
+	ConfigKit::Store store;
+
+	void updateConfigCache() {
+		bufferDir = store["buffer_dir"].asString();
+		threshold = store["threshold"].asUInt();
+		delayInFileModeSwitching = store["delay_in_file_mode_switching"].asUInt();
+		maxDiskChunkReadSize = store["max_disk_chunk_read_size"].asUInt();
+		autoTruncateFile = store["auto_truncate_file"].asBool();
+		autoStartMover = store["auto_start_mover"].asBool();
+	}
+
+public:
+	struct Schema: public ConfigKit::Schema {
+		Schema() {
+			using namespace ConfigKit;
+
+			add("buffer_dir", STRING_TYPE, OPTIONAL, getSystemTempDir());
+			add("threshold", UINT_TYPE, OPTIONAL, DEFAULT_FILE_BUFFERED_CHANNEL_THRESHOLD);
+			add("delay_in_file_mode_switching", UINT_TYPE, OPTIONAL, 0);
+			add("max_disk_chunk_read_size", UINT_TYPE, OPTIONAL, 0);
+			add("auto_truncate_file", BOOL_TYPE, true);
+			add("auto_start_mover", BOOL_TYPE, true); // For unit testing purposes
+
+			finalize();
+		}
+	};
+
+	// Cached config values. Do not update directly; use the mutation
+	// methods instead.
 	string bufferDir;
 	unsigned int threshold;
 	unsigned int delayInFileModeSwitching;
@@ -52,45 +84,142 @@ struct FileBufferedChannelConfig {
 	bool autoTruncateFile;
 	bool autoStartMover;
 
-	FileBufferedChannelConfig()
-		: bufferDir("/tmp"),
-		  threshold(DEFAULT_FILE_BUFFERED_CHANNEL_THRESHOLD),
-		  delayInFileModeSwitching(0),
-		  maxDiskChunkReadSize(0),
-		  autoTruncateFile(true),
-		  autoStartMover(true)
-		{ }
+	FileBufferedChannelConfig(const Schema &schema,
+		const Json::Value &initialConfig = Json::Value())
+		: store(schema)
+	{
+		vector<ConfigKit::Error> errors;
+
+		if (!store.update(initialConfig, errors)) {
+			throw ArgumentException("Invalid initial configuration: "
+				+ toString(errors));
+		}
+		updateConfigCache();
+	}
+
+	Json::Value previewConfigUpdate(const Json::Value &updates,
+		vector<ConfigKit::Error> &errors)
+	{
+		return store.previewUpdate(updates, errors);
+	}
+
+	bool configure(const Json::Value &updates, vector<ConfigKit::Error> &errors) {
+		if (store.update(updates, errors)) {
+			updateConfigCache();
+			return true;
+		} else {
+			return false;
+		}
+	}
+
+	Json::Value inspectConfig() const {
+		return store.inspect();
+	}
 };
 
 class Context {
 private:
-	void initialize() {
-		mbuf_pool.mbuf_block_chunk_size = DEFAULT_MBUF_CHUNK_SIZE;
-		MemoryKit::mbuf_pool_init(&mbuf_pool);
+	ConfigKit::Store config;
+
+	void updateConfigCache() {
+		secureModePassword = config["secure_mode_password"].asString();
 	}
 
 public:
+	struct Schema: public ConfigKit::Schema {
+		struct FileBufferedChannelConfigSubschemaStruct {
+			FileBufferedChannelConfig::Schema schema;
+			ConfigKit::PrefixTranslator translator;
+
+			FileBufferedChannelConfigSubschemaStruct()
+				: translator("file_buffered_channel_")
+				{ }
+		} fileBufferedChannelConfig;
+
+		Schema() {
+			using namespace ConfigKit;
+
+			addSubSchema(fileBufferedChannelConfig.schema);
+
+			add("mbuf_block_chunk_size", UINT_TYPE, OPTIONAL | READ_ONLY,
+				DEFAULT_MBUF_CHUNK_SIZE);
+			add("secure_mode_password", PASSWORD_TYPE, OPTIONAL);
+
+			finalize();
+		}
+	};
+
+	// Dependencies
 	SafeLibevPtr libev;
 	struct uv_loop_s *libuv;
+
+	// Subcomponents
 	struct MemoryKit::mbuf_pool mbuf_pool;
+	FileBufferedChannelConfig fileBufferedChannelConfig;
+
+	// Cached config values. Do not update directly; use the mutation
+	// methods instead.
 	string secureModePassword;
-	FileBufferedChannelConfig defaultFileBufferedChannelConfig;
 
-	Context(const SafeLibevPtr &_libev, struct uv_loop_s *_libuv)
-		: libev(_libev),
-		  libuv(_libuv)
+	Context(const Schema &schema, const Json::Value &initialConfig = Json::Value())
+		: config(schema),
+		  libuv(NULL),
+		  fileBufferedChannelConfig(schema.fileBufferedChannelConfig.schema, initialConfig)
 	{
-		initialize();
-	}
+		vector<ConfigKit::Error> errors;
 
-	Context(struct ev_loop *loop)
-		: libev(boost::make_shared<SafeLibev>(loop))
-	{
-		initialize();
+		if (!config.update(initialConfig, errors)) {
+			throw ArgumentException("Invalid initial configuration: "
+				+ toString(errors));
+		}
+		updateConfigCache();
 	}
 
 	~Context() {
 		MemoryKit::mbuf_pool_deinit(&mbuf_pool);
+	}
+
+	void initialize() {
+		if (libev == NULL) {
+			throw RuntimeException("libev must be non-NULL");
+		}
+		if (libuv == NULL) {
+			throw RuntimeException("libuv must be non-NULL");
+		}
+
+		mbuf_pool.mbuf_block_chunk_size = config["mbuf_block_chunk_size"].asUInt();
+		MemoryKit::mbuf_pool_init(&mbuf_pool);
+	}
+
+	Json::Value previewConfigUpdate(const Json::Value &updates,
+		vector<ConfigKit::Error> &errors)
+	{
+		using namespace ConfigKit;
+		const Schema &schema = static_cast<const Schema &>(config.getSchema());
+
+		previewConfigUpdateSubComponent(fileBufferedChannelConfig, updates,
+			schema.fileBufferedChannelConfig.translator, errors);
+		return config.previewUpdate(updates, errors);
+	}
+
+	bool configure(const Json::Value &updates, vector<ConfigKit::Error> &errors) {
+		using namespace ConfigKit;
+		const Schema &schema = static_cast<const Schema &>(config.getSchema());
+
+		previewConfigUpdate(updates, errors);
+
+		if (errors.empty()) {
+			configureSubComponent(fileBufferedChannelConfig, updates,
+				schema.fileBufferedChannelConfig.translator, errors);
+			config.update(updates, errors);
+			updateConfigCache();
+		}
+
+		return errors.empty();
+	}
+
+	Json::Value inspectConfig() const {
+		return config.inspect();
 	}
 
 	Json::Value inspectStateAsJson() const {
